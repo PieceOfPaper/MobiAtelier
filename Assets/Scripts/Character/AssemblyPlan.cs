@@ -86,8 +86,10 @@ public static class PlanResolver
         if (eyes == null && !string.IsNullOrEmpty(a.eyes)) plan.Notes.Add($"눈 ID를 찾을 수 없습니다: {a.eyes}");
         Add(plan, files, "eyes", PartRole.Eyes, eyes?.Model(plan.Male, plan.Infant));
 
+        // 입은 메시가 아니라 얼굴 머티리얼에 합성하는 텍스처 파츠다(CharacterAssembler.ApplyMouth).
         var mouth = GameData.Resolve(data.Mouths, a.mouth, a.head, "Head_00");
-        if (mouth != null) plan.Notes.Add("입 모양은 얼굴 텍스처로 표시되며 아직 지원하지 않습니다.");
+        if (mouth == null && !string.IsNullOrEmpty(a.mouth)) plan.Notes.Add($"입 ID를 찾을 수 없습니다: {a.mouth}");
+        Add(plan, files, "mouth", PartRole.Mouth, mouth?.Model(plan.Male, plan.Infant));
 
         // 외형 색: 시트 값 → 사용자 색
         void Global(string slot, Rgba32? sheet)

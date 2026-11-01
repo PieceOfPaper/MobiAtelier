@@ -201,7 +201,7 @@ public static class CharacterAssembler
                 {
                     var src = srcMats.Length == 0 ? null : srcMats[Mathf.Min(s, srcMats.Length - 1)];
                     if (DebugMaterials && src) L($"  재질 {part.Model}/{name}[{s}]: {src.name} 셰이더 {(src.shader ? src.shader.name : "-")} 큐 {src.renderQueue} 텍스처 {DescribeTextures(src)}");
-                    subMats[s] = Convert(src, part.Role == PartRole.Eyes && KeepOriginalEyeShader, out _);
+                    subMats[s] = Convert(src, (part.Role == PartRole.Eyes && KeepOriginalEyeShader) || (part.Role == PartRole.Head && KeepOriginalHeadShader), out _);
                 }
                 smr.sharedMaterials = subMats;
 
@@ -230,7 +230,7 @@ public static class CharacterAssembler
         }
 
         foreach (var d in defs) AddBones(d);
-        foreach (var d in defs) AddModel(d);
+        foreach (var d in defs) if (d.Part.Role != PartRole.Mouth) AddModel(d);
         foreach (var t in bones)
             t.SetParent(parentName[t] != null && map.TryGetValue(parentName[t], out var pt) ? pt : root.transform, false);
 
@@ -252,7 +252,8 @@ public static class CharacterAssembler
         }
         else L($"포즈 없음: {plan.Pose}");
 
-        ApplyFacialVisibility(files, plan, view, L);
+        foreach (var d in defs) if (d.Part.Role == PartRole.Mouth) ApplyMouth(bundles, d.Root, view, L);
+        ApplyFacialAnimation(files, plan, view, L);
         view.ApplyBlendShape(plan.BlendShape);
         view.ApplyPlanColors(plan);
         // 몸 가리기는 기본 자세에서 계산한다.
@@ -269,10 +270,10 @@ public static class CharacterAssembler
     }
 
     /// <summary>
-    /// 포즈의 얼굴 애니메이션(&lt;포즈&gt;_Facial.xaf)에서 첫 프레임의 메시 표시 여부를 적용한다.
+    /// 포즈의 얼굴 애니메이션(&lt;포즈&gt;_Facial.xaf)에서 첫 프레임의 메시 표시 여부와 셰이더 값을 적용한다.
     /// 게임은 눈·입술 메시의 표시를 이 애니메이션의 Visibility 트랙으로 정한다(EyeVisibleSetter). 트랙이 없는 메시는 프리팹 값을 유지한다.
     /// </summary>
-    static void ApplyFacialVisibility(InstallFiles files, AssemblyPlan plan, CharacterView view, Action<string> log)
+    static void ApplyFacialAnimation(InstallFiles files, AssemblyPlan plan, CharacterView view, Action<string> log)
     {
         if (string.IsNullOrEmpty(plan.Pose)) return;
         string path = files.FindResourcePathEndingWith("/" + plan.Pose + "_Facial.xaf.sjon.bin");
@@ -280,25 +281,48 @@ public static class CharacterAssembler
         var anim = files.ReadSjon(path);
         int start = anim.Get("StartFrame").I();
         var visible = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var shader = new List<(string obj, string prop, float value)>();
         foreach (var data in anim.Get("AnimationDatas").Arr())
         {
             string obj = data.Get("AnimationObjectName").Str();
             if (obj == null) continue;
             foreach (var track in data.Get("KeyframeTracks").Arr())
             {
-                if (track.Get("AnimationType").Str() != "Visibility") continue;
                 var keys = track.Get("Keyframes").Arr();
                 if (keys.Count == 0) continue;
-                // 상수 보간 트랙이다. 시작 프레임 이하의 마지막 키 값을 쓴다.
+                // 시작 프레임 이하의 마지막 키 값을 쓴다(첫 프레임 정지 화면).
                 object chosen = keys[0];
                 foreach (var k in keys) if (k.Get("Time").F() <= start) chosen = k;
-                visible[obj] = chosen.Get("Value").F() != 0;
+                float value = chosen.Get("Value").F();
+                string type = track.Get("AnimationType").Str();
+                if (type == "Visibility") visible[obj] = value != 0;
+                else if (type == "Shader") shader.Add((obj, track.Get("AnimationPropertyName").Str(), value));
             }
         }
         int applied = 0;
         foreach (var (_, r) in view.Renderers)
             if (r && visible.TryGetValue(r.gameObject.name, out bool on)) { r.gameObject.SetActive(on); applied++; }
-        log?.Invoke($"얼굴 애니메이션 표시 적용: {path.Substring(path.LastIndexOf('/') + 1)}, 트랙 {visible.Count}, 렌더러 {applied}");
+        // 셰이더 값 트랙(예: Mesh_Skin_Head 의 _MouthShowType, _EmotionMouthMapAtlasSize.z). ".x/.y/.z/.w" 는 벡터 성분이다.
+        int props = 0;
+        foreach (var (obj, prop, value) in shader)
+        {
+            if (string.IsNullOrEmpty(prop)) continue;
+            int dot = prop.LastIndexOf('.');
+            string name = dot > 0 ? prop.Substring(0, dot) : prop;
+            int comp = dot > 0 ? "xyzw".IndexOf(prop[dot + 1]) : -1;
+            foreach (var (_, r) in view.Renderers)
+            {
+                if (!r || r.gameObject.name != obj) continue;
+                foreach (var m in r.sharedMaterials)
+                {
+                    if (!m || !m.HasProperty(name)) continue;
+                    if (comp >= 0) { var v = m.GetVector(name); v[comp] = value; m.SetVector(name, v); }
+                    else m.SetFloat(name, value);
+                    props++;
+                }
+            }
+        }
+        log?.Invoke($"얼굴 애니메이션 적용: {path.Substring(path.LastIndexOf('/') + 1)}, 표시 트랙 {visible.Count}(렌더러 {applied}), 셰이더 값 {props}");
     }
 
     /// <summary>진단용: 원본 머티리얼 정보를 로그에 남긴다.</summary>
@@ -306,6 +330,42 @@ public static class CharacterAssembler
 
     /// <summary>눈 파츠는 게임 원본 셰이더를 그대로 쓴다. 대체 셰이더는 눈 테두리·그늘(Eye_Base, EyeShade 등)이 두껍고 검게 나온다(2026-11-01 촬영 비교).</summary>
     public static bool KeepOriginalEyeShader = true;
+
+    /// <summary>
+    /// 머리 파츠는 게임 원본 셰이더(MMN/CH/Skin_Face)를 그대로 쓴다. 입 텍스처(_MouthMap)를 얼굴에 합성하는 계산이 이 셰이더 안에 있다.
+    /// false 면 대체 셰이더를 쓰고 입은 보이지 않는다.
+    /// </summary>
+    public static bool KeepOriginalHeadShader = true;
+
+    /// <summary>
+    /// 입 파츠(텍스처 모델)를 얼굴 머티리얼에 건다. 게임의 MaterialPropertySetter.ApplyTextureModelPart 와 같은 대응:
+    ///   _MouthMap = AssetPathToLoad 텍스처, _MouthMapScalePosition = TextureInfo.BaseTexcoord,
+    ///   _MouthMapRotation = TextureInfo.Rotation, _MouthPushStrength = TextureInfo.PushStrength
+    /// </summary>
+    static void ApplyMouth(BundleCache bundles, object def, CharacterView view, Action<string> log)
+    {
+        string path = BundleCache.AssetRoot + def.Get("AssetPathToLoad").Str();
+        var tex = bundles.LoadAsset<Texture2D>(path);
+        if (!tex) { log?.Invoke("입 텍스처 없음: " + path); return; }
+        var info = def.Get("TextureInfo");
+        var st = info.Get("BaseTexcoord").Arr();
+        var scalePos = st.Count >= 4 ? new Vector4(st[0].F(), st[1].F(), st[2].F(), st[3].F()) : new Vector4(1, 1, 0, 0);
+        int applied = 0;
+        foreach (var (key, r) in view.Renderers)
+        {
+            if (key != "head" || !r) continue;
+            foreach (var m in r.sharedMaterials)
+            {
+                if (!m || !m.HasProperty("_MouthMap")) continue;
+                m.SetTexture("_MouthMap", tex);
+                m.SetVector("_MouthMapScalePosition", scalePos);
+                m.SetFloat("_MouthMapRotation", info.Get("Rotation").F());
+                m.SetFloat("_MouthPushStrength", info.Get("PushStrength").F());
+                applied++;
+            }
+        }
+        log?.Invoke($"입: {tex.name}, 크기·위치 {scalePos}, 얼굴 머티리얼 {applied}개" + (applied == 0 ? " (머리 셰이더에 _MouthMap 없음)" : ""));
+    }
 
     static string DescribeTextures(Material m)
     {

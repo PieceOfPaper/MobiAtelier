@@ -34,7 +34,10 @@ public static class InstallSmokeTest
             // -maEyeShader original|mobi : 눈 파츠 셰이더 비교용
             var eyeShader = Arg("-maEyeShader");
             if (eyeShader != null) CharacterAssembler.KeepOriginalEyeShader = eyeShader == "original";
-            log.AppendLine("눈 셰이더: " + (CharacterAssembler.KeepOriginalEyeShader ? "원본" : "대체"));
+            // -maHeadShader original|mobi : 머리(얼굴·입) 셰이더 비교용
+            var headShader = Arg("-maHeadShader");
+            if (headShader != null) CharacterAssembler.KeepOriginalHeadShader = headShader == "original";
+            log.AppendLine("눈 셰이더: " + (CharacterAssembler.KeepOriginalEyeShader ? "원본" : "대체") + ", 머리 셰이더: " + (CharacterAssembler.KeepOriginalHeadShader ? "원본" : "대체"));
 
             var check = InstallValidator.Check(Arg("-maInstall") ?? AppSettings.DefaultInstallPath, s => log.AppendLine("  " + s));
             log.AppendLine($"검사: {check.Step} {check.Message} {check.Detail}");

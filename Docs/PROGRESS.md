@@ -16,6 +16,7 @@
 | 2026-11-01 | 의상 초기색 재검토, 자유 RGB 편집·최초 외형 2종 무작위 선택 확정. Dye·Startup·ProgramFlow·FeasibilityReview 갱신 |
 | 2026-11-01 | 에이전트 공통 지침(`AGENTS.md`, `CLAUDE.md`), Claude Code·Codex 프로젝트 설정, 이 문서 추가 |
 | 2026-11-01 | 구현 1단계: 설치 폴더 리더, 시트 리더, 경로 검사·지정 팝업, 자동 저장·복원·복구 안내, 조립기, 카메라, 앱 씬·빌드 설정 |
+| 2026-11-01 | 입 표시: 입 텍스처를 얼굴 머티리얼에 합성(머리 원본 셰이더), 얼굴 애니메이션의 셰이더 값 첫 프레임 적용. 에디터 배치 촬영·빌드 실행 확인 |
 | 2026-11-01 | 눈 표시 수정: 프리팹 켜짐·꺼짐 반영, 얼굴 애니메이션 첫 프레임 Visibility 적용(감은 눈 평면이 보이던 문제) |
 | 2026-11-01 | 폴더 정리(사용자 요청): `Assets\MobiAtelier\` 제거 → `Assets\Scripts·Editor·Shaders·Scenes·UI`, 네임스페이스 제거(전역). 정리 후 조립 시험·빌드·첫 실행 재확인 |
 
@@ -42,7 +43,7 @@
 2. 꾸미기 창(`WindowAndCustomizationUI.md`): 이동·크기 조절·배치 저장, 탭(외형/의상/염색), 검색 드롭다운, 미적용 빨간색 표시.
 3. 외형·의상·염색 편집 → 조립 갱신. 지금은 상태가 바뀌면 캐릭터 전체를 다시 조립한다(프리셋 1회 약 50~200ms [확인: 에디터 배치]).
 4. JSON 저장·불러오기 대화상자, 실행 취소·다시 실행, 종료 팝업.
-5. 눈·입 표시 개선(아래 함정 참고), 얼굴형·키·나이.
+5. 눈·얼굴 셰이더의 게임 조명 재현, 얼굴형·키·나이.
 
 ## 4. 인계 메모
 
@@ -59,8 +60,10 @@
 - **알게 된 함정**
   - 눈 흰 사각형의 원인은 셰이더가 아니라 표시 여부였다. 감은 눈 평면 `Mesh_EyeBasePlane`은 프리팹에서 꺼져 있는데 조립기가 켜고 있었다. 이제 프리팹 메시의 켜짐·꺼짐을 따르고, 포즈의 얼굴 애니메이션(`<포즈>_Facial.xaf`)에서 첫 프레임의 Visibility 값을 적용한다. 게임은 눈·입술 메시 표시를 이 애니메이션으로 정한다(`EyeVisibleSetter`).
   - 눈 셰이더는 원본을 쓴다(`CharacterAssembler.KeepOriginalEyeShader`). 대체 셰이더는 눈 테두리·그늘이 두껍고 검게 나왔다. 원본도 게임 조명 전역값이 없으므로 게임 화면과 똑같다고 보지는 않는다. 비교는 `InstallSmokeTest`의 `-maEyeShader original|mobi`로 한다.
-  - 얼굴 애니메이션에는 눈 깜빡임 블렌드셰이프(MT_Blink*)와 입 표시용 셰이더 값(`_MouthShowType`, `_EmotionMouthMap*`)도 있다. 첫 프레임 블렌드셰이프 값은 모두 0이라 지금은 적용하지 않는다. 입 작업 때 셰이더 값을 쓴다.
-  - 입(CharacterMouth)은 메시가 아니라 얼굴 머티리얼의 텍스처(`_EmotionMouthMap`)다. 아직 표시하지 않고 화면 메모로 알린다.
+  - 얼굴 애니메이션에는 눈 깜빡임 블렌드셰이프(MT_Blink*)도 있다. 첫 프레임 값은 모두 0이라 적용하지 않는다. 셰이더 값 트랙(`_MouthShowType`, `_EmotionMouthMap*` 등)은 첫 프레임 값을 적용한다.
+  - 입(CharacterMouth)은 메시가 아니라 텍스처 모델이다. 모델 정의의 `AssetPathToLoad`(예: `Female_Lips_01.tga`)를 얼굴 머티리얼 `_MouthMap`에, `TextureInfo`의 BaseTexcoord·Rotation·PushStrength를 `_MouthMapScalePosition`·`_MouthMapRotation`·`_MouthPushStrength`에 넣는다(게임의 `MaterialPropertySetter.ApplyTextureModelPart`와 같은 대응). 꾸미기 포즈 첫 프레임은 `_MouthShowType = 0`(기본 입 맵)이다.
+  - 입 합성 계산이 원본 `MMN/CH/Skin_Face` 셰이더 안에 있어 머리 파츠도 원본 셰이더를 쓴다(`CharacterAssembler.KeepOriginalHeadShader`). 대체 셰이더로는 입이 보이지 않는다. 얼굴 피부색(_DyeColor1)은 그대로 반영되며 몸과 톤 차이는 크지 않았다(촬영 비교, `-maHeadShader original|mobi`). 원본 셰이더는 그림자를 받지 않아 얼굴이 몸보다 평평하게 보인다.
+  - 입 모델의 DyeInfo `Mouth` 슬롯은 메시 번호 0을 가리키지만 입 모델에는 메시가 없다. 입 색(CharacterMouthColor)의 연결 속성은 모른다[미확인]. **사용자 결정(2026-11-01): 입은 색을 선택하지 않으므로 입 색은 다루지 않는다.** 입 텍스처의 원래 색으로 표시한다.
   - 키(HeightModifier)·나이 본 스케일(.bdc), 얼굴형 맞춤(FacialMorph), CostumeModelVariant 예외 모델은 아직 적용하지 않는다(시트는 읽음).
   - 몸 가리기는 근사다. 의상 조합에 따라 피부가 비치거나 과하게 잘릴 수 있다.
   - UI Toolkit 기본 글꼴에 한글이 없어 Windows의 맑은 고딕을 런타임에 불러온다(`AppUI.ApplySystemFont`). 글꼴 파일은 포함하지 않는다.
