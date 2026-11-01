@@ -12,3 +12,17 @@
 - 캐릭터 회전·확대·축소와 코디 저장·불러오기
 
 현재 초기 개발 단계이며, 위 기능을 순차적으로 구현할 예정입니다.
+
+## 기획서
+
+- [프로그램 플로우](Docs/ProgramFlow.md): 앱 시작, 꾸미기 진입, 저장·불러오기와 종료의 상태 전환.
+- [시작 설정·최초 캐릭터](Docs/Startup.md): 게임 경로 검사·지정, 작업 복원과 최초 외형 후보.
+- [창·꾸미기 UI](Docs/WindowAndCustomizationUI.md): 앱 창 크기, 꾸미기 창 배치 복원과 검색·드롭다운.
+- [의상·리소스 선택](Docs/Equipment.md): 패션장비 선택, 미적용 표시, 원피스와 숨겨진 리소스 옵션.
+- [염색](Docs/Dye.md): 기본색, 컬러피커와 색상 코드 입력.
+- [카메라](Docs/Camera.md): 회전·팬·확대축소와 UI 입력 충돌 처리.
+- [저장·불러오기](Docs/SaveLoad.md): 자동 저장, JSON 범위·식별자와 파일 대화상자.
+- [실행 취소·다시 실행](Docs/UndoRedo.md): Ctrl+Z·Ctrl+Y, 버튼과 편집 이력 단위.
+- [종료 팝업](Docs/ExitPopup.md): 종료 확인·딤 처리와 ESC 입력 우선순위.
+- [촬영모드](Docs/PhotoMode.md): 향후 촬영 기능의 검토 범위와 미정 사항.
+- [레퍼런스 조사](Docs/ReferenceResearch.md): 기존 꾸미기 도구의 기능 비교와 초기 기획 제안.
