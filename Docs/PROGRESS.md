@@ -16,6 +16,7 @@
 | 2026-11-01 | 의상 초기색 재검토, 자유 RGB 편집·최초 외형 2종 무작위 선택 확정. Dye·Startup·ProgramFlow·FeasibilityReview 갱신 |
 | 2026-11-01 | 에이전트 공통 지침(`AGENTS.md`, `CLAUDE.md`), Claude Code·Codex 프로젝트 설정, 이 문서 추가 |
 | 2026-11-01 | 구현 1단계: 설치 폴더 리더, 시트 리더, 경로 검사·지정 팝업, 자동 저장·복원·복구 안내, 조립기, 카메라, 앱 씬·빌드 설정 |
+| 2026-11-01 | 눈 표시 수정: 프리팹 켜짐·꺼짐 반영, 얼굴 애니메이션 첫 프레임 Visibility 적용(감은 눈 평면이 보이던 문제) |
 | 2026-11-01 | 폴더 정리(사용자 요청): `Assets\MobiAtelier\` 제거 → `Assets\Scripts·Editor·Shaders·Scenes·UI`, 네임스페이스 제거(전역). 정리 후 조립 시험·빌드·첫 실행 재확인 |
 
 ### 구현 1단계 내용
@@ -56,7 +57,9 @@
   - 포즈: `H{M|F|C}@Customize_Pose_08_{체형}`, 없으면 `_Default`.
   - 모자 헤어 단계: 모자 메시 `Mesh_Helmet_*_C<n>` → 헤어 `H<n>` [추정].
 - **알게 된 함정**
-  - 눈 재질(Eye_Base·Eye_Pupil, 큐 2440대, `_ALPHAPREMULTIPLY_ON`)은 대체 셰이더로 그리면 눈 주변에 흰 사각형이 생긴다. 지금은 눈 파츠만 게임 원본 셰이더를 그대로 쓴다(`CharacterAssembler.KeepOriginalEyeShader`). 흰 사각형은 없어졌지만 홍채색·명암이 정확하지 않다. 원본 셰이더 식 분석 후 대체 셰이더에 눈 처리를 추가해야 한다.
+  - 눈 흰 사각형의 원인은 셰이더가 아니라 표시 여부였다. 감은 눈 평면 `Mesh_EyeBasePlane`은 프리팹에서 꺼져 있는데 조립기가 켜고 있었다. 이제 프리팹 메시의 켜짐·꺼짐을 따르고, 포즈의 얼굴 애니메이션(`<포즈>_Facial.xaf`)에서 첫 프레임의 Visibility 값을 적용한다. 게임은 눈·입술 메시 표시를 이 애니메이션으로 정한다(`EyeVisibleSetter`).
+  - 눈 셰이더는 원본을 쓴다(`CharacterAssembler.KeepOriginalEyeShader`). 대체 셰이더는 눈 테두리·그늘이 두껍고 검게 나왔다. 원본도 게임 조명 전역값이 없으므로 게임 화면과 똑같다고 보지는 않는다. 비교는 `InstallSmokeTest`의 `-maEyeShader original|mobi`로 한다.
+  - 얼굴 애니메이션에는 눈 깜빡임 블렌드셰이프(MT_Blink*)와 입 표시용 셰이더 값(`_MouthShowType`, `_EmotionMouthMap*`)도 있다. 첫 프레임 블렌드셰이프 값은 모두 0이라 지금은 적용하지 않는다. 입 작업 때 셰이더 값을 쓴다.
   - 입(CharacterMouth)은 메시가 아니라 얼굴 머티리얼의 텍스처(`_EmotionMouthMap`)다. 아직 표시하지 않고 화면 메모로 알린다.
   - 키(HeightModifier)·나이 본 스케일(.bdc), 얼굴형 맞춤(FacialMorph), CostumeModelVariant 예외 모델은 아직 적용하지 않는다(시트는 읽음).
   - 몸 가리기는 근사다. 의상 조합에 따라 피부가 비치거나 과하게 잘릴 수 있다.

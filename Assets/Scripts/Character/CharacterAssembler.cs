@@ -205,6 +205,8 @@ public static class CharacterAssembler
                 }
                 smr.sharedMaterials = subMats;
 
+                // 프리팹의 켜짐·꺼짐을 그대로 따른다(예: 눈의 Mesh_EyeBasePlane 은 감은 눈 평면이라 기본으로 꺼져 있다).
+                if (psmr) { go2.SetActive(psmr.gameObject.activeSelf); smr.enabled = psmr.enabled; }
                 var lv = HairLevel.Match(name);
                 if (part.Role == PartRole.Hair && lv.Success && lv.Groups[1].Value[0] - '0' != hairLevel) go2.SetActive(false);
                 view.Renderers.Add((part.Key, smr));
@@ -250,6 +252,7 @@ public static class CharacterAssembler
         }
         else L($"포즈 없음: {plan.Pose}");
 
+        ApplyFacialVisibility(files, plan, view, L);
         view.ApplyBlendShape(plan.BlendShape);
         view.ApplyPlanColors(plan);
         // 몸 가리기는 기본 자세에서 계산한다.
@@ -265,10 +268,43 @@ public static class CharacterAssembler
         return view;
     }
 
+    /// <summary>
+    /// 포즈의 얼굴 애니메이션(&lt;포즈&gt;_Facial.xaf)에서 첫 프레임의 메시 표시 여부를 적용한다.
+    /// 게임은 눈·입술 메시의 표시를 이 애니메이션의 Visibility 트랙으로 정한다(EyeVisibleSetter). 트랙이 없는 메시는 프리팹 값을 유지한다.
+    /// </summary>
+    static void ApplyFacialVisibility(InstallFiles files, AssemblyPlan plan, CharacterView view, Action<string> log)
+    {
+        if (string.IsNullOrEmpty(plan.Pose)) return;
+        string path = files.FindResourcePathEndingWith("/" + plan.Pose + "_Facial.xaf.sjon.bin");
+        if (path == null) { log?.Invoke($"얼굴 애니메이션 없음: {plan.Pose}_Facial"); return; }
+        var anim = files.ReadSjon(path);
+        int start = anim.Get("StartFrame").I();
+        var visible = new Dictionary<string, bool>(StringComparer.Ordinal);
+        foreach (var data in anim.Get("AnimationDatas").Arr())
+        {
+            string obj = data.Get("AnimationObjectName").Str();
+            if (obj == null) continue;
+            foreach (var track in data.Get("KeyframeTracks").Arr())
+            {
+                if (track.Get("AnimationType").Str() != "Visibility") continue;
+                var keys = track.Get("Keyframes").Arr();
+                if (keys.Count == 0) continue;
+                // 상수 보간 트랙이다. 시작 프레임 이하의 마지막 키 값을 쓴다.
+                object chosen = keys[0];
+                foreach (var k in keys) if (k.Get("Time").F() <= start) chosen = k;
+                visible[obj] = chosen.Get("Value").F() != 0;
+            }
+        }
+        int applied = 0;
+        foreach (var (_, r) in view.Renderers)
+            if (r && visible.TryGetValue(r.gameObject.name, out bool on)) { r.gameObject.SetActive(on); applied++; }
+        log?.Invoke($"얼굴 애니메이션 표시 적용: {path.Substring(path.LastIndexOf('/') + 1)}, 트랙 {visible.Count}, 렌더러 {applied}");
+    }
+
     /// <summary>진단용: 원본 머티리얼 정보를 로그에 남긴다.</summary>
     public static bool DebugMaterials;
 
-    /// <summary>눈 파츠는 게임 원본 셰이더를 그대로 쓴다. 대체 셰이더로는 눈 재질의 염색 맵 해석이 맞지 않는다(흰 사각형).</summary>
+    /// <summary>눈 파츠는 게임 원본 셰이더를 그대로 쓴다. 대체 셰이더는 눈 테두리·그늘(Eye_Base, EyeShade 등)이 두껍고 검게 나온다(2026-11-01 촬영 비교).</summary>
     public static bool KeepOriginalEyeShader = true;
 
     static string DescribeTextures(Material m)

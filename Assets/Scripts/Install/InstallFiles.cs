@@ -51,6 +51,13 @@ public sealed class InstallFiles
 
     public object ReadSjon(string path) => Sjon.Decode(ReadResource(path));
 
+    public string FindResourcePathEndingWith(string suffix)
+    {
+        foreach (var p in Resources.PathToLoc.Keys)
+            if (p.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return p;
+        return null;
+    }
+
     public string FindAssetPathEndingWith(string suffix)
     {
         foreach (var p in Assets.PathToLoc.Keys)

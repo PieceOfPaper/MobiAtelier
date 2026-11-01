@@ -31,6 +31,10 @@ public static class InstallSmokeTest
             var shader = Shader.Find("MobiAtelier/Character");
             if (!shader) throw new Exception("셰이더 MobiAtelier/Character 없음");
             CharacterAssembler.DebugMaterials = Array.IndexOf(Environment.GetCommandLineArgs(), "-maDebugMaterials") >= 0;
+            // -maEyeShader original|mobi : 눈 파츠 셰이더 비교용
+            var eyeShader = Arg("-maEyeShader");
+            if (eyeShader != null) CharacterAssembler.KeepOriginalEyeShader = eyeShader == "original";
+            log.AppendLine("눈 셰이더: " + (CharacterAssembler.KeepOriginalEyeShader ? "원본" : "대체"));
 
             var check = InstallValidator.Check(Arg("-maInstall") ?? AppSettings.DefaultInstallPath, s => log.AppendLine("  " + s));
             log.AppendLine($"검사: {check.Step} {check.Message} {check.Detail}");
