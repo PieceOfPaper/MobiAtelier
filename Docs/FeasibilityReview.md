@@ -1,6 +1,7 @@
 # 언팩 데이터 기반 구현 가능성 검토
 
 > 검토일: 2026-11-01
+> 보완: 같은 날 초기색을 재검토하고, 자유 RGB 편집·최초 외형 무작위 선택의 사용자 확정 사항을 반영했다.
 > 기획 기준: MobiAtelier 커밋 316e14e0bde2527d0552e81bac99e4902f087497
 > 데이터·코드 기준: MabinogiMobileUnpack 커밋 46e94a82112243850d68a39cde73890de016140d
 > 게임 결과물 버전: 설치 3.4.40011 / 패치 R840cbf8_A4525d21 (version.json 기준)
@@ -27,7 +28,7 @@
 | [시작 설정](Startup.md) | 기반 코드 있음, 추가 구현 | PackageIndex·BlobReader·ResourceCodec·Sjon·SmmReader 존재. 필수 파일 검사·폴더 선택·버전 확인 추가 |
 | [창·꾸미기 UI](WindowAndCustomizationUI.md) | 앱 구현으로 가능 | 창·패널 크기와 검색은 데이터 분석의 장애가 아님. 표시 이름·아이콘은 시트와 번들에서 공급 |
 | [의상·리소스](Equipment.md) | 데이터 있음, 규칙 구현 필요 | CostumeType·성별 모델·HidingParts·예외 모델. 선택 보존과 실제 출력 분리, 머리·헤어 숨김, 임의 리소스 검증 필요 |
-| [염색](Dye.md) | 대표 사례 기반 있음, 예외 처리 필요 | DyeColor0~5 + DyeInfo + SetDye. 기본색 null·여러 파츠의 같은 Slot 이름 처리 필요 |
+| [염색](Dye.md) | 대표 사례 기반 있음, 예외 처리 필요 | DyeColor0~5 + DyeInfo + SetDye. 원본 초기색 유지·시트 기본색 덮어쓰기·여러 파츠의 같은 Slot 이름 처리 필요 |
 | [카메라](Camera.md) | 앱 구현으로 가능 | 기획상 버튼 매핑 구현 가능. 현재 테스트 뷰어는 요구 조작과 다르므로 교체 필요 |
 | [저장·불러오기](SaveLoad.md) | 구현 가능 | ID·색·카메라 상태를 앱 JSON으로 보존. 현재 C# 로더의 시트 ID 해석은 추가해야 함 |
 | [실행 취소](UndoRedo.md) | 앱 구현으로 가능 | 선택 ID·색상 상태를 명령 또는 스냅샷으로 보관. 기존 코드는 이력 기능이 아님 |
@@ -120,14 +121,34 @@ MMInstallAssembler.cs의 AssemblySpec.costumes는 현재 패션장비 ID가 아�
 
 **기획상 보완**: 시트 없이 모델 이름만으로 실행하는 진단 모드는 가능하지만, 일반 꾸미기 기능은 장비 ID·이름·기본색을 요구한다. 시트 로딩 실패를 정상 일반 모드로 조용히 통과시키지 말고 복구 안내 또는 명시적인 제한 모드로 다룬다.
 
-### 4.2 기본색이 없는 의상도 있다
+### 4.2 시트 기본 염색값과 의상의 원본 초기색은 다르다
 
-Costume에서 DyeColor0~5가 모두 null인 행은 97개다. 대표 예는 Fashion_ObjectHead_Helmet_01이다.
+이전의 “기본색이 없는 의상도 있다”는 표현을 정정한다. Costume에서 DyeColor0~5가 모두 null인 행은 97개지만, 이는 시트의 별도 기본 염색값이 미지정이라는 의미다. 원본 텍스처·머티리얼의 초기색이 없다는 근거가 아니다.
 
-- null을 검정·흰색으로 임의 해석하면 안 된다.
-- 유효한 시트 기본값만 실제 DyeInfo 연결에 적용하고, 나머지는 원본 머티리얼의 초기값을 보존하는 방식을 검토한다.
-- null은 해당 부위가 염색 불가능하다는 완전한 판정도 아니다. DyeInfo·재질·CanChangeColor 등 실제 지원 정보를 함께 본다.
-- 시트 필드는 Color32 RGBA이며 #RRGGBBAA 형태도 존재한다. UI는 확정대로 #RRGGBB를 받되, 원래 알파 보존·저장 규칙은 정해야 한다.
+다시 직접 확인한 사례:
+
+| 데이터 | 확인 결과 |
+|---|---|
+| Costume / Fashion_CreativePrint_Top_00 | DyeColor0~5 모두 null, Male_CreativePrint_Top_00 참조 |
+| Male_CreativePrint_Top_00.mat.json | _BaseMap 텍스처 참조, _TintColor=(1,1,1,1), _DyeColor1~3 색상 속성 존재 |
+| Human/Texture | Male_CreativePrint_Top_00.tga.png 존재 |
+| 같은 모델의 StageObjectModel | DyeInfo에는 Skin 연결만 존재. 머티리얼에 _DyeColor 속성이 있다는 사실만으로 의상용 염색 영역이 활성화됐다고 판단하지 않음 |
+| MMInstallAssembler.cs | new Material(m)으로 원본 재질 복사. slotColors에 값이 있을 때만 연결된 색상 속성을 덮어쓰고 GetColor(prop)로 현재 기본값 기록 |
+
+따라서 원본 초기 상태를 보존할 데이터와 로딩 경로가 있다. 개별 의상의 정확한 최종 발색은 셰이더·조명까지 포함해 렌더링 검증해야 한다. 위 표는 파일·코드 확인이며 이번에 재렌더링한 결과는 아니다.
+
+**확정된 초기화 규칙**
+
+1. 원본 머티리얼·텍스처 상태를 읽는다.
+2. Costume.DyeColor0~5 중 null이 아닌 값만 실제 DyeInfo 연결에 적용한다.
+3. null인 연결은 원본 값을 유지한다. 검정·흰색 등으로 임의 대체하지 않는다.
+4. JSON·자동 저장·실행 취소 복원에서는 그 위에 저장된 사용자 색을 적용한다.
+
+**확정된 자유 색상 정책**
+
+- 컬러피커·#RRGGBB 입력으로 임의의 RGB 색을 허용한다. 게임 팔레트·색상 해금·CanChangeColor·고정색 정책으로 색상 입력을 잠그지 않는다.
+- 게임의 정책상 제한과 실제 셰이더·머티리얼 반영 지점은 별개다. 원본 연결이 부족한 대상은 추가 연결·셰이더 구현이 필요하다. 색상 선택 자유가 모든 텍스처 영역의 즉시 염색 가능성을 증명하지는 않는다.
+- 시트 필드는 Color32 RGBA이며 #RRGGBBAA 형태도 존재한다. UI의 #RRGGBB 입력은 확정이며 원래 알파 보존·저장 규칙은 별도로 구체화한다.
 
 ### 4.3 여러 옷의 Slot0는 같은 편집 대상이 아니다
 
@@ -202,7 +223,7 @@ Costume에서 DyeColor0~5가 모두 null인 행은 97개다. 대표 예는 Fashi
 - Fashion_NewbieSword_Shoes: 트레이닝 코튼 슈즈.
 - 위 세 행은 남녀·어린 체형별 모델 참조와 기본색을 가진다. 단순한 일반 장비 ID로 시작하고 싶다면 좋은 대안이다.
 
-기본 외형은 FemaleAppearance_Default_01 또는 MaleAppearance_Default_01를 재사용할 수 있다. 초기 선택은 여전히 사용자 미정 사항이며 이 검토로 확정하지 않는다.
+**사용자 확정**: 마지막 작업이 없는 최초 실행에는 MaleAppearance_Default_01 / FemaleAppearance_Default_01 중 하나를 동일 확률로 무작위 선택한다. 선택한 행의 외형·색상 조합을 사용하고 이후 실행은 마지막 작업을 복원한다. 최초 착용 의상은 위 후보 중 아직 확정하지 않았다. 상세 정책은 [시작 설정](Startup.md)을 따른다.
 
 ## 7. 앱에서 구현할 기능
 
@@ -234,7 +255,7 @@ Costume에서 DyeColor0~5가 모두 null인 행은 97개다. 대표 예는 Fashi
 |---|---|---|
 | 1 | 필요한 시트·심볼·문자열 C# 로딩 | Costume ID로 이름·모델·기본색·숨김 정보 조회 |
 | 2 | 일반/직접 리소스 선택 상태 모델 | 선택 보존·미적용·예외 참조를 JSON으로 복원 |
-| 3 | 눈·입을 포함한 기본 외형 완성 | 기본 남녀 중 정한 후보가 정상 표시 |
+| 3 | 눈·입을 포함한 기본 외형 완성 | 두 기본 외형 프리셋이 각각 정상 표시되고 최초 선택·재실행 복원 검증 |
 | 4 | 상의·하의·신발과 염색 대상 분리 | Slot0를 한 부위에서 바꿔도 다른 옷은 유지 |
 | 5 | 성별 변경·원피스·모자 시험 | 미적용·가림·헤어 단계가 선택을 훼손하지 않음 |
 | 6 | 체형·얼굴형·키·나이 확장 | 데이터와 실제 변형·접합 결과 비교 |
@@ -264,4 +285,8 @@ Costume에서 DyeColor0~5가 모두 null인 행은 97개다. 대표 예는 Fashi
 - [CharacterCustomizeCostumeSet](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/Sheetdata/client/CharacterCustomizeCostumeSet.json)
 - [직접 모델 사례](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/ResourcesPackage/StageObjectModels/ModelParts/Top/Female_Acheron_Top_00.StageObjectModel.sjon.json)
 
-기존 기획의 확정 사항을 이번 검토에서 임의로 변경하지 않았다. 제안한 null 색 처리·호환 판정·이식 우선순위는 구현 단계에서 구체화한다.
+- [시트 기본색 null 의상의 머티리얼 사례](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/AssetPackages/Assets/PatchableAssets/Character/Player/Human/Materials/Male_CreativePrint_Top_00.mat.json)
+- [같은 모델의 염색 연결](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/ResourcesPackage/StageObjectModels/ModelParts/Top/Male_CreativePrint_Top_00.StageObjectModel.sjon.json)
+- [같은 이름의 원본 텍스처 추출본](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/AssetPackages/Assets/PatchableAssets/Character/Player/Human/Texture/Male_CreativePrint_Top_00.tga.png)
+
+초기색 보완과 자유 RGB·최초 외형 정책은 사용자 요청을 반영했다. 호환 판정·셰이더 연결·이식 우선순위는 구현 단계에서 구체화한다.
