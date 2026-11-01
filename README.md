@@ -26,3 +26,4 @@
 - [종료 팝업](Docs/ExitPopup.md): 종료 확인·딤 처리와 ESC 입력 우선순위.
 - [촬영모드](Docs/PhotoMode.md): 향후 촬영 기능의 검토 범위와 미정 사항.
 - [레퍼런스 조사](Docs/ReferenceResearch.md): 기존 꾸미기 도구의 기능 비교와 초기 기획 제안.
+- [구현 가능성 검토](Docs/FeasibilityReview.md): 언팩 시트·리소스·로더 코드에 근거한 기능별 가능성과 선행 작업.
