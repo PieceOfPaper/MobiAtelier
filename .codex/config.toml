@@ -1,0 +1,7 @@
+# Codex 프로젝트 설정. 프로젝트를 신뢰(trusted)로 등록해야 적용된다.
+# 공통 작업 지침은 루트의 AGENTS.md (Codex가 자동으로 읽는다).
+
+# 작업 폴더(D:\MobiAtelier) 안에서만 쓰고, 나머지는 읽기만 한다.
+# 게임 설치 폴더 등 작업 폴더 밖에 쓰지 않게 하는 장치이기도 하다.
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
