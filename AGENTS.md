@@ -40,15 +40,39 @@
 - 고치지 않는 폴더/파일: `Library\`, `Temp\`, `Logs\`, `UserSettings\`, `obj\`, `*.csproj`, `*.slnx`(모두 Unity·IDE가 만든다).
 - 패키지 추가·버전 변경(`Packages\manifest.json`), `ProjectSettings\` 변경은 사용자에게 먼저 묻는다.
 - 게임에서 꺼낸 리소스(텍스처, 메시, 시트 JSON 등)를 `Assets\`나 저장소에 넣지 않는다. 시험용 산출물은 git 제외 폴더에 둔다.
-- 폴더 구조와 어셈블리 정의(`.asmdef`)는 첫 구현 때 정하고 이 장에 적는다.
+- 폴더 구조와 어셈블리 정의(2026-11-01 정함). 프로젝트 이름 폴더(`Assets\MobiAtelier\`)를 따로 두지 않고 `Assets\` 바로 아래에 둔다.
+
+| 경로 | 어셈블리 | 내용 |
+|---|---|---|
+| `Assets\Scripts\Install\` | `MobiAtelier.Runtime` | 설치 폴더 index·blob·리소스 복호화·SJON 리더, 경로 검사. UnityEngine 비의존 |
+| `Assets\Scripts\Sheets\` | 〃 | 게임 시트 리더와 필드 순서(`SheetSchemas.cs`), 시트 조회(`GameData`). UnityEngine 비의존 |
+| `Assets\Scripts\Character\` | 〃 | 조립 계획(`PlanResolver`), 메시·번들 읽기, 조립(`CharacterAssembler`), 캐릭터 상태(`CharacterView`) |
+| `Assets\Scripts\State\` | 〃 | 장면 상태(`EditState`), 앱 설정, JSON 저장·자동 저장 |
+| `Assets\Scripts\App\`, `Assets\Scripts\UI\` | 〃 | 시작 흐름(`AppController`), 카메라, Windows 대화상자, UI Toolkit 오버레이 |
+| `Assets\Editor\` | `MobiAtelier.Editor` | 프로젝트 설정·빌드·설치 폴더 시험 스크립트 |
+| `Assets\Shaders\` | — | 캐릭터 셰이더 |
+| `Assets\Scenes\` | — | 앱 씬 `Main.unity` (`SampleScene.unity`는 템플릿 잔여물) |
+| `Assets\UI\` | — | UI 테마(`.tss`)·PanelSettings |
+
+- **네임스페이스는 쓰지 않는다.** 이 프로젝트 전용 코드이므로 모든 타입을 전역 네임스페이스에 둔다. 전역 타입은 `using`으로 가져온 같은 이름의 타입보다 우선하므로 UnityEditor 타입과의 이름 충돌도 생기지 않는다.
+  - 다른 패키지의 전역 타입과 이름이 겹쳐 모호성 오류(CS0433)가 나면 우리 쪽 클래스 이름을 바꾼다.
+- 어셈블리 정의는 런타임·에디터 두 개로 유지한다. 폴더를 더 나눠도 asmdef는 늘리지 않는다.
+
+- 앱 씬·PanelSettings·Build Settings는 손으로 만들지 않고 메뉴 `MobiAtelier/Setup Project`(`ProjectSetup.Run`)로 다시 만든다.
+- `Install\`, `Sheets\`는 UnityEngine을 쓰지 않게 유지한다. 그래야 .NET 콘솔로 설치 폴더를 빠르게 시험할 수 있다.
+- 게임 업데이트로 시트 행 크기가 맞지 않으면(`SheetFormatException`) `SheetSchemas.cs`의 필드 순서를 고친다.
 
 ## 6. 검증
 
-- 컴파일 확인: `dotnet build Assembly-CSharp.csproj -nologo -v q` (에디터 코드는 `Assembly-CSharp-Editor.csproj`). 약 5초.
+- 컴파일 확인: `dotnet build MobiAtelier.Runtime.csproj -nologo -v q` (에디터 코드는 `MobiAtelier.Editor.csproj`). 약 5초. csproj 이름은 asmdef 이름을 따른다.
   - csproj는 Unity가 만들며 `.cs` 파일을 하나씩 나열한다. **새 파일은 Unity가 csproj를 다시 만들기 전까지 빌드에 포함되지 않는다.** 이때는 아래 배치 모드를 쓰거나 사용자에게 에디터 포커스(재컴파일)를 요청한다.
 - 배치 모드(에디터에서 이 프로젝트가 열려 있으면 실패한다):
   `"C:\Program Files\Unity\Hub\Editor\6000.3.27f2\Editor\Unity.exe" -batchmode -nographics -projectPath D:\MobiAtelier -quit -logFile Logs\batch.log`
   오류는 `Logs\batch.log`에서 `error CS`로 찾는다.
+- 설치 폴더 조립 시험(그래픽 필요, `-nographics` 없이): `-executeMethod InstallSmokeTest.Run -maInstall <install> -maOut <저장소 밖 폴더>`. 두 기본 외형과 의상 조합을 촬영하고 `log.txt`를 남긴다.
+- Windows 빌드: `-buildTarget Win64 -executeMethod BuildPlayer.Windows -maBuildOut <폴더>`(처음 약 2분, 이후 약 15초).
+  - 빌드 실행 시험: `MobiAtelier.exe -maDataDir <임시 폴더> -maScreenshot <png> [-maShotDelay 초]`. `-maDataDir`로 사용자의 실제 자동 저장을 건드리지 않는다.
+- 게임 리소스가 찍힌 촬영본·빌드 결과는 저장소에 넣지 않는다.
 - 플레이 결과나 화면 확인이 필요한데 직접 볼 수 없으면, 확인할 항목을 구체적으로 적어 사용자에게 요청한다. 확인하지 않은 것을 완료로 쓰지 않는다.
 
 ## 7. 기획 문서 규칙

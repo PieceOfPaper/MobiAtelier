@@ -5,8 +5,8 @@
 
 ## 1. 현재 단계
 
-- 기획 단계. 프로그램 흐름과 항목별 세부 기획서를 작성했다(`README.md` 기획서 목록).
-- Unity 프로젝트는 템플릿 상태다(`Assets\Scenes\SampleScene.unity`, URP 설정, Input System 액션). 구현 코드는 아직 없다.
+- 구현 1단계(기반·시작 흐름·기본 외형 표시)를 마쳤다. 꾸미기 창(외형·의상·염색 편집 UI)은 아직 없다.
+- 폴더 구조·어셈블리 정의·네임스페이스 규칙은 `AGENTS.md` 5장, 검증 명령은 6장에 있다.
 
 ## 2. 최근 작업
 
@@ -15,16 +15,56 @@
 | 2026-11-01 | 레퍼런스 조사, 프로그램 플로우와 항목별 기획서 분리 |
 | 2026-11-01 | 의상 초기색 재검토, 자유 RGB 편집·최초 외형 2종 무작위 선택 확정. Dye·Startup·ProgramFlow·FeasibilityReview 갱신 |
 | 2026-11-01 | 에이전트 공통 지침(`AGENTS.md`, `CLAUDE.md`), Claude Code·Codex 프로젝트 설정, 이 문서 추가 |
+| 2026-11-01 | 구현 1단계: 설치 폴더 리더, 시트 리더, 경로 검사·지정 팝업, 자동 저장·복원·복구 안내, 조립기, 카메라, 앱 씬·빌드 설정 |
+| 2026-11-01 | 폴더 정리(사용자 요청): `Assets\MobiAtelier\` 제거 → `Assets\Scripts·Editor·Shaders·Scenes·UI`, 네임스페이스 제거(전역). 정리 후 조립 시험·빌드·첫 실행 재확인 |
+
+### 구현 1단계 내용
+
+| 기능 | 구현 | 확인 |
+|---|---|---|
+| 설치 폴더 읽기 | index·blob·리소스 복호화·SJON·SMM, 번들 직접 열기 | [확인] index 246,782 / 135,796 경로, 모델 정의 12,387개 |
+| 시트 리더 | Costume, CostumeModelVariant, CharacterPresetAppearance, Head/Hair/Eyes/Mouth, BodyTypes, 색 시트 4종. 행 크기 불일치 시 `SheetFormatException` | [확인] Costume 1,679행, 프리셋 119행, 변형 132행, 시트 기본색 전부 null 97행, HidingParts=Bottom 단독 329행 (기획서 수치와 일치), 읽기 약 200ms |
+| 경로 검사 (Startup.md) | 경로 → 필수 index 4개 → index 형식 → 시트·심볼 존재 → 시트 해석. 실패 단계별 문구 | [확인] 빌드 실행: 잘못된 경로에서 팝업·원인 표시 |
+| 경로 지정 팝업 | 입력란, 폴더 선택(Windows 대화상자), 다음·Enter, 종료, 검사 중 버튼 잠금, 공백·따옴표 정리. 성공한 경로만 설정에 저장 | 화면 [확인]. 폴더 선택 대화상자·클릭 조작은 [미확인] |
+| 최초 외형 | 두 기본 프리셋 50% 무작위, 의상 없이 시작, 즉시 자동 저장 | [확인] 빌드 실행: 첫 실행 저장 → 재실행 시 같은 프리셋 복원 |
+| 복원 실패 | 손상·형식 미지원 구분, 기존 파일 보존(`autosave.broken-*.json`), 백업 복구·다른 JSON·새 작업·종료 | 안내 화면 [확인]. 각 버튼 동작은 [미확인] |
+| 자동 저장 | `persistentDataPath\autosave.json`, 임시 파일 후 교체 + `.bak`, 1초 유휴 후 저장, 종료 시 대기분 저장 | 첫 실행 저장 [확인] |
+| 조립 | 몸·머리·헤어(체형별 행)·눈(머리형별 행)·의상(성별·나이별 모델), 포즈, 체형 블렌드셰이프·체형 머티리얼, 몸 가리기 근사, 모자 헤어 단계·HideHair 등 | [확인] 촬영: 두 프리셋, 초보자 상하의·신발, 원피스 |
+| 의상 상태 | 적용 / 다른 의상에 가림 / 성별 불일치 / 외형에 맞는 모델 없음 / 없는 ID / 리소스 없음. 미적용 의상은 가림 효과도 없음 | [확인] 남성+여성 전용 원피스 → 미적용, 하의 유지. 여성+원피스 → 하의 가림 |
+| 염색 | 파츠 키 + 슬롯으로 연결. Slot0~5는 파츠별, Skin·Hair·Hair1·Eye·Mouth는 외형 색(전체). 시트 null 슬롯은 원본 머티리얼 값 유지 | [확인] 원피스 Slot1만 #FF00FF 지정 시 해당 영역만 변경 |
+| 카메라 | 좌·우 단독 회전, 좌+우 팬(화면 오프셋, 회전 중심은 캐릭터), 스크롤 줌, UI에서 시작한 드래그 차단, 포커스 잃으면 해제, 상태 저장 | 코드만. 조작은 [미확인] |
+| 창 | 창 모드·크기 변경 허용, 기본 1280×800. 저장된 시점이 없으면 화면비에 맞춰 기본 거리 결정 | [확인] 1280×800, 560×1000 촬영 |
 
 ## 3. 다음 할 일
 
-- 미정 기획 항목 결정: 최초 착용 의상(`Docs\Startup.md`), 카메라의 실행 취소 포함 여부 등.
-- 폴더 구조·어셈블리 정의 결정 후 `AGENTS.md` 5장에 기록.
-- 설치 폴더 읽기·캐릭터 조립 구조 설계.
+1. 사용자 확인: 에디터 Play·빌드에서 마우스 조작(카메라, 팝업 버튼, 폴더 선택 대화상자). 아래 4장의 확인 요청 참고.
+2. 꾸미기 창(`WindowAndCustomizationUI.md`): 이동·크기 조절·배치 저장, 탭(외형/의상/염색), 검색 드롭다운, 미적용 빨간색 표시.
+3. 외형·의상·염색 편집 → 조립 갱신. 지금은 상태가 바뀌면 캐릭터 전체를 다시 조립한다(프리셋 1회 약 50~200ms [확인: 에디터 배치]).
+4. JSON 저장·불러오기 대화상자, 실행 취소·다시 실행, 종료 팝업.
+5. 눈·입 표시 개선(아래 함정 참고), 얼굴형·키·나이.
 
 ## 4. 인계 메모
 
-- 최초 외형은 MaleAppearance_Default_01 / FemaleAppearance_Default_01 중 동일 확률로 선택한다. 마지막 작업이 있으면 무작위 선택 없이 복원한다. 초기 의상은 아직 미정이다.
-- 임의 RGB 색상을 허용한다. 게임 팔레트·CanChangeColor 정책으로 입력을 잠그지 않는다. 실제 셰이더 연결 지원 여부는 별도로 검증한다.
-- Costume.DyeColor0~5의 null은 초기색 부재가 아니다. 원본 재질·텍스처 상태에 유효한 시트 기본값을 덮어쓰고, 복원 시 저장된 사용자 색을 적용한다.
-- 이번 보완은 문서·코드 확인이다. Unity 렌더링을 재실행하지 않았다.
+- **사용자에게 받은 결정 (2026-11-01)**
+  - `com.unity.inputsystem` 1.12.0 → 1.20.1. 1.12.0은 Unity 6000.3.27f2에서 패키지 자체가 컴파일되지 않았다(CS0117 `BuildTarget.ReservedCFE`).
+  - `com.unity.modules.assetbundle` 추가(번들 직접 열기에 필요).
+  - ProjectSettings: 창 모드(Windowed)·`resizableWindow` 켬·기본 1280×800, Build Settings 씬을 `Assets/Scenes/Main.unity` 하나로. `ProjectSetup.Run`이 설정한다. Unity가 `ProjectSettings/SceneTemplateSettings.json`을 새로 만들었다.
+- **채택한 제안**: 마지막 정상 경로 기억, 손상 파일 보존과 복구 안내(백업·다른 JSON·새 작업), 자동 저장 유휴 합치기·임시 파일 교체·백업. 기획서 상태 표기는 바꾸지 않았다. 확정으로 올릴지 사용자에게 확인한다.
+- **추정으로 구현한 것**
+  - 14세 미만을 유아 모델(Infant*/Boy/Girl)로 본다 [추정].
+  - 외형 색 연결: Skin=SkinColor.ColorCode, Hair=HairColor.ColorCode1, Hair1=ColorCode2(HairType TwoColor일 때만), Eye=EyeColor, Mouth=MouthColor. Skin_Details0/1(손바닥 등)은 원본 값 유지 [추정].
+  - 포즈: `H{M|F|C}@Customize_Pose_08_{체형}`, 없으면 `_Default`.
+  - 모자 헤어 단계: 모자 메시 `Mesh_Helmet_*_C<n>` → 헤어 `H<n>` [추정].
+- **알게 된 함정**
+  - 눈 재질(Eye_Base·Eye_Pupil, 큐 2440대, `_ALPHAPREMULTIPLY_ON`)은 대체 셰이더로 그리면 눈 주변에 흰 사각형이 생긴다. 지금은 눈 파츠만 게임 원본 셰이더를 그대로 쓴다(`CharacterAssembler.KeepOriginalEyeShader`). 흰 사각형은 없어졌지만 홍채색·명암이 정확하지 않다. 원본 셰이더 식 분석 후 대체 셰이더에 눈 처리를 추가해야 한다.
+  - 입(CharacterMouth)은 메시가 아니라 얼굴 머티리얼의 텍스처(`_EmotionMouthMap`)다. 아직 표시하지 않고 화면 메모로 알린다.
+  - 키(HeightModifier)·나이 본 스케일(.bdc), 얼굴형 맞춤(FacialMorph), CostumeModelVariant 예외 모델은 아직 적용하지 않는다(시트는 읽음).
+  - 몸 가리기는 근사다. 의상 조합에 따라 피부가 비치거나 과하게 잘릴 수 있다.
+  - UI Toolkit 기본 글꼴에 한글이 없어 Windows의 맑은 고딕을 런타임에 불러온다(`AppUI.ApplySystemFont`). 글꼴 파일은 포함하지 않는다.
+  - 폴더·네임스페이스 규칙은 사용자 결정이다: 프로젝트 이름 폴더 없이 `Assets\` 바로 아래, 네임스페이스 없음(`AGENTS.md` 5장).
+  - Unity가 패키지 재임포트·빌드 때 `Assets/Settings/`의 URP 설정 에셋 4개와 `ProjectSettings/UnityConnectSettings.asset`을 스스로 다시 썼다. 커밋 포함 여부는 사용자가 정한다.
+  - 에디터 배치 시험의 촬영본·빌드는 세션 임시 폴더에 두었고 저장소에 넣지 않았다.
+- **사용자 확인 요청** (직접 조작해 보지 못함)
+  1. 에디터에서 `Assets/Scenes/Main.unity` Play: 캐릭터가 뜨는지, 좌·우·좌+우 드래그와 휠이 기획대로인지.
+  2. `%USERPROFILE%\AppData\LocalLow\DefaultCompany\MobiAtelier\settings.json`의 installPath를 없는 경로로 바꾸고 Play: 팝업의 폴더 선택 버튼이 Windows 폴더 대화상자를 여는지, 취소 시 입력값이 유지되는지, 정상 폴더 선택 후 다음으로 진행되는지.
+  3. 위 폴더의 `autosave.json`을 망가뜨리고 Play: 복구 안내의 각 버튼이 동작하는지.
