@@ -183,7 +183,9 @@ MMInstallAssembler.cs의 AssemblySpec.costumes는 현재 패션장비 ID가 아�
 - 미적용 원피스가 하의까지 숨기는 오류, 가려진 하의가 몸 자르기에 참여하는 오류를 피한다.
 - 정확도가 부족하면 ClothingUnit 해석 또는 지원 조합별 근사 보완이 필요하다.
 
-## 5. 숨겨진 리소스 옵션의 실제 근거
+## 5. 에디터 전용 추가 리소스의 실제 근거
+
+> 2026-11-02 정책 갱신: 아래 탐색은 `UNITY_EDITOR`에서만 제공한다. 일반 빌드에는 추가 리소스 옵션을 노출하지 않는다. 숨김 필드·공개 시각에 따른 목록 제한과 ID 표기는 [의상 기획](Equipment.md)을 따른다.
 
 직접 확인한 예: Female_Acheron_Top_00.
 
@@ -226,7 +228,7 @@ MMInstallAssembler.cs의 AssemblySpec.costumes는 현재 패션장비 ID가 아�
 - Fashion_NewbieSword_Shoes: 트레이닝 코튼 슈즈.
 - 위 세 행은 남녀·어린 체형별 모델 참조와 기본색을 가진다. 단순한 일반 장비 ID로 시작하고 싶다면 좋은 대안이다.
 
-**사용자 확정**: 마지막 작업이 없는 최초 실행에는 MaleAppearance_Default_01 / FemaleAppearance_Default_01 중 하나를 동일 확률로 무작위 선택한다. 선택한 행의 외형·색상 조합을 사용하고 이후 실행은 마지막 작업을 복원한다. 최초 착용 의상은 위 후보 중 아직 확정하지 않았다. 상세 정책은 [시작 설정](Startup.md)을 따른다.
+**사용자 확정**: 마지막 작업이 없는 최초 실행에는 MaleAppearance_Default_01 / FemaleAppearance_Default_01 중 하나를 동일 확률로 무작위 선택한다. 선택한 행의 외형·색상 조합을 사용하고 이후 실행은 마지막 작업을 복원한다. 최초 착용 의상은 2026-11-02에 Fashion_NewbieSword_Top / Bottom / Shoes로 확정했다. 상세 정책은 [시작 설정](Startup.md)을 따른다.
 
 ## 7. 앱에서 구현할 기능
 
