@@ -27,5 +27,6 @@
 - [초기화](Docs/Reset.md): 현재 성별의 기본 외형·초보자 의상·카메라 복원, 확인 팝업과 이력 삭제.
 - [종료 팝업](Docs/ExitPopup.md): 종료 확인·딤 처리와 ESC 입력 우선순위.
 - [촬영모드](Docs/PhotoMode.md): 향후 촬영 기능의 검토 범위와 미정 사항.
+- [레퍼런스 대비 차이·보강안](Docs/ReferenceGapReview.md): 현재 확정 기획과의 차이, 의상 재탐색·시점·결과 공유·부분 불러오기·A/B 비교 제안.
 - [레퍼런스 조사](Docs/ReferenceResearch.md): 기존 꾸미기 도구의 기능 비교와 초기 기획 제안.
 - [구현 가능성 검토](Docs/FeasibilityReview.md): 언팩 시트·리소스·로더 코드에 근거한 기능별 가능성과 선행 작업.
