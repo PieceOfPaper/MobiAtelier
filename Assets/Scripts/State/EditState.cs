@@ -16,6 +16,8 @@ public class EditState
     public AppearanceState appearance = new AppearanceState();
     public List<CostumeSlotState> costumes = new List<CostumeSlotState>();
     public CameraState camera = new CameraState();
+    /// <summary>스튜디오 배경 시트(StudioBackground) Id(Background.md). 비어 있거나 고를 수 없는 ID 면 기본 배경으로 표시하고 값은 그대로 둔다.</summary>
+    public string background;
 
     public CostumeSlotState Costume(string part)
     {

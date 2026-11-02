@@ -5,6 +5,8 @@
 //   w  = 1 - min(g * 2, 1), w *= (w >= 1/128)    0.5 아래: 채널별 염색 가중치
 //   albedo = saturate((_DyeColor1*w.r + _DyeColor2*w.g + _DyeColor3*w.b) * 1.347368 + hi)
 // 조명은 원본이 아니라 단순 툰 근사다. _AlbedoOnly = 1 이면 조명 없이 알베도만 출력한다.
+// 캐릭터 몸의 그늘은 이 셰이더의 툰 명암과 헤어 그림자 메시(Hair_Shadow)로만 그린다.
+// Unity 실시간 그림자(그림자 맵)는 받지 않는다(이중 그림자 방지, 2026-11-02). 드리우기(ShadowCaster)는 바닥 그림자용으로 남긴다.
 // _UseTexAlpha = 1 이면 텍스처 알파를 투명도로 쓴다(눈 하이라이트·그림자 등 반투명 재질).
 Shader "MobiAtelier/Character"
 {
@@ -52,7 +54,6 @@ Shader "MobiAtelier/Character"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
-            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; };
@@ -87,14 +88,9 @@ Shader "MobiAtelier/Character"
                 if (_AlbedoOnly > 0.5) return float4(albedo, alpha);
 
                 float3 n = normalize(i.normalWS) * (front ? 1.0 : -1.0);
-                #if defined(_MAIN_LIGHT_SHADOWS_SCREEN)
-                    float4 shadowCoord = ComputeScreenPos(TransformWorldToHClip(i.positionWS));
-                #else
-                    float4 shadowCoord = TransformWorldToShadowCoord(i.positionWS);
-                #endif
-                Light L = GetMainLight(shadowCoord);
+                Light L = GetMainLight();
                 float ndl = dot(n, L.direction) * 0.5 + 0.5;
-                float lit = smoothstep(0.42, 0.58, ndl * lerp(1.0, L.shadowAttenuation, 0.8));
+                float lit = smoothstep(0.42, 0.58, ndl);
                 float3 shade = lerp(_ShadeColor.rgb, 1.0, lit);
                 float3 rim = pow(1.0 - saturate(dot(n, normalize(GetWorldSpaceViewDir(i.positionWS)))), 4.0) * 0.12;
                 float3 col = albedo * shade * L.color + rim * albedo;

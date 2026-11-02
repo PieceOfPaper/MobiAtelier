@@ -235,6 +235,8 @@ public static class CharacterAssembler
                 smr.bones = bt;
                 smr.rootBone = bt.Length > 0 ? bt[0] : root.transform;
                 smr.updateWhenOffscreen = true;
+                // 캐릭터 그늘은 셰이더 툰 명암·헤어 그림자 메시가 그린다. Unity 그림자 맵은 받지 않고 바닥에 드리우기만 한다.
+                smr.receiveShadows = false;
 
                 var srcMats = morph ?? (psmr ? psmr.sharedMaterials : Array.Empty<Material>());
                 var subMats = new Material[mesh.subMeshCount];

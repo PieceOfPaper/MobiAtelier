@@ -14,6 +14,7 @@ using UnityEngine.UIElements;
 public sealed class AppController : MonoBehaviour
 {
     public Shader characterShader;
+    public Shader gradientShader;
     public PanelSettings panelSettings;
 
     AppSettings settings;
@@ -27,6 +28,7 @@ public sealed class AppController : MonoBehaviour
     EditState state;
     AssemblyPlan plan;
     CustomizePanel panel;
+    StudioBackground background;
 
     public EditState State => state;
     public GameData Data => data;
@@ -71,6 +73,11 @@ public sealed class AppController : MonoBehaviour
 
     void Update() => autosave?.Tick(Time.unscaledDeltaTime);
 
+    void LateUpdate()
+    {
+        if (background != null && cameraCtl) background.UpdateOccluders(cameraCtl.Cam.transform.position, cameraCtl.Pivot);
+    }
+
     bool OnWantsToQuit()
     {
         if (autosave != null && autosave.Pending) autosave.Flush();
@@ -81,6 +88,7 @@ public sealed class AppController : MonoBehaviour
     {
         Application.wantsToQuit -= OnWantsToQuit;
         if (view) DestroyImmediate(view.gameObject);
+        background?.Dispose();
         bundles?.Dispose();
     }
 
@@ -125,6 +133,8 @@ public sealed class AppController : MonoBehaviour
         files = r.Files;
         data = r.Data;
         bundles = new BundleCache(files);
+        background = new StudioBackground(cameraCtl.Cam, bundles, gradientShader);
+        if (data.BackgroundError != null) Debug.LogWarning("[MobiAtelier] 배경 시트를 읽지 못했습니다: " + data.BackgroundError);
         if (settings.installPath != path)
         {
             settings.installPath = path;
@@ -208,13 +218,15 @@ public sealed class AppController : MonoBehaviour
         try
         {
             Build(newState);
+            string bgError = background.Apply(StudioBackground.Resolve(data, state.background));
+            if (bgError != null) Debug.LogWarning("[MobiAtelier] " + bgError);
             var b = view.VisibleBounds();
             cameraCtl.Pivot = new Vector3(0, b.size.y > 0.1f ? b.center.y : 0.9f, 0);
             cameraCtl.FitSize(b.size.y, Mathf.Max(b.size.x, b.size.z));
             cameraCtl.Load(state.camera);
             ui.HideLoading();
             EnsurePanel();
-            panel.SetError(null);
+            panel.SetError(bgError);
             panel.Refresh(state, plan);
             if (saveNow) autosave.Flush();
         }
@@ -245,8 +257,26 @@ public sealed class AppController : MonoBehaviour
     void EnsurePanel()
     {
         if (panel != null) return;
-        panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit, EditColors, () => view);
+        panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit, EditColors, () => view,
+            () => background?.CurrentId, SetBackground);
         panel.Bind(data);
+    }
+
+    /// <summary>
+    /// 배경 선택(Background.md). 장면 상태이므로 자동 저장·코디 JSON 에 들어간다(SaveLoad.md 확정 원칙).
+    /// 캐릭터는 다시 조립하지 않는다. 카메라 시점은 바꾸지 않는다.
+    /// </summary>
+    void SetBackground(string id)
+    {
+        if (state == null || background == null || data == null || ui.ModalOpen) return;
+        string error = background.Apply(StudioBackground.Resolve(data, id));
+        var next = state.Clone();
+        next.camera = cameraCtl.Save();
+        next.background = background.CurrentId;
+        state = next;
+        autosave.MarkDirty();
+        panel.SetError(error);
+        panel.Refresh(state, plan);
     }
 
     void SaveSettings()

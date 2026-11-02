@@ -17,6 +17,7 @@ public static class ProjectSetup
     const string PanelPath = "Assets/UI/MobiAtelierPanel.asset";
     const string ThemePath = "Assets/UI/MobiAtelierTheme.tss";
     const string ShaderPath = "Assets/Shaders/MobiCharacter.shader";
+    const string GradientShaderPath = "Assets/Shaders/StudioGradient.shader";
 
     [MenuItem("MobiAtelier/Setup Project")]
     public static void Run()
@@ -43,8 +44,10 @@ public static class ProjectSetup
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
         var app = new GameObject("MobiAtelier").AddComponent<AppController>();
         app.characterShader = AssetDatabase.LoadAssetAtPath<Shader>(ShaderPath);
+        app.gradientShader = AssetDatabase.LoadAssetAtPath<Shader>(GradientShaderPath);
         app.panelSettings = panel;
         if (!app.characterShader) Debug.LogError("[MobiAtelier] 셰이더를 찾지 못했습니다: " + ShaderPath);
+        if (!app.gradientShader) Debug.LogError("[MobiAtelier] 셰이더를 찾지 못했습니다: " + GradientShaderPath);
         EditorSceneManager.SaveScene(scene, ScenePath);
 
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };

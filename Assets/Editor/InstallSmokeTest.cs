@@ -61,6 +61,73 @@ public static class InstallSmokeTest
                     UnityEngine.Object.DestroyImmediate(view.gameObject);
                 }
 
+                // -maBackgrounds ID1;ID2;... : 앱과 같은 방식(StudioBackground)으로 배경을 적용해 촬영한다. all 이면 고를 수 있는 배경 전부.
+                string bgs = Arg("-maBackgrounds");
+                if (bgs != null)
+                {
+                    log.AppendLine($"배경 시트: {data.Backgrounds.Count}행 {(data.BackgroundError ?? "")}");
+                    foreach (var b in data.Backgrounds)
+                        log.AppendLine($"  {b.Id} {b.DisplayName} 개발용 {b.DevOnly} 선택 가능 {StudioBackground.Selectable(b)} 색 {b.LeftUpper}/{b.LeftBottom} 프리팹 {string.Join("+", b.Prefabs)}");
+                    var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
+                    s.costumes.Add(new CostumeSlotState { part = "Top", costumeId = "Fashion_NewbieSword_Top" });
+                    s.costumes.Add(new CostumeSlotState { part = "Bottom", costumeId = "Fashion_NewbieSword_Bottom" });
+                    s.costumes.Add(new CostumeSlotState { part = "Shoes", costumeId = "Fashion_NewbieSword_Shoes" });
+                    var view = CharacterAssembler.Build(files, bundles, PlanResolver.Resolve(s, data, files), shader, log);
+                    var studio = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"));
+                    var ids = new System.Collections.Generic.List<string>();
+                    if (bgs == "all") { foreach (var b in data.Backgrounds) if (StudioBackground.Selectable(b) && !b.DevOnly) ids.Add(b.Id); }
+                    else ids.AddRange(bgs.Split(';'));
+                    foreach (var id in ids)
+                    {
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        string err = studio.Apply(StudioBackground.Resolve(data, id));
+                        log.AppendLine($"[{id}] 적용 {studio.CurrentId} {sw.ElapsedMilliseconds}ms {err}");
+                        Capture(cam, view, Path.Combine(outDir, $"bg_{id}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
+                        Capture(cam, view, Path.Combine(outDir, $"bg_{id}_34.png"), 145, 10, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
+                    }
+                    studio.Apply(null);
+                    UnityEngine.Object.DestroyImmediate(view.gameObject);
+                    File.WriteAllText(Path.Combine(outDir, "log.txt"), log.ToString(), new UTF8Encoding(false));
+                    EditorApplication.Exit(0);
+                    return;
+                }
+
+                // -maProbePrefab 경로1;경로2;... : 배경 프리팹을 열어 구성(렌더러·셰이더·조명·범위)을 로그에 쓰고 기본 외형과 함께 촬영한다.
+                //   경로는 Assets/PatchableAssets/ 아래 상대 경로. 한 항목에 여러 프리팹은 + 로 잇는다.
+                string probe = Arg("-maProbePrefab");
+                if (probe != null)
+                {
+                    if (Array.IndexOf(Environment.GetCommandLineArgs(), "-maBgPass") >= 0) StudioBackgroundRendering.Install();
+                    var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
+                    var plan = PlanResolver.Resolve(s, data, files);
+                    var view = CharacterAssembler.Build(files, bundles, plan, shader, log);
+                    int n = 0;
+                    foreach (var entry in probe.Split(';'))
+                    {
+                        n++;
+                        var roots = new System.Collections.Generic.List<GameObject>();
+                        foreach (var rel in entry.Split('+'))
+                        {
+                            var sw = System.Diagnostics.Stopwatch.StartNew();
+                            int before = bundles.Count;
+                            var prefab = bundles.LoadAsset<GameObject>(BundleCache.AssetRoot + rel);
+                            log.AppendLine($"[{n}] {rel}: {(prefab ? "열림" : "실패")} {sw.ElapsedMilliseconds}ms, 번들 {before}→{bundles.Count}");
+                            if (!prefab) continue;
+                            var go = UnityEngine.Object.Instantiate(prefab);
+                            roots.Add(go);
+                            DescribePrefab(go, log);
+                        }
+                        Capture(cam, view, Path.Combine(outDir, $"probe{n}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                        Capture(cam, view, Path.Combine(outDir, $"probe{n}_wide.png"), 180, 10, 9f, new Vector3(0, 1.2f, 0), 1280, 800);
+                        Capture(cam, view, Path.Combine(outDir, $"probe{n}_back.png"), 0, 10, 6f, new Vector3(0, 1.2f, 0), 1280, 800);
+                        foreach (var go in roots) UnityEngine.Object.DestroyImmediate(go);
+                    }
+                    UnityEngine.Object.DestroyImmediate(view.gameObject);
+                    File.WriteAllText(Path.Combine(outDir, "log.txt"), log.ToString(), new UTF8Encoding(false));
+                    EditorApplication.Exit(0);
+                    return;
+                }
+
                 // -maOutfit 이름:Top=ID,Gloves=ID;이름2:... : 지정 조합만 조립해 전신·팔·발을 촬영한다(관통 진단용).
                 //   age=14, height=-1, gender=Male, body=Fat 도 같은 자리에 쓸 수 있다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
@@ -132,6 +199,67 @@ public static class InstallSmokeTest
         catch (Exception e) { log.AppendLine(e.ToString()); Debug.LogException(e); code = 1; }
         File.WriteAllText(Path.Combine(outDir, "log.txt"), $"Unity {Application.unityVersion}, {SystemInfo.graphicsDeviceType}\n{log}", new UTF8Encoding(false));
         EditorApplication.Exit(code);
+    }
+
+    static void DescribePrefab(GameObject go, StringBuilder log)
+    {
+        var t = go.transform;
+        log.AppendLine($"  루트 위치 {t.position} 회전 {t.eulerAngles} 크기 {t.localScale}");
+        var comps = new System.Collections.Generic.Dictionary<string, int>();
+        foreach (var c in go.GetComponentsInChildren<Component>(true))
+        {
+            string k = c ? c.GetType().Name : "(없는 스크립트)";
+            comps[k] = comps.TryGetValue(k, out var v) ? v + 1 : 1;
+        }
+        log.AppendLine("  컴포넌트: " + string.Join(", ", System.Linq.Enumerable.Select(comps, kv => kv.Key + "×" + kv.Value)));
+        var shaders = new System.Collections.Generic.Dictionary<string, int>();
+        Bounds b = default; bool any = false;
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+        {
+            if (any) b.Encapsulate(r.bounds); else { b = r.bounds; any = true; }
+            foreach (var m in r.sharedMaterials)
+            {
+                string k = !m ? "(재질 없음)" : !m.shader ? m.name + ":(셰이더 없음)" : m.shader.name + (m.shader.isSupported ? "" : " [미지원]");
+                shaders[k] = shaders.TryGetValue(k, out var v) ? v + 1 : 1;
+            }
+        }
+        log.AppendLine($"  렌더러 범위 {(any ? b.ToString() : "-")}");
+        log.AppendLine("  셰이더: " + string.Join(", ", System.Linq.Enumerable.Select(shaders, kv => kv.Key + "×" + kv.Value)));
+        var seen = new System.Collections.Generic.HashSet<Shader>();
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+            foreach (var m in r.sharedMaterials)
+            {
+                if (!m || !m.shader || !seen.Add(m.shader)) continue;
+                var tags = new System.Collections.Generic.List<string>();
+                for (int p = 0; p < m.shader.passCount; p++)
+                    tags.Add(m.shader.FindPassTagValue(p, new UnityEngine.Rendering.ShaderTagId("LightMode")).name);
+                log.AppendLine($"  패스 {m.shader.name}: {string.Join(", ", tags)} (렌더러 {r.name}, 큐 {m.renderQueue})");
+            }
+        foreach (var l in go.GetComponentsInChildren<Light>(true))
+            log.AppendLine($"  조명 {l.name}: {l.type} {l.color} 세기 {l.intensity} 그림자 {l.shadows} 모드 {l.lightmapBakeType} 회전 {l.transform.eulerAngles} 켜짐 {l.isActiveAndEnabled}");
+        int lm = 0; foreach (var r in go.GetComponentsInChildren<MeshRenderer>(true)) if (r.lightmapIndex >= 0 && r.lightmapIndex < 0xFFFE) lm++;
+        log.AppendLine($"  라이트맵 인덱스를 가진 렌더러 {lm}개");
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r.sharedMaterials.Length == 0) continue;
+            var m = r.sharedMaterial;
+            if (go.GetComponentsInChildren<Renderer>(true).Length > 6) break;   // 작은 프리팹만 재질 값을 자세히 쓴다
+            log.AppendLine($"  렌더러 {r.name} ({r.GetType().Name}) 위치 {r.transform.position} 크기 {r.transform.lossyScale} 그림자 받기 {r.receiveShadows} 드리우기 {r.shadowCastingMode}");
+            if (!m || !m.shader) continue;
+            var sh = m.shader;
+            for (int i = 0; i < sh.GetPropertyCount(); i++)
+            {
+                string pn = sh.GetPropertyName(i);
+                switch (sh.GetPropertyType(i))
+                {
+                    case UnityEngine.Rendering.ShaderPropertyType.Color: log.AppendLine($"    {pn} = {m.GetColor(pn)}"); break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Float:
+                    case UnityEngine.Rendering.ShaderPropertyType.Range: log.AppendLine($"    {pn} = {m.GetFloat(pn)}"); break;
+                    case UnityEngine.Rendering.ShaderPropertyType.Texture: var tx = m.GetTexture(pn); if (tx) log.AppendLine($"    {pn} = {tx.name}"); break;
+                }
+            }
+            log.AppendLine($"    키워드: {string.Join(" ", m.shaderKeywords)} 큐 {m.renderQueue}");
+        }
     }
 
     static void Capture(Camera cam, CharacterView ch, string file, float yaw, float pitch, float dist, Vector3 target, int w = 768, int h = 1024)

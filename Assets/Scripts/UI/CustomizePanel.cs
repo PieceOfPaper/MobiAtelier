@@ -30,6 +30,7 @@ public sealed class CustomizePanel
     {
         ("appearance", "외형", true),
         ("costume", "의상", true),
+        ("background", "배경", false),
     };
 
     /// <summary>Costume.CostumeType → 표시 이름. 순서는 사용자 결정(2026-11-02).</summary>
@@ -54,6 +55,8 @@ public sealed class CustomizePanel
     readonly Action saveSettings;
     readonly Action<Action<EditState>> edit, editColors;
     readonly Func<CharacterView> view;
+    readonly Func<string> backgroundId;
+    readonly Action<string> setBackground;
     readonly Dictionary<string, Foldout> foldouts = new Dictionary<string, Foldout>();
     readonly List<Action> refreshers = new List<Action>();
 
@@ -69,9 +72,13 @@ public sealed class CustomizePanel
     /// <param name="edit">장면 상태를 바꾸는 요청. 복사본을 바꿔 조립에 성공하면 반영한다(AppController.Edit).</param>
     /// <param name="editColors">색만 바꾸는 요청. 다시 조립하지 않고 머티리얼 색만 바꾼다(AppController.EditColors).</param>
     /// <param name="view">지금 조립된 캐릭터(염색 파트 조회·미리보기)</param>
+    /// <param name="backgroundId">지금 배경 ID</param>
+    /// <param name="setBackground">배경 선택(장면 상태. 캐릭터를 다시 조립하지 않는다)</param>
     public CustomizePanel(VisualElement host, AppSettings settings, Action saveSettings, Action<Action<EditState>> edit,
-        Action<Action<EditState>> editColors, Func<CharacterView> view)
+        Action<Action<EditState>> editColors, Func<CharacterView> view, Func<string> backgroundId, Action<string> setBackground)
     {
+        this.backgroundId = backgroundId;
+        this.setBackground = setBackground;
         this.host = host;
         this.settings = settings;
         this.saveSettings = saveSettings;
@@ -271,6 +278,8 @@ public sealed class CustomizePanel
 
         var wear = Section("costume");
         foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
+
+        BackgroundRow(Section("background"));
 
         Refresh(state, plan);
     }
@@ -610,6 +619,46 @@ public sealed class CustomizePanel
         if (c.Type != "TwoColor") return null;
         var hair = GameData.Resolve(data.Hairs, state.appearance.hair, HairVariant());
         return hair != null && hair.HairType != "TwoColor" ? "투톤 헤어용(첫 색만 보임)" : null;
+    }
+
+    // ------------------------------------------------------------ 배경
+
+    /// <summary>스튜디오 배경 선택(Background.md). 색 배경은 위·아래 색 견본을, 3D 배경은 "3D" 표시를 보인다.</summary>
+    void BackgroundRow(VisualElement parent)
+    {
+        var status = StatusLabel();
+        var dd = Dropdown(BackgroundItems, it => { ColorPicker.ApplyAny(); setBackground(it.Id); });
+        refreshers.Add(() =>
+        {
+            var b = data.Background(backgroundId());
+            if (b == null) dd.SetValue(null, "(기본 배경)", null);
+            else dd.SetValue(b.Id, BackgroundName(b), BackgroundSub(b), null, BackgroundSwatches(b));
+            SetStatus(status, data.BackgroundError != null ? "배경 시트를 읽지 못해 기본 색만 씁니다." : null, AppUI.WarnColor);
+        });
+        parent.Add(Row("배경", dd, status));
+    }
+
+    List<DropdownItem> BackgroundItems()
+    {
+        var items = new List<DropdownItem>();
+        foreach (var b in data.Backgrounds)
+            if (StudioBackground.Selectable(b))
+                items.Add(new DropdownItem { Id = b.Id, Name = BackgroundName(b), Sub = BackgroundSub(b), Swatches = BackgroundSwatches(b) });
+        return items;
+    }
+
+    static string BackgroundName(StudioBackgroundData b) =>
+        (b.DevOnly ? "[숨김] " : "") + (string.IsNullOrEmpty(b.DisplayName) ? b.Id : b.DisplayName);
+
+    static string BackgroundSub(StudioBackgroundData b) => b.Is3D ? b.Id + " · 3D" : b.Id;
+
+    static Color[] BackgroundSwatches(StudioBackgroundData b)
+    {
+        if (b.Is3D) return null;
+        var list = new List<Color>();
+        if (ColorUtility.TryParseHtmlString(b.LeftUpper ?? "", out var top)) list.Add(top);
+        if (ColorUtility.TryParseHtmlString(b.LeftBottom ?? "", out var bottom) && (list.Count == 0 || bottom != list[0])) list.Add(bottom);
+        return list.ToArray();
     }
 
     static void SetCostume(EditState s, string part, string costumeId)

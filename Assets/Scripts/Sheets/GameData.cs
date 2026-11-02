@@ -49,6 +49,20 @@ public sealed class ColorData
     public bool HideOnCustomize;
 }
 
+/// <summary>스튜디오 배경 시트 행(Background.md).</summary>
+public sealed class StudioBackgroundData
+{
+    public string Id, DisplayName, IconPath, UnlockType, Url, VolumeKey, VolumeGroupName;
+    /// <summary>화면 네 모서리 색 "#RRGGBB"(왼쪽 아래, 오른쪽 아래, 왼쪽 위, 오른쪽 위).</summary>
+    public string LeftBottom, RightBottom, LeftUpper, RightUpper;
+    public bool DevOnly, UseWebCam;
+    /// <summary>3D 배경 프리팹(Assets/PatchableAssets/ 아래 상대 경로). 비어 있으면 색 배경이다.</summary>
+    public List<string> Prefabs;
+    public int Index;
+
+    public bool Is3D => Prefabs != null && Prefabs.Count > 0;
+}
+
 public sealed class GameData
 {
     public readonly Dictionary<string, CostumeData> Costumes = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
@@ -65,6 +79,9 @@ public sealed class GameData
     public readonly Dictionary<string, ColorData> EyeColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> MouthColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, SheetRow> ModelVariants = new Dictionary<string, SheetRow>(StringComparer.Ordinal);
+    /// <summary>스튜디오 배경(시트 순서). 시트를 읽지 못하면 비어 있고 BackgroundError 에 사유가 있다.</summary>
+    public readonly List<StudioBackgroundData> Backgrounds = new List<StudioBackgroundData>();
+    public string BackgroundError;
     public long LoadMs;
 
     public static GameData Load(InstallFiles files)
@@ -137,8 +154,39 @@ public sealed class GameData
         Colors(set.Read(SheetSchemas.CharacterHairColor), g.HairColors, "ColorCode1", "ColorCode2", "HairColorType");
         Colors(set.Read(SheetSchemas.CharacterEyeColor), g.EyeColors, "ColorCode", null, null);
         Colors(set.Read(SheetSchemas.CharacterMouthColor), g.MouthColors, "ColorCode", null, null);
+        LoadBackgrounds(set, g);
         g.LoadMs = sw.ElapsedMilliseconds;
         return g;
+    }
+
+    /// <summary>배경은 시작에 꼭 필요하지 않으므로 읽기 실패를 앱 시작 실패로 만들지 않는다.</summary>
+    static void LoadBackgrounds(SheetSet set, GameData g)
+    {
+        try
+        {
+            foreach (var r in set.Read(SheetSchemas.StudioBackground))
+            {
+                var b = new StudioBackgroundData
+                {
+                    Index = r.Index, Id = r.Str("Id"), DisplayName = r.Str("BackgroundName"), IconPath = r.Str("BackgroundImagePath"),
+                    UnlockType = r.Str("UnlockType"), Url = r.Str("Url"), VolumeKey = r.Str("VolumeKey"), VolumeGroupName = r.Str("VolumeGroupName"),
+                    LeftBottom = r.Str("LeftBottom"), RightBottom = r.Str("RightBottom"), LeftUpper = r.Str("LeftUpper"), RightUpper = r.Str("RightUpper"),
+                    DevOnly = r.Bool("DevOnly"), UseWebCam = r.Bool("UseWebCamTexture"), Prefabs = r.Strs("BackgroundPrefabPath"),
+                };
+                if (b.Id != null) g.Backgrounds.Add(b);
+            }
+        }
+        catch (Exception e)
+        {
+            g.Backgrounds.Clear();
+            g.BackgroundError = e.Message;
+        }
+    }
+
+    public StudioBackgroundData Background(string id)
+    {
+        foreach (var b in Backgrounds) if (b.Id == id) return b;
+        return null;
     }
 
     static AppearancePartData Part(SheetRow r, string id, string variant) => new AppearancePartData

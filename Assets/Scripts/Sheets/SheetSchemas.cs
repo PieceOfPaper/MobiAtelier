@@ -107,6 +107,14 @@ public static class SheetSchemas
         "Id:K(CharacterMouthColorSheet)",
         "DisplayName:S _:S ColorCode:C");
 
+    /// <summary>스튜디오 배경(Background.md). 시작에 필요하지 않으므로 Required 에 넣지 않는다. 네 모서리 색은 "#RRGGBB" 문자열이다.</summary>
+    public static readonly SheetSchema StudioBackground = new SheetSchema("StudioBackground",
+        "Id:K(StudioBackgroundSheet)",
+        @"BackgroundName:S BackgroundImagePath:S UnlockType:E _:S _:S
+          LeftBottom:S RightBottom:S LeftUpper:S RightUpper:S
+          UseWebCamTexture:U DevOnly:U Url:S _:U _:I _:I _:I
+          BackgroundPrefabPath:[S] VolumeKey:S VolumeGroupName:S");
+
     /// <summary>시작할 때 읽어야 하는 시트 전부.</summary>
     public static readonly SheetSchema[] Required =
     {

@@ -27,6 +27,8 @@ public static class StageBuilder
             light.type = LightType.Directional;
             light.intensity = 1.0f;
             light.shadows = LightShadows.Soft;
+            // 캐릭터는 그림자를 받지 않으므로 이 그림자는 바닥(배경)에만 보인다. 게임 스튜디오처럼 옅게 둔다 [근사].
+            light.shadowStrength = 0.45f;
             lightGo.transform.rotation = Quaternion.Euler(35, 155, 0);
         }
         return cam;
