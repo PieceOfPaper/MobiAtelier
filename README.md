@@ -21,12 +21,13 @@
 - [창·꾸미기 UI](Docs/WindowAndCustomizationUI.md): 앱 창 크기, 꾸미기 창 배치 복원과 검색·드롭다운.
 - [의상·리소스 선택](Docs/Equipment.md): 패션장비 선택·ID 표기, 미적용·가림 규칙, 공개 범위와 에디터 전용 리소스.
 - [염색](Docs/Dye.md): 기본색, 컬러피커와 색상 코드 입력.
-- [카메라](Docs/Camera.md): 회전·팬·확대축소와 UI 입력 충돌 처리.
+- [카메라](Docs/Camera.md): 회전·팬·거리 줌, 0.5x·1x·3x 렌즈 화각과 UI 입력 충돌 처리.
 - [저장·불러오기](Docs/SaveLoad.md): 자동 저장, JSON 범위·식별자와 파일 대화상자.
 - [실행 취소·다시 실행](Docs/UndoRedo.md): Ctrl+Z·Ctrl+Y, 버튼과 편집 이력 단위.
 - [초기화](Docs/Reset.md): 현재 성별의 기본 외형·초보자 의상·카메라 복원, 확인 팝업과 이력 삭제.
 - [종료 팝업](Docs/ExitPopup.md): 종료 확인·딤 처리와 ESC 입력 우선순위.
-- [촬영모드](Docs/PhotoMode.md): 향후 촬영 기능의 검토 범위와 미정 사항.
+- [촬영모드](Docs/PhotoMode.md): UI 숨김·화각의 채택과 시선·행동 검증, 배경 별도 진행·촬영 비율 등의 보류 범위.
+- [스튜디오 기능 검토](Docs/StudioFeatureReview.md): 카메라 쳐다보기·행동의 언팩 데이터 근거와 현재 로더의 한계, 실제 도입 전 검증 조건.
 - [레퍼런스 대비 차이·보강안](Docs/ReferenceGapReview.md): 현재 확정 기획과의 차이, 의상 재탐색·시점·결과 공유·부분 불러오기·A/B 비교 제안.
 - [레퍼런스 조사](Docs/ReferenceResearch.md): 기존 꾸미기 도구의 기능 비교와 초기 기획 제안.
 - [구현 가능성 검토](Docs/FeasibilityReview.md): 언팩 시트·리소스·로더 코드에 근거한 기능별 가능성과 선행 작업.

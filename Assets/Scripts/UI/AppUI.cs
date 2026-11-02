@@ -12,6 +12,11 @@ public sealed class AppUI
     readonly VisualElement root, windows, layer, notes;
     VisualElement modal;
     Label loading;
+    VisualElement viewControls, lensControls;
+    Button visibilityButton;
+    readonly List<(float multiplier, Button button)> lensButtons = new List<(float, Button)>();
+    Func<bool> canUseViewControls;
+    bool editingUIHidden;
 
     internal static readonly Color Dim = new Color(0, 0, 0, 0.55f);
     internal static readonly Color PanelBg = new Color(0.16f, 0.17f, 0.2f, 0.98f);
@@ -50,6 +55,59 @@ public sealed class AppUI
 
     /// <summary>꾸미기 창을 붙이는 화면 전체 층(모달·로딩보다 아래).</summary>
     public VisualElement WindowLayer => windows;
+
+    /// <summary>꾸미기 진입 뒤 한 번 만든다. 숨김 중에도 복귀 버튼은 남긴다.</summary>
+    public void AddViewControls(Action<float> setLens, Func<bool> canUse)
+    {
+        if (viewControls != null) return;
+        canUseViewControls = canUse;
+        viewControls = new VisualElement { name = "view-controls", pickingMode = PickingMode.Ignore };
+        viewControls.style.position = Position.Absolute;
+        viewControls.style.left = 12; viewControls.style.top = 12; viewControls.style.right = 12;
+        viewControls.style.flexDirection = FlexDirection.Row;
+        viewControls.style.flexWrap = Wrap.Wrap;
+        viewControls.style.alignItems = Align.FlexStart;
+        visibilityButton = Btn("UI 숨기기 (F1)", ToggleEditingUI);
+        visibilityButton.style.marginLeft = 0;
+        visibilityButton.tooltip = "꾸미기 UI를 숨기거나 다시 표시합니다. 카메라 조작은 유지됩니다.";
+        viewControls.Add(visibilityButton);
+
+        lensControls = new VisualElement { name = "lens-controls", pickingMode = PickingMode.Ignore };
+        lensControls.style.flexDirection = FlexDirection.Row;
+        lensControls.style.flexWrap = Wrap.Wrap;
+        foreach (float multiplier in new[] { 0.5f, 1f, 3f })
+        {
+            float selected = multiplier;
+            string text = multiplier == 0.5f ? "0.5x 광각" : multiplier == 3f ? "3x 망원" : "1x 기본";
+            var button = Btn(text, () => { if (canUseViewControls?.Invoke() != false) setLens(selected); });
+            button.tooltip = "렌즈 화각 변경. 휠로 조절하는 카메라 거리는 유지합니다.";
+            lensButtons.Add((multiplier, button));
+            lensControls.Add(button);
+        }
+        viewControls.Add(lensControls);
+        // 모달 층보다 아래에 둬 팝업의 입력 차단을 유지한다.
+        root.Insert(root.IndexOf(layer), viewControls);
+        SetLensSelection(1f);
+    }
+
+    public void SetLensSelection(float multiplier)
+    {
+        foreach (var (value, button) in lensButtons)
+            button.style.backgroundColor = Mathf.Approximately(value, multiplier) ? new Color(0.25f, 0.42f, 0.7f) : FieldBg;
+    }
+
+    public void ToggleEditingUI()
+    {
+        if (viewControls == null || canUseViewControls?.Invoke() == false) return;
+        SearchDropdown.CloseAny();
+        editingUIHidden = !editingUIHidden;
+        windows.style.display = editingUIHidden ? DisplayStyle.None : DisplayStyle.Flex;
+        notes.style.display = editingUIHidden ? DisplayStyle.None : DisplayStyle.Flex;
+        lensControls.style.display = editingUIHidden ? DisplayStyle.None : DisplayStyle.Flex;
+        visibilityButton.text = editingUIHidden ? "UI 표시 (F1)" : "UI 숨기기 (F1)";
+        // 열린 컬러피커와 미확정 색 미리보기는 창과 함께 숨겼다가 그대로 복원한다.
+        // 장면·배치·색·저장 상태는 바꾸지 않는다.
+    }
 
     static void ApplySystemFont(VisualElement e)
     {
