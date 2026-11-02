@@ -4,6 +4,12 @@
 //   큰 카테고리는 폴드아웃, 세부 항목은 검색 가능한 드롭다운이다. 고르면 바로 모델에 반영한다(적용 버튼 없음).
 //   선택 상태와 실제 출력을 분리한다. 입을 수 없는 의상은 선택을 유지하고 빨간색과 사유를 표시한다.
 //
+// 색(사용자 결정 2026-11-02):
+//   피부·헤어·눈 색은 게임 색 시트(CharacterSkinColor·HairColor·EyeColor)의 행을 검색 드롭다운으로 고른다.
+//   꾸미기 숨김 행은 후보에서 빼고, 현재 선택이면 흐리게 남긴다.
+//   의상 염색은 표시 중인 의상의 실제 염색 파트(모델 DyeInfo 에 연결이 있는 Slot0~5)만 견본으로 보이고,
+//   견본을 누르면 컬러피커(ColorPicker)를 연다. 색만 바뀌는 편집은 다시 조립하지 않는다(editColors).
+//
 // 배치(사용자 결정 2026-11-02): 앱 창이 가로로 넓으면 오른쪽 세로 패널, 세로로 길면 아래쪽 가로 패널이 기본이다.
 //   가로·세로 배치를 따로 저장하므로 앱 창 비율이 바뀌면 그 비율의 마지막 배치로 바뀐다.
 // 보정 정책(구현 선택): 저장하는 값은 사용자가 마지막으로 옮기거나 크기를 바꾼 배치다.
@@ -46,7 +52,8 @@ public sealed class CustomizePanel
     readonly Label error;
     readonly AppSettings settings;
     readonly Action saveSettings;
-    readonly Action<Action<EditState>> edit;
+    readonly Action<Action<EditState>> edit, editColors;
+    readonly Func<CharacterView> view;
     readonly Dictionary<string, Foldout> foldouts = new Dictionary<string, Foldout>();
     readonly List<Action> refreshers = new List<Action>();
 
@@ -60,12 +67,18 @@ public sealed class CustomizePanel
 
     /// <param name="host">화면 전체 크기의 층(AppUI.WindowLayer)</param>
     /// <param name="edit">장면 상태를 바꾸는 요청. 복사본을 바꿔 조립에 성공하면 반영한다(AppController.Edit).</param>
-    public CustomizePanel(VisualElement host, AppSettings settings, Action saveSettings, Action<Action<EditState>> edit)
+    /// <param name="editColors">색만 바꾸는 요청. 다시 조립하지 않고 머티리얼 색만 바꾼다(AppController.EditColors).</param>
+    /// <param name="view">지금 조립된 캐릭터(염색 파트 조회·미리보기)</param>
+    public CustomizePanel(VisualElement host, AppSettings settings, Action saveSettings, Action<Action<EditState>> edit,
+        Action<Action<EditState>> editColors, Func<CharacterView> view)
     {
         this.host = host;
         this.settings = settings;
         this.saveSettings = saveSettings;
-        this.edit = edit;
+        // 다른 편집을 시작하면 열려 있던 컬러피커는 지금 색으로 적용하고 닫는다.
+        this.edit = change => { ColorPicker.ApplyAny(); edit(change); };
+        this.editColors = change => { ColorPicker.ApplyAny(); editColors(change); };
+        this.view = view;
 
         window = new VisualElement { name = "customize-window" };
         window.style.position = Position.Absolute;
@@ -194,6 +207,7 @@ public sealed class CustomizePanel
         {
             if (e.button != 0) return;
             SearchDropdown.CloseAny();
+            ColorPicker.ApplyAny();
             pointer = e.pointerId;
             start = e.position;
             from = shown;
@@ -236,15 +250,21 @@ public sealed class CustomizePanel
         look.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, BodyTypeName, (s, id) => s.appearance.bodyType = id), null));
         look.Add(Row("나이", Choice(AgeItems, () => state.appearance.age.ToString(), id => id + "세",
             (s, id) => s.appearance.age = int.Parse(id)), null));
+        ColorRow(look, "피부색", () => data.SkinColors, () => state.appearance.skinColor, new[] { "Skin" }, null,
+            (s, id) => s.appearance.skinColor = id);
 
         AppearanceRow(look, "얼굴형", HeadItems, () => state.appearance.head, HeadIssue, (s, id) => s.appearance.head = id,
             id => data.Heads.TryGetValue(id ?? "", out var h) ? h.DisplayName : null);
         AppearanceRow(look, "헤어스타일", () => GroupItems(data.Hairs, state.appearance.hair, HairVariant, "Default"),
             () => state.appearance.hair, () => GroupIssue(data.Hairs, state.appearance.hair, HairVariant(), "Default"),
             (s, id) => s.appearance.hair = id, id => GameData.Resolve(data.Hairs, id, HairVariant())?.DisplayName);
+        ColorRow(look, "헤어 색상", () => data.HairColors, () => state.appearance.hairColor, new[] { "Hair", "Hair1" }, HairColorIssue,
+            (s, id) => s.appearance.hairColor = id);
         AppearanceRow(look, "눈 모양", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
             () => state.appearance.eyes, () => GroupIssue(data.Eyes, state.appearance.eyes, HeadVariant(), "Head_00"),
             (s, id) => s.appearance.eyes = id, id => GameData.Resolve(data.Eyes, id, HeadVariant(), "Head_00")?.DisplayName);
+        ColorRow(look, "눈 색상", () => data.EyeColors, () => state.appearance.eyeColor, new[] { "Eye" }, null,
+            (s, id) => s.appearance.eyeColor = id);
         AppearanceRow(look, "입 모양", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
             () => state.appearance.mouth, () => GroupIssue(data.Mouths, state.appearance.mouth, HeadVariant(), "Head_00"),
             (s, id) => s.appearance.mouth = id, id => GameData.Resolve(data.Mouths, id, HeadVariant(), "Head_00")?.DisplayName);
@@ -258,6 +278,8 @@ public sealed class CustomizePanel
     /// <summary>장면이 바뀐 뒤 선택 필드·상태 표시를 다시 그린다.</summary>
     public void Refresh(EditState current, AssemblyPlan currentPlan)
     {
+        // 열린 피커는 이전 장면의 파트를 가리킨다. 적용은 편집 전에 이미 했으므로 남은 것은 되돌려 닫는다.
+        ColorPicker.CancelAny();
         state = current;
         plan = currentPlan;
         if (state == null || data == null) return;
@@ -386,11 +408,18 @@ public sealed class CustomizePanel
     void CostumeRow(VisualElement parent, string part, string label)
     {
         var status = StatusLabel();
+        var dyes = new VisualElement { name = "dye-parts" };
+        dyes.style.flexDirection = FlexDirection.Row;
+        dyes.style.flexWrap = Wrap.Wrap;
+        dyes.style.alignItems = Align.Center;
+        dyes.style.marginLeft = 76; dyes.style.marginTop = 3;
+        dyes.style.display = DisplayStyle.None;
         var dd = Dropdown(() => CostumeItems(part), it => edit(s => SetCostume(s, part, it.Id)));
         refreshers.Add(() =>
         {
             var slot = state.Costume(part);
             var res = plan?.Costumes.Find(c => c.Part == part);
+            RefreshDyes(dyes, part, label, slot, res);
             if (slot == null || (slot.kind != CostumeSlotState.KindResource && string.IsNullOrEmpty(slot.costumeId)))
             {
                 dd.SetValue(null, "(착용 안 함)", null, AppUI.Sub);
@@ -416,7 +445,171 @@ public sealed class CustomizePanel
             dd.SetValue(resource ? null : id, name ?? id, resource ? "리소스 " + id : id, color);
             SetStatus(status, text, statusColor);
         });
+        var box = Row(label, dd, status);
+        box.Add(dyes);
+        parent.Add(box);
+    }
+
+    // ------------------------------------------------------------ 의상 염색
+
+    static readonly Dictionary<string, string> DyeMaterialNames = new Dictionary<string, string>
+    {
+        { "Cloth", "천" }, { "Leather", "가죽" }, { "Metal", "금속" }, { "Wood", "나무" },
+    };
+
+    /// <summary>
+    /// 표시 중인 의상의 염색 파트 견본을 다시 만든다. 가려졌거나 적용되지 않은 의상은 파트를 알 수 없으므로 비운다
+    /// (저장된 염색값은 그대로 둔다). 파트 이름은 데이터에 없으므로 "파트 n"과 DyeInfo 재질로만 표시한다(Dye.md).
+    /// </summary>
+    void RefreshDyes(VisualElement box, string part, string label, CostumeSlotState slot, CostumeResult res)
+    {
+        box.Clear();
+        box.style.display = DisplayStyle.None;
+        if (slot == null || res == null || res.Status != CostumeStatus.Applied) return;
+        box.style.display = DisplayStyle.Flex;
+        CostumeData row = null;
+        if (slot.kind == CostumeSlotState.KindCostume) data.Costumes.TryGetValue(slot.costumeId ?? "", out row);
+        if (row != null && row.DyePolicy == "AlwaysCantDye") { box.Add(Note("염색할 수 없는 의상입니다.")); return; }
+        string key = AssemblyPlan.CostumeKey(part);
+        var v = view();
+        var parts = v ? v.DyeParts(key) : new List<DyePart>();
+        if (parts.Count == 0) { box.Add(Note("염색 파트가 없습니다.")); return; }
+        foreach (var dp in parts) box.Add(DyeChip(part, label, key, slot, dp));
+    }
+
+    static Label Note(string text)
+    {
+        var l = new Label(text);
+        l.style.fontSize = 11;
+        l.style.color = AppUI.Sub;
+        return l;
+    }
+
+    /// <summary>염색 파트 하나의 견본 버튼. 사용자 지정 색이 있는 파트는 테두리를 밝게 한다.</summary>
+    VisualElement DyeChip(string part, string label, string key, CostumeSlotState slot, DyePart dp)
+    {
+        bool user = ColorOverrides.Get(slot.dyes, dp.Slot) != null;
+        string mat = dp.DyeMaterial != null && DyeMaterialNames.TryGetValue(dp.DyeMaterial, out var m) ? m : null;
+        string name = "파트 " + (dp.Number + 1);
+
+        var chip = new VisualElement { name = "dye-" + dp.Slot, focusable = true };
+        chip.style.flexDirection = FlexDirection.Row;
+        chip.style.alignItems = Align.Center;
+        chip.style.height = 24;
+        chip.style.paddingLeft = 4; chip.style.paddingRight = 6;
+        chip.style.marginRight = 4; chip.style.marginBottom = 3;
+        chip.style.backgroundColor = AppUI.FieldBg;
+        SearchDropdown.SetBorder(chip, user ? AppUI.Text : AppUI.Border, 1, 3);
+        chip.Add(SearchDropdown.Swatch(dp.Current, 16));
+        var l = new Label((dp.Number + 1).ToString());
+        l.pickingMode = PickingMode.Ignore;
+        l.style.fontSize = 11;
+        l.style.color = AppUI.Text;
+        l.style.marginLeft = 2;
+        chip.Add(l);
+        chip.tooltip = $"{name}{(mat != null ? " · " + mat : "")} · {ColorOverrides.ToHex(dp.Current)}{(user ? " · 사용자 지정" : "")}";
+        chip.RegisterCallback<PointerEnterEvent>(e => chip.style.backgroundColor = AppUI.FieldHover);
+        chip.RegisterCallback<PointerLeaveEvent>(e => chip.style.backgroundColor = AppUI.FieldBg);
+
+        void Open()
+        {
+            // 피커는 꾸미기 창 바깥(왼쪽 → 오른쪽 → 위 → 아래)에 띄워 창을 가리지 않게 한다. 세로 위치는 견본에 맞춘다.
+            var wb = window.worldBound; var cb = chip.worldBound;
+            // 넓은 앱 창: 창 왼쪽 가장자리(세로 선) → 피커는 왼쪽. 세로로 긴 앱 창: 창 위쪽 가장자리(가로 선) → 피커는 위.
+            var anchor = tall ? new Rect(wb.xMin, wb.yMin, wb.width, 1) : new Rect(wb.xMin, cb.yMin, 1, cb.height);
+            ColorPicker.Open(popupLayer, anchor, $"{label} · {name}{(mat != null ? " (" + mat + ")" : "")}", dp.Current,
+                c => { var cv = view(); if (cv) cv.SetColor(key, dp.Slot, c); },
+                c => editColors(s => SetDye(s, part, dp.Slot, ColorOverrides.ToHex(c))),
+                () => { var cv = view(); if (cv && plan != null) cv.ApplyPlanColors(plan); },
+                user ? () => editColors(s => SetDye(s, part, dp.Slot, null)) : (Action)null);
+        }
+        chip.RegisterCallback<ClickEvent>(e => Open());
+        chip.RegisterCallback<KeyDownEvent>(e =>
+        {
+            if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter || e.keyCode == KeyCode.Space) { Open(); e.StopPropagation(); }
+        });
+        return chip;
+    }
+
+    static void SetDye(EditState s, string part, string slot, string hex)
+    {
+        var c = s.Costume(part);
+        if (c != null) ColorOverrides.Set(c.dyes, slot, hex);
+    }
+
+    // ------------------------------------------------------------ 외형 색
+
+    /// <summary>
+    /// 색 시트 행을 고르는 줄. 고르면 해당 외형 색 슬롯의 사용자 지정 색(예전 JSON 에 있을 수 있음)을 지운다.
+    /// </summary>
+    void ColorRow(VisualElement parent, string label, Func<Dictionary<string, ColorData>> map, Func<string> current, string[] slots,
+        Func<ColorData, string> mismatch, Action<EditState, string> set)
+    {
+        var status = StatusLabel();
+        var dd = Dropdown(() => ColorItems(map(), current(), mismatch), it => editColors(s =>
+        {
+            set(s, it.Id);
+            foreach (var sl in slots) ColorOverrides.Set(s.appearance.colors, sl, null);
+        }));
+        refreshers.Add(() =>
+        {
+            string id = current();
+            map().TryGetValue(id ?? "", out var c);
+            string userHex = null;
+            foreach (var sl in slots) userHex = userHex ?? ColorOverrides.Get(state.appearance.colors, sl);
+            if (userHex != null && ColorOverrides.TryParse(userHex, out var uc))
+            {
+                // 현재 ID 를 비워 두어 같은 시트 색을 다시 골라도 사용자 색을 지울 수 있게 한다.
+                dd.SetValue(null, "사용자 지정 색", userHex, null, new[] { uc });
+                SetStatus(status, null, AppUI.Sub);
+                return;
+            }
+            string problem = c == null ? (string.IsNullOrEmpty(id) ? null : "데이터에 없는 색 ID입니다.") : mismatch?.Invoke(c);
+            dd.SetValue(id, c != null ? ColorName(c) : id ?? "(없음)", c != null ? ColorHex(c) : null, null, c != null ? Swatches(c) : null);
+            SetStatus(status, problem, AppUI.WarnColor);
+        });
         parent.Add(Row(label, dd, status));
+    }
+
+    static string ColorName(ColorData c) => string.IsNullOrEmpty(c.DisplayName) ? c.Id : c.DisplayName;
+
+    static Color[] Swatches(ColorData c)
+    {
+        var list = new List<Color>();
+        if (c.Color1.HasValue) list.Add(PlanResolver.ToColor(c.Color1.Value));
+        if (c.Type == "TwoColor" && c.Color2.HasValue) list.Add(PlanResolver.ToColor(c.Color2.Value));
+        return list.ToArray();
+    }
+
+    static string ColorHex(ColorData c)
+    {
+        var sw = Swatches(c);
+        return sw.Length == 0 ? c.Id : string.Join(" ", Array.ConvertAll(sw, ColorOverrides.ToHex));
+    }
+
+    /// <summary>꾸미기 숨김 행은 빼고, 현재 선택이면 흐리게 남긴다. 보조 표시에 HEX 를 써서 코드로도 검색된다.</summary>
+    List<DropdownItem> ColorItems(Dictionary<string, ColorData> map, string current, Func<ColorData, string> mismatch)
+    {
+        var items = new List<DropdownItem>();
+        foreach (var c in map.Values)
+        {
+            if (c.HideOnCustomize && c.Id != current) continue;
+            string why = mismatch?.Invoke(c);
+            items.Add(new DropdownItem
+            {
+                Id = c.Id, Name = ColorName(c), Sub = why != null ? why + " " + ColorHex(c) : ColorHex(c),
+                Dim = c.HideOnCustomize || why != null, Swatches = Swatches(c),
+            });
+        }
+        return items;
+    }
+
+    /// <summary>투톤 색을 한 가지 색 헤어에 고르면 첫 번째 색만 보인다.</summary>
+    string HairColorIssue(ColorData c)
+    {
+        if (c.Type != "TwoColor") return null;
+        var hair = GameData.Resolve(data.Hairs, state.appearance.hair, HairVariant());
+        return hair != null && hair.HairType != "TwoColor" ? "투톤 헤어용(첫 색만 보임)" : null;
     }
 
     static void SetCostume(EditState s, string part, string costumeId)

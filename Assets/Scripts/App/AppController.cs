@@ -245,7 +245,7 @@ public sealed class AppController : MonoBehaviour
     void EnsurePanel()
     {
         if (panel != null) return;
-        panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit);
+        panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit, EditColors, () => view);
         panel.Bind(data);
     }
 
@@ -274,6 +274,36 @@ public sealed class AppController : MonoBehaviour
         {
             Debug.LogException(e);
             panel.SetError("변경을 적용하지 못해 이전 선택을 유지합니다. " + e.Message);
+        }
+        panel.Refresh(state, plan);
+    }
+
+    /// <summary>
+    /// 색만 바꾸는 편집(외형 색 시트 선택, 의상 염색). 모델은 그대로 두고 계획을 다시 풀어 머티리얼 색만 바꾼다.
+    /// 색 슬롯 연결(DyeInfo)은 조립 때 정해졌으므로 다시 조립할 필요가 없다.
+    /// </summary>
+    void EditColors(Action<EditState> change)
+    {
+        if (state == null || data == null || ui.ModalOpen) return;
+        if (!view) { Edit(change); return; }
+        var next = state.Clone();
+        next.camera = cameraCtl.Save();
+        change(next);
+        try
+        {
+            var nextPlan = PlanResolver.Resolve(next, data, files);
+            view.ApplyPlanColors(nextPlan);
+            view.Plan = nextPlan;
+            state = next;
+            plan = nextPlan;
+            panel.SetError(null);
+            autosave.MarkDirty();
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            view.ApplyPlanColors(plan);
+            panel.SetError("색을 적용하지 못해 이전 색을 유지합니다. " + e.Message);
         }
         panel.Refresh(state, plan);
     }

@@ -17,6 +17,8 @@ public sealed class DropdownItem
     public string Sub;
     /// <summary>현재 외형에 맞지 않는 후보(흐리게 표시, 선택은 가능).</summary>
     public bool Dim;
+    /// <summary>이름 앞에 보일 색 견본(색 선택 항목). null 이면 없음.</summary>
+    public Color[] Swatches;
 }
 
 public sealed class SearchDropdown : VisualElement
@@ -29,6 +31,7 @@ public sealed class SearchDropdown : VisualElement
     readonly Action<DropdownItem> chosen;
     readonly VisualElement field;
     readonly Label nameLabel, subLabel;
+    readonly VisualElement fieldSwatches;
 
     VisualElement catcher;
     TextField search;
@@ -58,6 +61,10 @@ public sealed class SearchDropdown : VisualElement
         field.style.paddingLeft = 8; field.style.paddingRight = 6;
         field.style.backgroundColor = AppUI.FieldBg;
         SetBorder(field, AppUI.Border, 1, 3);
+        fieldSwatches = new VisualElement();
+        fieldSwatches.style.flexDirection = FlexDirection.Row;
+        fieldSwatches.style.flexShrink = 0;
+        fieldSwatches.style.display = DisplayStyle.None;
         nameLabel = Ellipsis(new Label());
         nameLabel.style.flexGrow = 1;
         nameLabel.style.color = AppUI.Text;
@@ -71,7 +78,7 @@ public sealed class SearchDropdown : VisualElement
         var arrow = new Label("▾");
         arrow.style.color = AppUI.Sub;
         arrow.style.marginLeft = 4;
-        field.Add(nameLabel); field.Add(subLabel); field.Add(arrow);
+        field.Add(fieldSwatches); field.Add(nameLabel); field.Add(subLabel); field.Add(arrow);
         Add(field);
 
         field.RegisterCallback<ClickEvent>(e => Open());
@@ -84,8 +91,9 @@ public sealed class SearchDropdown : VisualElement
     }
 
     /// <summary>선택 필드 표시. color 가 null 이면 기본 글자색.</summary>
-    public void SetValue(string id, string name, string sub, Color? color = null)
+    public void SetValue(string id, string name, string sub, Color? color = null, Color[] swatches = null)
     {
+        FillSwatches(fieldSwatches, swatches);
         currentId = id;
         nameLabel.text = name ?? "";
         nameLabel.style.color = color ?? AppUI.Text;
@@ -258,6 +266,10 @@ public sealed class SearchDropdown : VisualElement
         row.style.alignItems = Align.Center;
         row.style.height = RowHeight;
         row.style.paddingLeft = 6; row.style.paddingRight = 6;
+        var sw = new VisualElement { name = "swatches" };
+        sw.style.flexDirection = FlexDirection.Row;
+        sw.style.flexShrink = 0;
+        row.Add(sw);
         var n = Ellipsis(new Label { name = "name" });
         n.style.flexGrow = 1;
         n.style.fontSize = 13;
@@ -281,9 +293,31 @@ public sealed class SearchDropdown : VisualElement
         n.style.color = it.Dim ? AppUI.Sub : AppUI.Text;
         n.style.unityFontStyleAndWeight = it.Id == currentId ? FontStyle.Bold : FontStyle.Normal;
         row.Q<Label>("sub").text = it.Sub ?? "";
+        FillSwatches(row.Q("swatches"), it.Swatches);
     }
 
     // ------------------------------------------------------------ 스타일
+
+    /// <summary>색 견본 사각형을 채운다. 없으면 숨긴다.</summary>
+    static void FillSwatches(VisualElement box, Color[] colors)
+    {
+        box.Clear();
+        bool any = colors != null && colors.Length > 0;
+        box.style.display = any ? DisplayStyle.Flex : DisplayStyle.None;
+        if (!any) return;
+        box.style.marginRight = 6;
+        foreach (var c in colors) box.Add(Swatch(c, 14));
+    }
+
+    public static VisualElement Swatch(Color c, float size)
+    {
+        var e = new VisualElement { pickingMode = PickingMode.Ignore };
+        e.style.width = size; e.style.height = size;
+        e.style.marginRight = 2;
+        e.style.backgroundColor = new Color(c.r, c.g, c.b, 1);
+        SetBorder(e, AppUI.Border, 1, 2);
+        return e;
+    }
 
     static Label Ellipsis(Label l)
     {

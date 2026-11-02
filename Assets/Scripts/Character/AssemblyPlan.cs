@@ -108,7 +108,9 @@ public static class PlanResolver
         data.MouthColors.TryGetValue(a.mouthColor ?? "", out var mouthColor);
         Global("Skin", skin?.Color1);
         Global("Hair", hairColor?.Color1);
-        Global("Hair1", hair != null && hair.HairType == "TwoColor" ? hairColor?.Color2 : null);
+        // 투톤 헤어의 두 번째 색. 한 가지 색(OneColor) 행의 ColorCode2 는 #000000 이므로 첫 색을 같이 쓴다[추정].
+        Global("Hair1", hair != null && hair.HairType == "TwoColor"
+            ? (hairColor != null && hairColor.Type == "TwoColor" ? hairColor.Color2 : hairColor?.Color1) : null);
         Global("Eye", eyeColor?.Color1);
         Global("Mouth", mouthColor?.Color1);
 

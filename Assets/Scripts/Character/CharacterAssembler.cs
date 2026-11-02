@@ -261,12 +261,13 @@ public static class CharacterAssembler
             foreach (var slot in d.Root.Get("DyeInfo").Get("Slots").Arr())
             {
                 string sname = slot.Get("Slot").Str();
+                string smat = slot.Get("Material").Str();
                 foreach (var w in slot.Get("Wirings").Arr())
                 {
                     int mi = w.Get("MeshIndex").I(), ma = w.Get("MaterialIndex").I(), ch = w.Get("ChannelIndex").I();
                     if (!byIndex.TryGetValue(mi, out var mats) || ma >= mats.Length || ch < 0 || ch > 2) continue;
                     var m = mats[ma]; string prop = "_DyeColor" + (ch + 1);
-                    view.Dyes.Add(new DyeBinding { PartKey = part.Key, Slot = sname, Material = m, Property = prop, Original = m.GetColor(prop) });
+                    view.Dyes.Add(new DyeBinding { PartKey = part.Key, Slot = sname, Material = m, Property = prop, Original = m.GetColor(prop), DyeMaterial = smat });
                 }
             }
         }
