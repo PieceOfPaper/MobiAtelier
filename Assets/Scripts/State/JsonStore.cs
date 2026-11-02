@@ -83,8 +83,10 @@ public class AppSettings
     public string installPath;
     /// <summary>마지막으로 JSON 저장에 성공한 폴더</summary>
     public string recentJsonFolder;
-    /// <summary>꾸미기 창의 마지막 위치·크기(UI 패널 좌표). 화면에 맞춘 보정 전의 값이다.</summary>
+    /// <summary>가로로 넓은 앱 창에서 꾸미기 창의 마지막 위치·크기(UI 패널 좌표). 화면에 맞춘 보정 전의 값이다.</summary>
     public PanelLayout customizePanel = new PanelLayout();
+    /// <summary>세로로 긴 앱 창에서의 꾸미기 창 배치.</summary>
+    public PanelLayout customizePanelTall = new PanelLayout();
     /// <summary>true 면 openSections 가 사용자가 정한 폴드아웃 펼침 상태다. false 면 기본값을 쓴다.</summary>
     public bool sectionsSaved;
     public List<string> openSections = new List<string>();

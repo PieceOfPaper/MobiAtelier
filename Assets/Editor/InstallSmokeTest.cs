@@ -61,6 +61,59 @@ public static class InstallSmokeTest
                     UnityEngine.Object.DestroyImmediate(view.gameObject);
                 }
 
+                // -maOutfit 이름:Top=ID,Gloves=ID;이름2:... : 지정 조합만 조립해 전신·팔·발을 촬영한다(관통 진단용).
+                //   age=14, height=-1, gender=Male, body=Fat 도 같은 자리에 쓸 수 있다.
+                //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
+                string outfit = Arg("-maOutfit");
+                if (outfit != null)
+                {
+                    bool variants = Array.IndexOf(Environment.GetCommandLineArgs(), "-maOutfitVariants") >= 0;
+                    foreach (var entry in outfit.Split(';'))
+                    {
+                        int colon = entry.IndexOf(':');
+                        string tag = colon > 0 ? entry.Substring(0, colon).Trim() : "outfit";
+                        var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
+                        foreach (var kv in entry.Substring(colon + 1).Split(','))
+                        {
+                            var p = kv.Split('=');
+                            if (p.Length != 2) continue;
+                            string k = p[0].Trim(), v = p[1].Trim();
+                            if (k == "age") s.appearance.age = int.Parse(v);
+                            else if (k == "height") s.appearance.heightModifier = float.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
+                            else if (k == "gender") s.appearance.gender = v;
+                            else if (k == "body") s.appearance.bodyType = v;
+                            else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
+                        }
+                        log.AppendLine($"[{tag}]");
+                        var plan = PlanResolver.Resolve(s, data, files);
+                        foreach (var c in plan.Costumes) log.AppendLine($"  의상 {c.Part} {c.CostumeId} {c.DisplayName}: {c.Status} {c.Detail}");
+                        var view = CharacterAssembler.Build(files, bundles, plan, shader, log);
+                        void Detail(string t)
+                        {
+                            var arm = view.FindBone("_L Forearm"); var foot = view.FindBone("_L Foot");
+                            Capture(cam, view, Path.Combine(outDir, t + "_front.png"), 180, 5, 3.0f, new Vector3(0, 0.85f, 0));
+                            if (arm) Capture(cam, view, Path.Combine(outDir, t + "_arm.png"), 120, 5, 0.75f, arm.position, 768, 768);
+                            if (foot) Capture(cam, view, Path.Combine(outDir, t + "_foot.png"), 150, 15, 0.6f, foot.position + new Vector3(0, -0.03f, 0), 768, 768);
+                        }
+                        Detail(tag);
+                        if (variants)
+                        {
+                            view.SetBodyCut(false);
+                            Detail(tag + "_nocut");
+                            view.SetBodyCut(true);
+                            var body = view.Renderers.Find(x => x.partKey == "body").renderer;
+                            if (body) { body.gameObject.SetActive(false); Detail(tag + "_nobody"); body.gameObject.SetActive(true); }
+                            foreach (var (key, r) in view.Renderers)
+                                if (key.StartsWith("costume:") && r.name.StartsWith("Mesh_Skin")) r.gameObject.SetActive(false);
+                            Detail(tag + "_noclothskin");
+                        }
+                        UnityEngine.Object.DestroyImmediate(view.gameObject);
+                    }
+                    File.WriteAllText(Path.Combine(outDir, "log.txt"), log.ToString(), new UTF8Encoding(false));
+                    EditorApplication.Exit(0);
+                    return;
+                }
+
                 foreach (var preset in StateFactory.DefaultPresets)
                 {
                     var s = StateFactory.FromPreset(data, preset);

@@ -4,8 +4,12 @@
 //   큰 카테고리는 폴드아웃, 세부 항목은 검색 가능한 드롭다운이다. 고르면 바로 모델에 반영한다(적용 버튼 없음).
 //   선택 상태와 실제 출력을 분리한다. 입을 수 없는 의상은 선택을 유지하고 빨간색과 사유를 표시한다.
 //
+// 배치(사용자 결정 2026-11-02): 앱 창이 가로로 넓으면 오른쪽 세로 패널, 세로로 길면 아래쪽 가로 패널이 기본이다.
+//   가로·세로 배치를 따로 저장하므로 앱 창 비율이 바뀌면 그 비율의 마지막 배치로 바뀐다.
 // 보정 정책(구현 선택): 저장하는 값은 사용자가 마지막으로 옮기거나 크기를 바꾼 배치다.
 //   앱 창이 작아져서 보정한 배치는 저장하지 않으므로, 앱 창을 다시 키우면 원래 배치로 돌아간다.
+// 크기 조절 손잡이는 스크롤 영역 아래의 하단 줄에 둔다(Windows 상태 표시줄의 크기 조절 손잡이와 같은 방식).
+//   스크롤바가 손잡이 위에서 끝나므로 서로 가리지 않는다.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -13,34 +17,28 @@ using UnityEngine.UIElements;
 
 public sealed class CustomizePanel
 {
-    const float DefaultWidth = 340, Margin = 12, MinWidth = 240, MinHeight = 160;
+    const float DefaultWidth = 340, Margin = 12, MinWidth = 240, MinHeight = 160, FooterHeight = 16;
 
-    /// <summary>폴드아웃 키 → 처음 펼침 여부(설정에 저장된 값이 없을 때).</summary>
+    /// <summary>폴드아웃 키 → 제목, 처음 펼침 여부(설정에 저장된 값이 없을 때). 카테고리는 사용자 결정(2026-11-02).</summary>
     static readonly (string key, string title, bool open)[] Sections =
     {
-        ("basic", "기본 외형", true),
-        ("head", "얼굴형", false),
-        ("hair", "헤어", true),
-        ("eyes", "눈", false),
-        ("mouth", "입", false),
-        ("clothes", "의상", true),
-        ("accessory", "액세서리", false),
-        ("weapon", "무기", false),
+        ("appearance", "외형", true),
+        ("costume", "의상", true),
     };
 
-    /// <summary>Costume.CostumeType → 표시 이름, 폴드아웃.</summary>
-    static readonly (string part, string label, string section)[] CostumeParts =
+    /// <summary>Costume.CostumeType → 표시 이름. 순서는 사용자 결정(2026-11-02).</summary>
+    static readonly (string part, string label)[] CostumeParts =
     {
-        ("Hat", "모자", "clothes"),
-        ("Top", "상의", "clothes"),
-        ("Bottom", "하의", "clothes"),
-        ("Robe", "로브", "clothes"),
-        ("Gloves", "장갑", "clothes"),
-        ("Shoes", "신발", "clothes"),
-        ("EarDeco", "귀장식", "accessory"),
-        ("EyeDeco", "눈장식", "accessory"),
-        ("FaceDeco", "얼굴장식", "accessory"),
-        ("Weapon", "무기", "weapon"),
+        ("Hat", "모자"),
+        ("Top", "상의"),
+        ("Bottom", "하의"),
+        ("Robe", "로브"),
+        ("Gloves", "장갑"),
+        ("Shoes", "신발"),
+        ("EarDeco", "귀장식"),
+        ("EyeDeco", "눈장식"),
+        ("FaceDeco", "얼굴장식"),
+        ("Weapon", "무기"),
     };
 
     readonly VisualElement host, window, title, popupLayer;
@@ -55,7 +53,9 @@ public sealed class CustomizePanel
     GameData data;
     EditState state;
     AssemblyPlan plan;
-    Rect desired;
+    /// <summary>가로로 넓은 창·세로로 긴 창의 마지막 배치. 너비 0 이면 기본 배치.</summary>
+    Rect desiredWide, desiredTall;
+    bool tall;
     Rect shown;
 
     /// <param name="host">화면 전체 크기의 층(AppUI.WindowLayer)</param>
@@ -105,14 +105,23 @@ public sealed class CustomizePanel
         scroll.contentContainer.style.paddingBottom = 18;
         window.Add(scroll);
 
+        // 하단 줄: 스크롤 영역이 여기서 끝나므로 세로 스크롤바가 손잡이를 덮지 않는다.
+        var footer = new VisualElement { name = "customize-footer" };
+        footer.style.flexDirection = FlexDirection.Row;
+        footer.style.justifyContent = Justify.FlexEnd;
+        footer.style.height = FooterHeight;
+        footer.style.flexShrink = 0;
+        footer.style.backgroundColor = AppUI.HeaderBg;
         var grip = new Label("◢") { name = "customize-resize" };
-        grip.style.position = Position.Absolute;
-        grip.style.right = 1; grip.style.bottom = 0;
-        grip.style.width = 16; grip.style.height = 16;
-        grip.style.fontSize = 11;
+        grip.style.width = 18; grip.style.height = FooterHeight;
+        grip.style.fontSize = 12;
         grip.style.color = AppUI.Sub;
         grip.style.unityTextAlign = TextAnchor.LowerRight;
-        window.Add(grip);
+        grip.style.paddingRight = 2;
+        grip.RegisterCallback<PointerEnterEvent>(e => grip.style.color = AppUI.Text);
+        grip.RegisterCallback<PointerLeaveEvent>(e => grip.style.color = AppUI.Sub);
+        footer.Add(grip);
+        window.Add(footer);
 
         host.Add(window);
 
@@ -126,25 +135,36 @@ public sealed class CustomizePanel
         DragHandler(grip, (r, d) => new Rect(r.x, r.y, r.width + d.x, r.height + d.y));
         host.RegisterCallback<GeometryChangedEvent>(e => Layout());
 
-        var saved = settings.customizePanel;
-        desired = saved != null && saved.valid && saved.width > 0 && saved.height > 0
-            ? new Rect(saved.x, saved.y, saved.width, saved.height)
-            : Rect.zero;
+        desiredWide = ToRect(settings.customizePanel);
+        desiredTall = ToRect(settings.customizePanelTall);
         Layout();
     }
 
     // ------------------------------------------------------------ 배치
 
+    static Rect ToRect(PanelLayout l) =>
+        l != null && l.valid && l.width > 0 && l.height > 0 ? new Rect(l.x, l.y, l.width, l.height) : Rect.zero;
+
     void Layout()
     {
         float w = host.layout.width, h = host.layout.height;
         if (float.IsNaN(w) || float.IsNaN(h) || w <= 0 || h <= 0) return;
-        if (desired.width <= 0)
-        {
-            float dw = Mathf.Min(DefaultWidth, w - Margin * 2);
-            desired = new Rect(w - dw - Margin, Margin, dw, h - Margin * 2);
-        }
+        tall = h > w;
+        var desired = tall ? desiredTall : desiredWide;
+        if (desired.width <= 0) desired = DefaultRect(w, h, tall);
         Show(Clamp(desired, w, h));
+    }
+
+    /// <summary>가로로 넓은 창: 오른쪽, 폭 340, 높이 전체. 세로로 긴 창: 아래쪽, 폭 전체, 높이 화면의 42%.</summary>
+    static Rect DefaultRect(float w, float h, bool tall)
+    {
+        if (tall)
+        {
+            float dh = Mathf.Clamp(h * 0.42f, Mathf.Min(220, h - Margin * 2), h - Margin * 2);
+            return new Rect(Margin, h - dh - Margin, w - Margin * 2, dh);
+        }
+        float dw = Mathf.Min(DefaultWidth, w - Margin * 2);
+        return new Rect(w - dw - Margin, Margin, dw, h - Margin * 2);
     }
 
     /// <summary>창이 앱 화면보다 크면 먼저 줄이고, 그다음 전체가 화면 안에 들어오게 옮긴다.</summary>
@@ -192,8 +212,9 @@ public sealed class CustomizePanel
             int p = pointer;
             pointer = -1;
             if (handle.HasPointerCapture(p)) handle.ReleasePointer(p);
-            desired = shown;
-            settings.customizePanel = new PanelLayout { valid = true, x = shown.x, y = shown.y, width = shown.width, height = shown.height };
+            var saved = new PanelLayout { valid = true, x = shown.x, y = shown.y, width = shown.width, height = shown.height };
+            if (tall) { desiredTall = shown; settings.customizePanelTall = saved; }
+            else { desiredWide = shown; settings.customizePanel = saved; }
             saveSettings?.Invoke();
         }
         handle.RegisterCallback<PointerUpEvent>(e => End(e.pointerId));
@@ -210,27 +231,26 @@ public sealed class CustomizePanel
         foldouts.Clear();
         refreshers.Clear();
 
-        Header("외형");
-        var basic = Section("basic");
-        basic.Add(Row("성별", Choice(GenderItems, () => state.appearance.gender, Gender, (s, id) => s.appearance.gender = id), null));
-        basic.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, BodyTypeName, (s, id) => s.appearance.bodyType = id), null));
-        basic.Add(Row("나이", Choice(AgeItems, () => state.appearance.age.ToString(), id => id + "세",
+        var look = Section("appearance");
+        look.Add(Row("성별", Choice(GenderItems, () => state.appearance.gender, Gender, (s, id) => s.appearance.gender = id), null));
+        look.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, BodyTypeName, (s, id) => s.appearance.bodyType = id), null));
+        look.Add(Row("나이", Choice(AgeItems, () => state.appearance.age.ToString(), id => id + "세",
             (s, id) => s.appearance.age = int.Parse(id)), null));
 
-        AppearanceRow(Section("head"), "얼굴형", HeadItems, () => state.appearance.head, HeadIssue, (s, id) => s.appearance.head = id,
+        AppearanceRow(look, "얼굴형", HeadItems, () => state.appearance.head, HeadIssue, (s, id) => s.appearance.head = id,
             id => data.Heads.TryGetValue(id ?? "", out var h) ? h.DisplayName : null);
-        AppearanceRow(Section("hair"), "헤어스타일", () => GroupItems(data.Hairs, state.appearance.hair, HairVariant, "Default"),
+        AppearanceRow(look, "헤어스타일", () => GroupItems(data.Hairs, state.appearance.hair, HairVariant, "Default"),
             () => state.appearance.hair, () => GroupIssue(data.Hairs, state.appearance.hair, HairVariant(), "Default"),
             (s, id) => s.appearance.hair = id, id => GameData.Resolve(data.Hairs, id, HairVariant())?.DisplayName);
-        AppearanceRow(Section("eyes"), "눈 모양", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
+        AppearanceRow(look, "눈 모양", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
             () => state.appearance.eyes, () => GroupIssue(data.Eyes, state.appearance.eyes, HeadVariant(), "Head_00"),
             (s, id) => s.appearance.eyes = id, id => GameData.Resolve(data.Eyes, id, HeadVariant(), "Head_00")?.DisplayName);
-        AppearanceRow(Section("mouth"), "입 모양", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
+        AppearanceRow(look, "입 모양", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
             () => state.appearance.mouth, () => GroupIssue(data.Mouths, state.appearance.mouth, HeadVariant(), "Head_00"),
             (s, id) => s.appearance.mouth = id, id => GameData.Resolve(data.Mouths, id, HeadVariant(), "Head_00")?.DisplayName);
 
-        Header("의상");
-        foreach (var (part, label, section) in CostumeParts) CostumeRow(Section(section), part, label);
+        var wear = Section("costume");
+        foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
 
         Refresh(state, plan);
     }
@@ -251,31 +271,28 @@ public sealed class CustomizePanel
         error.style.display = string.IsNullOrEmpty(message) ? DisplayStyle.None : DisplayStyle.Flex;
     }
 
-    void Header(string text)
-    {
-        var l = new Label(text);
-        l.style.color = AppUI.Sub;
-        l.style.fontSize = 11;
-        l.style.marginTop = 10; l.style.marginLeft = 4; l.style.marginBottom = 2;
-        l.style.unityFontStyleAndWeight = FontStyle.Bold;
-        scroll.Add(l);
-    }
-
     VisualElement Section(string key)
     {
         if (foldouts.TryGetValue(key, out var existing)) return existing.contentContainer;
         int i = Array.FindIndex(Sections, s => s.key == key);
         var (_, titleText, open) = Sections[i];
-        if (settings.sectionsSaved) open = settings.openSections.Contains(key);
+        if (SavedSectionsValid()) open = settings.openSections.Contains(key);
         var f = new Foldout { text = titleText, value = open };
-        f.style.marginTop = 2;
+        f.style.marginTop = 6;
         var toggleLabel = f.Q<Toggle>()?.Q<Label>();
-        if (toggleLabel != null) { toggleLabel.style.color = AppUI.Text; toggleLabel.style.fontSize = 13; }
+        if (toggleLabel != null) { toggleLabel.style.color = AppUI.Text; toggleLabel.style.fontSize = 14; toggleLabel.style.unityFontStyleAndWeight = FontStyle.Bold; }
         // 기본 테마의 펼침 화살표는 어두운 배경에서 거의 보이지 않는다.
         var arrow = f.Q(className: Foldout.checkmarkUssClassName);
         if (arrow != null) arrow.style.unityBackgroundImageTintColor = AppUI.Sub;
-        f.contentContainer.style.marginLeft = 4;
+        // 항목 줄은 폴드아웃 제목 글자와 같은 위치에서 시작한다(화살표만큼 들여쓰기).
+        f.contentContainer.style.marginLeft = 0;
         f.contentContainer.style.marginBottom = 4;
+        if (toggleLabel != null)
+            toggleLabel.RegisterCallback<GeometryChangedEvent>(e =>
+            {
+                float indent = toggleLabel.worldBound.x - f.worldBound.x;
+                if (indent > 0 && !float.IsNaN(indent)) f.contentContainer.style.paddingLeft = indent;
+            });
         // 펼침 상태는 앱 UI 설정이다. 장면 상태·코디 JSON 에 넣지 않는다.
         f.RegisterValueChangedCallback(e =>
         {
@@ -285,6 +302,15 @@ public sealed class CustomizePanel
         foldouts[key] = f;
         scroll.Add(f);
         return f.contentContainer;
+    }
+
+    /// <summary>저장된 펼침 상태가 지금 카테고리 키를 하나라도 담고 있는지(예전 키만 있으면 기본값을 쓴다).</summary>
+    bool SavedSectionsValid()
+    {
+        if (!settings.sectionsSaved || settings.openSections == null) return false;
+        if (settings.openSections.Count == 0) return true;
+        foreach (var k in settings.openSections) if (Array.FindIndex(Sections, x => x.key == k) >= 0) return true;
+        return false;
     }
 
     void SaveSections()

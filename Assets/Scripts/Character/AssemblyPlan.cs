@@ -46,6 +46,9 @@ public sealed class AssemblyPlan
     public readonly List<CostumeResult> Costumes = new List<CostumeResult>();
     public readonly List<string> Notes = new List<string>();
     public bool Male, Infant;
+    /// <summary>나이와 키 조절값(-1 작게 ~ 0 보통 ~ 1 크게). 몸 .bdc 의 본 스케일·위치를 고른다.</summary>
+    public int Age;
+    public float HeightModifier;
     public string BodyType = "Default";
     /// <summary>체형 블렌드셰이프 이름. null 이면 기본 체형.</summary>
     public string BlendShape;
@@ -56,7 +59,7 @@ public sealed class AssemblyPlan
 
 public static class PlanResolver
 {
-    /// <summary>성인 몸 데이터는 14~17세, 유아는 10~13세다. [추정] 14세 미만을 유아 모델로 본다.</summary>
+    /// <summary>성인 몸 .bdc 는 14~17세, 어린 몸(Infant*) .bdc 는 10~13세 데이터만 있다[확인]. 14세 미만을 어린 모델로 본다.</summary>
     public const int AdultMinAge = 14;
 
     public static Color ToColor(Rgba32 c) => new Color32(c.R, c.G, c.B, 255);
@@ -67,6 +70,8 @@ public static class PlanResolver
         var a = state.appearance ?? new AppearanceState();
         plan.Male = string.Equals(a.gender, "Male", StringComparison.OrdinalIgnoreCase);
         plan.Infant = a.age > 0 && a.age < AdultMinAge;
+        plan.Age = a.age;
+        plan.HeightModifier = a.heightModifier;
         plan.BodyType = string.IsNullOrEmpty(a.bodyType) ? "Default" : a.bodyType;
         if (data.BodyTypes.TryGetValue(plan.BodyType, out var bt) && bt.UseBlendshape) plan.BlendShape = bt.BlendshapeName;
 

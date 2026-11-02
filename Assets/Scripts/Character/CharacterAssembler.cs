@@ -2,9 +2,13 @@
 //   리소스(ResourcesPackage): StageObjectModel·BoneTemplate·포즈(SJON), 몸·의상 메시(SMM)
 //   번들(AssetPackages)    : 프리팹(머티리얼·텍스처), 머리·헤어·눈 메시(프리팹 또는 FBX 번들의 SkinnedMeshRenderer)
 // 규칙
-//   본: 파츠 순서(몸 → 머리 → 헤어 → 눈 → 의상)대로 BoneTemplate 을 이름 기준 병합
+//   본: 파츠 순서(몸 → 머리 → 헤어 → 눈 → 의상)대로 BoneTemplate 을 이름 기준 병합.
+//       같은 이름인데 기본 회전이 다른 본(예: 장갑의 Forearm Twist 가 몸과 약 60° 다름)은 그 파츠 전용 본을 따로 두고,
+//       포즈는 기존 본의 기본 자세 대비 변화량만 더한다. 하나로 합치면 그 파츠 정점이 비틀려 꺾인다.
 //   메시: ① <모델>_<i>.SkinnedModularMesh.bytes ② 프리팹 SMR 의 sharedMesh ③ /<모델>.fbx 번들의 같은 이름 SMR
-//   보조 메시(Mesh_BP_, Mesh_SP_, Cage_)는 만들지 않는다. 헤어는 Mesh_Hair_*_H0~H5 중 하나만 표시
+//   보조 메시(Mesh_BP_, Mesh_SP_, Cage_)는 그리지 않는다. 헤어는 Mesh_Hair_*_H0~H5 중 하나만 표시
+//   몸 가리기: 의상의 팔·다리 절단면(Mesh_SP_L/R Hand·Arm·Foot·Leg)으로 그 팔다리의 덮인 쪽 몸을 자르고(BodyCut.LimbCuts),
+//             나머지는 옷·의상 피부 조각 면 근처의 몸 삼각형을 빼는 근사로 처리한다.
 //   머티리얼: 원본 복사 후 셰이더만 교체(_BaseMap, _DyeColor1~3, _IsDyable, _TintColor 유지)
 //   염색: DyeInfo.Slots[].Wirings[(MeshIndex, MaterialIndex, ChannelIndex)] → 해당 머티리얼 _DyeColor{Channel+1}
 using System;
@@ -65,7 +69,14 @@ public static class CharacterAssembler
         var bind = new List<(Vector3 p, Quaternion r, Vector3 s)>();
         var map = new Dictionary<string, Transform>(StringComparer.Ordinal);
         var parentName = new Dictionary<Transform, string>();
+        // 파츠 전용 본: 파츠 → (이름 → 본). 전용 본의 포즈는 (기존 본의 기본 자세 → 포즈) 변화량을 파츠 기본 자세에 더한다.
+        var partBones = new Dictionary<Def, Dictionary<string, Transform>>();
+        var boneOwner = new Dictionary<Transform, Def>();
+        var poseBase = new Dictionary<Transform, (Vector3 p, Quaternion r)>();
+        int partOwnBones = 0;
         var cloth = new List<SkinnedMeshRenderer>();
+        var clothByKey = new List<(string key, SkinnedMeshRenderer smr)>();
+        var slicers = new List<BodyCut.SlicerMesh>();
 
         void AddBones(Def d)
         {
@@ -75,13 +86,31 @@ public static class CharacterAssembler
             foreach (var n in nodes)
             {
                 string name = n.Get("Name").Str();
-                if (name == null || map.ContainsKey(name)) continue;
+                if (name == null) continue;
+                var pos = V3(n.Get("Position")); var rot = Q(n.Get("Rotation"));
+                if (map.TryGetValue(name, out var existing))
+                {
+                    var eb = bind[bones.IndexOf(existing)];
+                    if (Mathf.Abs(Quaternion.Dot(eb.r, rot)) >= 0.999f) continue;
+                    if (!partBones.TryGetValue(d, out var own)) partBones[d] = own = new Dictionary<string, Transform>(StringComparer.Ordinal);
+                    var dup = new GameObject(name).transform;
+                    own[name] = dup;
+                    poseBase[dup] = (eb.p, eb.r);
+                    partOwnBones++;
+                    boneOwner[dup] = d;
+                    int dpi = n.Get("ParentIndex").I();
+                    parentName[dup] = dpi >= 0 && dpi < nodes.Count ? nodes[dpi].Get("Name").Str() : null;
+                    bones.Add(dup);
+                    bind.Add((pos, rot, V3(n.Get("Scale"))));
+                    continue;
+                }
                 int pi = n.Get("ParentIndex").I();
                 var t = new GameObject(name).transform;
                 map[name] = t;
+                boneOwner[t] = d;
                 parentName[t] = pi >= 0 && pi < nodes.Count ? nodes[pi].Get("Name").Str() : null;
                 bones.Add(t);
-                bind.Add((V3(n.Get("Position")), Q(n.Get("Rotation")), V3(n.Get("Scale"))));
+                bind.Add((pos, rot, V3(n.Get("Scale"))));
             }
         }
 
@@ -161,9 +190,21 @@ public static class CharacterAssembler
                 string name = list[i].Get("MeshName").Str() ?? "";
                 bool helper = false;
                 foreach (var h in HelperPrefix) if (name.StartsWith(h, StringComparison.Ordinal)) helper = true;
-                if (helper) continue;
-                Mesh mesh; string[] boneNames; bool owned = false;
                 string smm = $"{d.Dir}{part.Model}_{i}.SkinnedModularMesh.bytes";
+                if (helper)
+                {
+                    // 절단면 메시는 그리지 않고 몸 자르기에만 쓴다.
+                    if (part.Role == PartRole.Costume && BodyCut.LimbOfSlicer(name) != null && files.HasResource(smm))
+                    {
+                        var sm = SmmReader.Read(files.ReadResource(smm), out var sb);
+                        view.Owned.Add(sm);
+                        var sbt = new Transform[sb.Length];
+                        for (int b = 0; b < sb.Length; b++) sbt[b] = BoneFor(d, sb[b]);
+                        slicers.Add(new BodyCut.SlicerMesh { Key = part.Key, Name = name, Mesh = sm, BoneNames = sb, Bones = sbt });
+                    }
+                    continue;
+                }
+                Mesh mesh; string[] boneNames; bool owned = false;
                 prefabSmr.TryGetValue(name, out var psmr);
                 if (files.HasResource(smm)) { mesh = SmmReader.Read(files.ReadResource(smm), out boneNames); owned = true; }
                 else if (psmr && psmr.sharedMesh) { mesh = psmr.sharedMesh; boneNames = BoneNames(psmr); }
@@ -190,7 +231,7 @@ public static class CharacterAssembler
                 int missing = 0;
                 var bt = new Transform[boneNames.Length];
                 for (int b = 0; b < bt.Length; b++)
-                    if (!map.TryGetValue(boneNames[b] ?? "", out bt[b])) { bt[b] = root.transform; missing++; }
+                    if ((bt[b] = BoneFor(d, boneNames[b])) == null) { bt[b] = root.transform; missing++; }
                 smr.bones = bt;
                 smr.rootBone = bt.Length > 0 ? bt[0] : root.transform;
                 smr.updateWhenOffscreen = true;
@@ -212,7 +253,8 @@ public static class CharacterAssembler
                 view.Renderers.Add((part.Key, smr));
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
-                if (part.Role == PartRole.Costume && go2.activeSelf && list[i].Get("ClothingMaterialType").Str() != "Skin") cloth.Add(smr);
+                // 의상 피부 조각(ClothingMaterialType=Skin)도 그 자리의 몸을 대신하므로 가리기 판정에 넣는다.
+                if (part.Role == PartRole.Costume && go2.activeSelf && partGo.activeSelf) { cloth.Add(smr); clothByKey.Add((part.Key, smr)); }
                 if (missing > 0) L($"  {part.Model}/{name}: 본 {missing}개 없음");
             }
 
@@ -231,8 +273,15 @@ public static class CharacterAssembler
 
         foreach (var d in defs) AddBones(d);
         foreach (var d in defs) if (d.Part.Role != PartRole.Mouth) AddModel(d);
+        Transform BoneFor(Def d, string name)
+        {
+            if (name == null) return null;
+            if (d != null && partBones.TryGetValue(d, out var own) && own.TryGetValue(name, out var t)) return t;
+            return map.TryGetValue(name, out t) ? t : null;
+        }
         foreach (var t in bones)
-            t.SetParent(parentName[t] != null && map.TryGetValue(parentName[t], out var pt) ? pt : root.transform, false);
+            t.SetParent(BoneFor(boneOwner.TryGetValue(t, out var od) ? od : null, parentName[t]) ?? root.transform, false);
+        if (partOwnBones > 0) L($"파츠 전용 본 {partOwnBones}개(기본 회전이 다른 같은 이름 본)");
 
         int nb = bones.Count;
         view.Bones = bones.ToArray();
@@ -248,9 +297,56 @@ public static class CharacterAssembler
                 if (!tr.TryGetValue(bones[i].name, out var t)) continue;
                 view.HasPose[i] = true; posed++;
                 view.PosePos[i] = V3(t.Get("LocalPosition")); view.PoseRot[i] = Q(t.Get("LocalRotation")); view.PoseScl[i] = V3(t.Get("LocalScale"));
+                if (poseBase.TryGetValue(bones[i], out var pb))
+                {
+                    view.PoseRot[i] = view.PoseRot[i] * Quaternion.Inverse(pb.r) * bind[i].r;
+                    view.PosePos[i] = bind[i].p + (view.PosePos[i] - pb.p);
+                }
             }
         }
         else L($"포즈 없음: {plan.Pose}");
+
+        // 나이·키·체형별 본 스케일·위치(몸 .bdc). 같은 이름의 파츠 전용 본에도 적용한다.
+        var bodyDef = defs.Find(x => x.Part.Role == PartRole.Body);
+        if (bodyDef != null)
+        {
+            string bdc = bodyDef.Dir + bodyDef.Part.Model + ".bdc.sjon.bin";
+            string info = null;
+            var states = files.HasResource(bdc) ? BodyDiversity.Resolve(files.ReadSjon(bdc), plan.Age, plan.BodyType, plan.HeightModifier, out info) : null;
+            if (states == null) L($"키·나이 데이터 없음: {bdc} (나이 {plan.Age}, 체형 {plan.BodyType})");
+            else
+            {
+                // 발바닥 높이를 맞추려고 적용 전 포즈의 발바닥 높이를 잰다.
+                view.SetPosed(true);
+                float sole0 = SoleHeight(view);
+                // .bdc 스케일은 본마다의 누적 스케일이다(14세: 몸통·팔다리 모두 0.787, 머리 0.97).
+                // Unity 로컬 스케일 = 자기 값 ÷ 데이터가 있는 가장 가까운 조상의 값. 위치는 부모 스케일 공간 값이라 그대로 쓴다.
+                // _COM 위치는 게임이 따로 정한다(comFollow). 데이터 위치(0,0,0)는 쓰지 않고 아래에서 발바닥 높이로 맞춘다.
+                int applied = 0;
+                for (int i = 0; i < nb; i++)
+                {
+                    if (!states.TryGetValue(bones[i].name, out var st)) continue;
+                    Vector3 parentScale = Vector3.one;
+                    for (var pt = bones[i].parent; pt != null && pt != root.transform; pt = pt.parent)
+                        if (states.TryGetValue(pt.name, out var ps)) { parentScale = ps.scale; break; }
+                    var local = new Vector3(st.scale.x / Mathf.Max(parentScale.x, 1e-4f), st.scale.y / Mathf.Max(parentScale.y, 1e-4f), st.scale.z / Mathf.Max(parentScale.z, 1e-4f));
+                    bool com = bones[i].name == "_COM";
+                    view.BindScl[i] = local;
+                    if (!com) view.BindPos[i] = st.pos;
+                    if (view.HasPose[i]) { view.PoseScl[i] = local; if (!com) view.PosePos[i] = st.pos; }
+                    applied++;
+                }
+                view.SetPosed(true);
+                float drop = SoleHeight(view) - sole0;
+                int ci = bones.FindIndex(x => x.name == "_COM" && parentName[x] == null);
+                if (ci >= 0 && !float.IsNaN(drop))
+                {
+                    view.BindPos[ci] -= new Vector3(0, drop, 0);
+                    if (view.HasPose[ci]) view.PosePos[ci] -= new Vector3(0, drop, 0);
+                }
+                L($"키·나이: {info}, 본 {applied}개, 발바닥 높이 보정 {-drop:F3}m");
+            }
+        }
 
         foreach (var d in defs) if (d.Part.Role == PartRole.Mouth) ApplyMouth(bundles, d.Root, view, L);
         ApplyFacialAnimation(files, plan, view, L);
@@ -260,7 +356,8 @@ public static class CharacterAssembler
         view.SetPosed(false);
         if (view.Body && cloth.Count > 0)
         {
-            view.BodyCutMesh = BodyCut.Compute(view.Body, cloth, BodyCutDistance, L);
+            var limbCuts = BodyCut.LimbCuts(slicers, map, clothByKey, L);
+            view.BodyCutMesh = BodyCut.Compute(view.Body, cloth, BodyCutDistance, limbCuts, L);
             if (view.BodyCutMesh) view.Owned.Add(view.BodyCutMesh);
         }
         view.SetBodyCut(true);
@@ -389,18 +486,245 @@ public static class CharacterAssembler
         return n;
     }
 
+    /// <summary>현재 자세에서 좌우 발바닥 본(_L/_R Sole) 중 낮은 쪽의 높이. 없으면 NaN.</summary>
+    static float SoleHeight(CharacterView view)
+    {
+        float y = float.NaN;
+        foreach (var n in new[] { "_L Sole", "_R Sole" })
+        {
+            var t = view.FindBone(n);
+            if (t) y = float.IsNaN(y) ? t.position.y : Mathf.Min(y, t.position.y);
+        }
+        return y;
+    }
+
     static Vector3 V3(object o) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : Vector3.one; }
     static Quaternion Q(object o) { var l = o.Arr(); return l.Count >= 4 ? new Quaternion(l[0].F(), l[1].F(), l[2].F(), l[3].F()) : Quaternion.identity; }
 }
 
+/// <summary>
+/// 키·나이 본 데이터(.bdc). 게임의 HeightDiversityContainer · BodyDiversityStateSelector 와 같은 규칙.
+///   (나이, 체형) 묶음마다 키 단계 Short·Medium·Tall 의 본 로컬 스케일·위치가 있다.
+///   HeightModifier ≤ 0 이면 Short→Medium 을 t = HeightModifier + 1 로, > 0 이면 Medium→Tall 을 t = HeightModifier 로 선형 보간한다
+///   (GetHeightStateFromHeightModifier: min -1, mid 0. 보간은 BodyDiversityBonePoseStateLerped 의 a + (b - a)·t).
+/// </summary>
+public static class BodyDiversity
+{
+    public static Dictionary<string, (Vector3 pos, Vector3 scale)> Resolve(object root, int age, string bodyType, float heightModifier, out string info)
+    {
+        info = null;
+        var colls = root.Get("HeightDiversityDatapointCollection").Arr();
+        if (colls.Count == 0) return null;
+        bodyType = string.IsNullOrEmpty(bodyType) ? "Default" : bodyType;
+        // 같은 나이·체형 → 같은 나이 Default → 가장 가까운 나이(데이터 범위 밖 나이 보정).
+        object coll = null; int best = int.MaxValue;
+        foreach (var c in colls)
+        {
+            int ca = c.Get("Age").I();
+            string cb = c.Get("BlendshapeName").Str() ?? "Default";
+            int score = Math.Abs(ca - age) * 10 + (cb == bodyType ? 0 : cb == "Default" ? 1 : 5);
+            if (score < best) { best = score; coll = c; }
+        }
+        float hm = Mathf.Clamp(heightModifier, -1f, 1f);
+        string e0 = hm <= 0 ? "Short" : "Medium", e1 = hm <= 0 ? "Medium" : "Tall";
+        float t = hm <= 0 ? hm + 1f : hm;
+        object p0 = null, p1 = null;
+        foreach (var p in coll.Get("HeightDiversityDatapoints").Arr())
+        {
+            string e = p.Get("HeightEnum").Str();
+            if (e == e0) p0 = p;
+            if (e == e1) p1 = p;
+        }
+        if (p0 == null || p1 == null) return null;
+        var a = Bones(p0); var b = Bones(p1);
+        var result = new Dictionary<string, (Vector3, Vector3)>(StringComparer.Ordinal);
+        foreach (var kv in a)
+        {
+            var o = b.TryGetValue(kv.Key, out var v) ? v : kv.Value;
+            result[kv.Key] = (Vector3.LerpUnclamped(kv.Value.pos, o.pos, t), Vector3.LerpUnclamped(kv.Value.scale, o.scale, t));
+        }
+        float h0 = p0.Get("HeightHint").F(), h1 = p1.Get("HeightHint").F();
+        info = $"나이 {coll.Get("Age").I()} 체형 {coll.Get("BlendshapeName").Str()} 키 {e0}→{e1} t={t:F2}, 키 참고값 {h0 + (h1 - h0) * t:F1}";
+        return result;
+    }
+
+    static Dictionary<string, (Vector3 pos, Vector3 scale)> Bones(object point)
+    {
+        var d = new Dictionary<string, (Vector3, Vector3)>(StringComparer.Ordinal);
+        foreach (var s in point.Get("BoneLocalScales").Arr())
+        {
+            string name = s.Get("BoneName").Str();
+            if (name == null) continue;
+            d[name] = (new Vector3(s.Get("LocalPositionX").F(), s.Get("LocalPositionY").F(), s.Get("LocalPositionZ").F()),
+                       new Vector3(s.Get("LocalScaleX").F(), s.Get("LocalScaleY").F(), s.Get("LocalScaleZ").F()));
+        }
+        return d;
+    }
+}
+
 public static class BodyCut
 {
-    /// <summary>몸 정점의 노멀 방향 +dist / -3cm 안에 옷 면이 있으면 덮인 것으로 본다. 세 정점이 모두 덮인 삼각형을 뺀 메시를 만든다(근사).</summary>
-    public static Mesh Compute(SkinnedMeshRenderer body, List<SkinnedMeshRenderer> cloth, float dist, Action<string> log)
+    public sealed class SlicerMesh
+    {
+        public string Key, Name;
+        public Mesh Mesh;
+        public string[] BoneNames;
+        public Transform[] Bones;
+    }
+
+    /// <summary>팔다리 절단면. Normal 쪽(의상이 덮는 쪽)에 있는, 같은 팔다리 중 Levels 부위의 몸을 자른다.</summary>
+    public struct LimbCut
+    {
+        public string Limb;
+        /// <summary>비트 0 위팔·허벅지, 1 아래팔·종아리, 2 손·발</summary>
+        public int Levels;
+        public Vector3 Point, Normal;
+    }
+
+    static readonly Regex SlicerName = new Regex(@"^Mesh_SP_([LR])(Hand|Arm|Foot|Leg)$");
+
+    /// <summary>Mesh_SP_LHand → "L arm", Mesh_SP_RFoot → "R leg". 팔다리 절단면이 아니면 null.</summary>
+    public static string LimbOfSlicer(string meshName)
+    {
+        var m = SlicerName.Match(meshName ?? "");
+        if (!m.Success) return null;
+        string kind = m.Groups[2].Value;
+        return m.Groups[1].Value + (kind == "Hand" || kind == "Arm" ? " arm" : " leg");
+    }
+
+    /// <summary>
+    /// 본 이름 → 팔다리("L arm", "R leg")와 부위 단계(0 위팔·허벅지, 1 아래팔·종아리, 2 손·발).
+    /// 게임의 PoseSegment(LeftUpperArm, LeftLowerArm, LeftHand …)에 대응한다. 몸통·어깨(쇄골·삼각근)·골반이면 null.
+    /// </summary>
+    public static string LimbOfBone(string bone, out int level)
+    {
+        level = -1;
+        if (string.IsNullOrEmpty(bone) || bone.Contains("SP Skirt")) return null;
+        string side = bone.StartsWith("_L") || bone.EndsWith("toolL") ? "L" : bone.StartsWith("_R") || bone.EndsWith("toolR") ? "R" : null;
+        if (side == null) return null;
+        if (bone.Contains("UpperArm")) { level = 0; return side + " arm"; }
+        if (bone.Contains("Forearm") || bone.Contains("Arm2tool")) { level = 1; return side + " arm"; }
+        if (bone.Contains("Hand") || bone.Contains("Finger") || bone.Contains("Palm")) { level = 2; return side + " arm"; }
+        if (bone.Contains("Thigh")) { level = 0; return side + " leg"; }
+        if (bone.Contains("Calf")) { level = 1; return side + " leg"; }
+        if (bone.Contains("Foot") || bone.Contains("Sole") || bone.Contains("Toe")) { level = 2; return side + " leg"; }
+        return null;
+    }
+
+    static string DominantLimb(BoneWeight w, string[] names, out int level)
+    {
+        int i = w.boneIndex0; float best = w.weight0;
+        if (w.weight1 > best) { i = w.boneIndex1; best = w.weight1; }
+        if (w.weight2 > best) { i = w.boneIndex2; best = w.weight2; }
+        if (w.weight3 > best) { i = w.boneIndex3; }
+        level = -1;
+        return i >= 0 && i < names.Length ? LimbOfBone(names[i], out level) : null;
+    }
+
+    static string[] Names(SkinnedMeshRenderer r)
+    {
+        var b = r.bones; var n = new string[b.Length];
+        for (int i = 0; i < b.Length; i++) n[i] = b[i] ? b[i].name : null;
+        return n;
+    }
+
+    /// <summary>
+    /// 의상의 팔다리 절단면(Mesh_SP_*)으로 평면을 만든다. 평면은 절단면 정점의 무게중심과 면 노멀 합으로 정하고,
+    /// 같은 의상의 그 팔다리 정점이 많은 쪽을 덮는 쪽으로 보고, 의상이 실제로 차지한 부위(위·아래·끝)에만 적용한다.
+    /// 예: 하이힐의 발 절단면은 발바닥 아래 수평면이라 발 부위에만 적용해야 다리 전체가 잘리지 않는다. 현재 본 자세(기본 자세)에서 계산한다.
+    /// 게임은 몸 삼각형마다 부위(PoseSegment)를 두고 절단면으로 자른다(FittingCutPolicy).
+    /// 부위 데이터(.ClothingUnit.bytes)는 해석하지 않았으므로 본 가중치로 대신한다.
+    /// </summary>
+    public static List<LimbCut> LimbCuts(List<SlicerMesh> slicers, Dictionary<string, Transform> bones,
+        List<(string key, SkinnedMeshRenderer smr)> cloth, Action<string> log)
+    {
+        var cuts = new List<LimbCut>();
+        foreach (var s in slicers)
+        {
+            string limb = LimbOfSlicer(s.Name);
+            var verts = s.Mesh.vertices; var bw = s.Mesh.boneWeights; var bp = s.Mesh.bindposes;
+            if (verts.Length < 3 || bw.Length != verts.Length) continue;
+            var skin = new Matrix4x4[s.BoneNames.Length];
+            for (int b = 0; b < skin.Length; b++)
+                skin[b] = b < bp.Length && b < s.Bones.Length && s.Bones[b] ? s.Bones[b].localToWorldMatrix * bp[b] : Matrix4x4.identity;
+            var w = new Vector3[verts.Length];
+            Vector3 center = Vector3.zero;
+            for (int i = 0; i < verts.Length; i++)
+            {
+                var b = bw[i]; var v = verts[i]; Vector3 p = Vector3.zero;
+                if (b.weight0 > 0) p += skin[b.boneIndex0].MultiplyPoint3x4(v) * b.weight0;
+                if (b.weight1 > 0) p += skin[b.boneIndex1].MultiplyPoint3x4(v) * b.weight1;
+                if (b.weight2 > 0) p += skin[b.boneIndex2].MultiplyPoint3x4(v) * b.weight2;
+                if (b.weight3 > 0) p += skin[b.boneIndex3].MultiplyPoint3x4(v) * b.weight3;
+                w[i] = p; center += p;
+            }
+            center /= verts.Length;
+            if (log != null)
+            {
+                var bb = new Bounds(w[0], Vector3.zero); foreach (var q in w) bb.Encapsulate(q);
+                var miss = new List<string>(); for (int b = 0; b < s.BoneNames.Length; b++) if (b >= s.Bones.Length || !s.Bones[b]) miss.Add(s.BoneNames[b]);
+                log($"  절단면 메시 {s.Name}: 정점 {verts.Length}, 범위 {bb.min:F3}~{bb.max:F3}, 본 [{string.Join(",", s.BoneNames)}], 없는 본 [{string.Join(",", miss)}]");
+            }
+            Vector3 normal = Vector3.zero;
+            var tri = s.Mesh.triangles;
+            for (int i = 0; i + 2 < tri.Length; i += 3)
+            {
+                var n = Vector3.Cross(w[tri[i + 1]] - w[tri[i]], w[tri[i + 2]] - w[tri[i]]);
+                normal += Vector3.Dot(n, normal) < 0 ? -n : n;
+            }
+            if (normal.sqrMagnitude < 1e-12f) continue;
+            normal.Normalize();
+
+            int pos = 0, neg = 0;
+            var perLevel = new int[3];
+            foreach (var (key, smr) in cloth)
+            {
+                if (key != s.Key || !smr.sharedMesh) continue;
+                var names = Names(smr);
+                var m = new Mesh(); smr.BakeMesh(m, true);
+                var cv = m.vertices; var cw = smr.sharedMesh.boneWeights; var l2w = smr.transform.localToWorldMatrix;
+                UnityEngine.Object.DestroyImmediate(m);
+                for (int i = 0; i < cv.Length && i < cw.Length; i++)
+                {
+                    if (DominantLimb(cw[i], names, out int lv) != limb) continue;
+                    perLevel[lv]++;
+                    float d = Vector3.Dot(l2w.MultiplyPoint3x4(cv[i]) - center, normal);
+                    if (d > 0.005f) pos++; else if (d < -0.005f) neg++;
+                }
+            }
+            if (pos == 0 && neg == 0) { log?.Invoke($"몸 절단면 {s.Key}/{s.Name}: 같은 팔다리 의상 정점이 없어 건너뜀"); continue; }
+            if (neg > pos) normal = -normal;
+            int total = perLevel[0] + perLevel[1] + perLevel[2], levels = 0;
+            for (int k = 0; k < 3; k++) if (perLevel[k] >= Math.Max(8, total * 0.03f)) levels |= 1 << k;
+            cuts.Add(new LimbCut { Limb = limb, Levels = levels, Point = center, Normal = normal });
+            log?.Invoke($"몸 절단면 {s.Key}/{s.Name}: {limb}, 부위 정점 {perLevel[0]}/{perLevel[1]}/{perLevel[2]} → 적용 {Convert.ToString(levels, 2)}, 중심 {center:F3}, 방향 {normal:F2}, 덮는 쪽 정점 {Math.Max(pos, neg)}/{pos + neg}");
+        }
+        return cuts;
+    }
+
+    /// <summary>
+    /// ① 팔다리 절단면의 덮인 쪽에 있는 같은 팔다리 몸 정점을 자른다.
+    /// ② 몸 정점의 노멀 방향 +dist / -3cm 안에 옷 면이 있으면 덮인 것으로 본다.
+    /// 세 정점이 모두 ①·② 중 하나에 해당하는 삼각형을 뺀 메시를 만든다(근사).
+    /// </summary>
+    public static Mesh Compute(SkinnedMeshRenderer body, List<SkinnedMeshRenderer> cloth, float dist, List<LimbCut> limbCuts, Action<string> log)
     {
         var bm = new Mesh(); body.BakeMesh(bm, true);
         var bv = bm.vertices; var bn = bm.normals; var b2w = body.transform.localToWorldMatrix;
         UnityEngine.Object.DestroyImmediate(bm);
+        var bodyNames = Names(body);
+        var bodyWeights = body.sharedMesh.boneWeights;
+        var sliced = new bool[bv.Length];
+        int ns = 0;
+        if (limbCuts != null && limbCuts.Count > 0 && bodyWeights.Length == bv.Length)
+            for (int i = 0; i < bv.Length; i++)
+            {
+                string limb = DominantLimb(bodyWeights[i], bodyNames, out int lv);
+                if (limb == null) continue;
+                var p = b2w.MultiplyPoint3x4(bv[i]);
+                foreach (var c in limbCuts)
+                    if (c.Limb == limb && (c.Levels & (1 << lv)) != 0 && Vector3.Dot(p - c.Point, c.Normal) > 0) { sliced[i] = true; ns++; break; }
+            }
         var tris = new List<Vector3>();
         foreach (var c in cloth)
         {
@@ -441,12 +765,12 @@ public static class BodyCut
             for (int i = 0; i < t.Length; i += 3)
             {
                 total++;
-                if (covered[t[i]] && covered[t[i + 1]] && covered[t[i + 2]]) { removed++; continue; }
+                if ((covered[t[i]] || sliced[t[i]]) && (covered[t[i + 1]] || sliced[t[i + 1]]) && (covered[t[i + 2]] || sliced[t[i + 2]])) { removed++; continue; }
                 keep.Add(t[i]); keep.Add(t[i + 1]); keep.Add(t[i + 2]);
             }
             cut.SetTriangles(keep, s);
         }
-        log?.Invoke($"몸 가리기 근사: 옷 삼각형 {nt}, 덮인 몸 정점 {nc}/{bv.Length}, 뺀 삼각형 {removed}/{total}");
+        log?.Invoke($"몸 가리기 근사: 절단면 {limbCuts?.Count ?? 0}개로 자른 몸 정점 {ns}, 옷 삼각형 {nt}, 덮인 몸 정점 {nc}/{bv.Length}, 뺀 삼각형 {removed}/{total}");
         return cut;
     }
 
