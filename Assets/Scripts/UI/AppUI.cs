@@ -1,6 +1,6 @@
 // 앱 공통 오버레이 UI (UI Toolkit, 코드로 구성).
 //   경로 지정 팝업(Startup.md), 로딩 표시, 복구·오류 안내, 화면 구석의 상태 메모.
-// 꾸미기 창은 별도 작업에서 추가한다.
+//   꾸미기 창(CustomizePanel)은 WindowLayer 에 붙는다. 모달은 그 위에 뜬다.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -9,15 +9,20 @@ using UnityEngine.UIElements;
 public sealed class AppUI
 {
     public readonly UIDocument Document;
-    readonly VisualElement root, layer, notes;
+    readonly VisualElement root, windows, layer, notes;
     VisualElement modal;
     Label loading;
 
-    static readonly Color Dim = new Color(0, 0, 0, 0.55f);
-    static readonly Color PanelBg = new Color(0.16f, 0.17f, 0.2f, 0.98f);
-    static readonly Color Text = new Color(0.93f, 0.93f, 0.95f);
-    static readonly Color Sub = new Color(0.7f, 0.72f, 0.76f);
-    static readonly Color ErrorColor = new Color(1f, 0.45f, 0.42f);
+    internal static readonly Color Dim = new Color(0, 0, 0, 0.55f);
+    internal static readonly Color PanelBg = new Color(0.16f, 0.17f, 0.2f, 0.98f);
+    internal static readonly Color HeaderBg = new Color(0.12f, 0.13f, 0.15f, 1f);
+    internal static readonly Color FieldBg = new Color(0.22f, 0.23f, 0.27f, 1f);
+    internal static readonly Color FieldHover = new Color(0.27f, 0.28f, 0.33f, 1f);
+    internal static readonly Color Border = new Color(0.33f, 0.35f, 0.4f, 1f);
+    internal static readonly Color Text = new Color(0.93f, 0.93f, 0.95f);
+    internal static readonly Color Sub = new Color(0.7f, 0.72f, 0.76f);
+    internal static readonly Color ErrorColor = new Color(1f, 0.45f, 0.42f);
+    internal static readonly Color WarnColor = new Color(0.95f, 0.78f, 0.4f);
 
     public AppUI(GameObject host, PanelSettings settings)
     {
@@ -28,15 +33,23 @@ public sealed class AppUI
         root.pickingMode = PickingMode.Ignore;
         ApplySystemFont(root);
 
+        windows = new VisualElement { name = "window-layer", pickingMode = PickingMode.Ignore };
+        Fill(windows);
+        root.Add(windows);
+
         layer = new VisualElement { name = "app-layer", pickingMode = PickingMode.Ignore };
         Fill(layer);
         root.Add(layer);
 
         notes = new VisualElement { name = "notes", pickingMode = PickingMode.Ignore };
         notes.style.position = Position.Absolute;
-        notes.style.left = 12; notes.style.bottom = 10; notes.style.right = 12;
-        root.Add(notes);
+        notes.style.left = 12; notes.style.bottom = 10;
+        notes.style.maxWidth = new Length(50, LengthUnit.Percent);
+        root.Insert(0, notes);      // 메모는 꾸미기 창 아래에 둔다
     }
+
+    /// <summary>꾸미기 창을 붙이는 화면 전체 층(모달·로딩보다 아래).</summary>
+    public VisualElement WindowLayer => windows;
 
     static void ApplySystemFont(VisualElement e)
     {
@@ -62,7 +75,7 @@ public sealed class AppUI
         if (panel == null) return false;
         var p = RuntimePanelUtils.ScreenToPanel(panel, new Vector2(screenPos.x, Screen.height - screenPos.y));
         var picked = panel.Pick(p);
-        return picked != null && picked != root && picked != layer;
+        return picked != null && picked != root && picked != layer && picked != windows;
     }
 
     public bool ModalOpen => modal != null;

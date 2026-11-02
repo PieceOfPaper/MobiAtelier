@@ -2,6 +2,7 @@
 //   쓰기: 임시 파일에 쓴 뒤 교체하고, 직전 정상 파일은 .bak 으로 남긴다.
 //   읽기: 없음 / 정상 / 손상 / 지원하지 않는 형식을 구분한다. 손상 파일은 덮어쓰지 않는다(호출 쪽 책임).
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEngine;
@@ -82,6 +83,11 @@ public class AppSettings
     public string installPath;
     /// <summary>마지막으로 JSON 저장에 성공한 폴더</summary>
     public string recentJsonFolder;
+    /// <summary>꾸미기 창의 마지막 위치·크기(UI 패널 좌표). 화면에 맞춘 보정 전의 값이다.</summary>
+    public PanelLayout customizePanel = new PanelLayout();
+    /// <summary>true 면 openSections 가 사용자가 정한 폴드아웃 펼침 상태다. false 면 기본값을 쓴다.</summary>
+    public bool sectionsSaved;
+    public List<string> openSections = new List<string>();
 
     public static AppSettings Load()
     {
@@ -90,4 +96,11 @@ public class AppSettings
     }
 
     public void Save() => JsonStore.WriteAtomic(JsonStore.SettingsPath, JsonUtility.ToJson(this, true));
+}
+
+[Serializable]
+public class PanelLayout
+{
+    public bool valid;
+    public float x, y, width, height;
 }

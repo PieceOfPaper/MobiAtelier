@@ -127,6 +127,25 @@ public static class PlanResolver
         return p;
     }
 
+    /// <summary>
+    /// 패션장비 행이 현재 성별·나이에서 입을 수 있는지(설치 폴더 리소스 존재는 보지 않는다).
+    /// Applied 면 models 에 조립할 모델 이름, 아니면 GenderMismatch / NoModelForAppearance 와 안내 문구.
+    /// </summary>
+    public static CostumeStatus CheckCostume(CostumeData row, bool male, bool infant, out List<string> models, out string detail)
+    {
+        models = null;
+        detail = null;
+        if ((row.EquippableGender == "Male" && !male) || (row.EquippableGender == "Female" && male))
+        {
+            detail = row.EquippableGender == "Male" ? "남성 전용입니다." : "여성 전용입니다.";
+            return CostumeStatus.GenderMismatch;
+        }
+        var list = infant ? (male ? row.BoyModels : row.GirlModels) : (male ? row.MaleModels : row.FemaleModels);
+        models = list.FindAll(m => !string.IsNullOrEmpty(m) && m != "Invalid");
+        if (models.Count == 0) { detail = "현재 외형에 맞는 모델이 없습니다."; return CostumeStatus.NoModelForAppearance; }
+        return CostumeStatus.Applied;
+    }
+
     static void ResolveCostumes(AssemblyPlan plan, EditState state, GameData data, InstallFiles files)
     {
         var hidden = new HashSet<string>(StringComparer.Ordinal);
@@ -148,11 +167,8 @@ public static class PlanResolver
             if (string.IsNullOrEmpty(slot.costumeId)) { plan.Costumes.Remove(res); continue; }
             if (!data.Costumes.TryGetValue(slot.costumeId, out var row)) { res.Status = CostumeStatus.UnknownId; res.Detail = "패션장비 데이터에 없는 ID입니다."; continue; }
             res.DisplayName = row.DisplayName;
-            if ((row.EquippableGender == "Male" && !plan.Male) || (row.EquippableGender == "Female" && plan.Male))
-            { res.Status = CostumeStatus.GenderMismatch; res.Detail = row.EquippableGender == "Male" ? "남성 전용입니다." : "여성 전용입니다."; continue; }
-            var models = plan.Infant ? (plan.Male ? row.BoyModels : row.GirlModels) : (plan.Male ? row.MaleModels : row.FemaleModels);
-            models = models.FindAll(m => !string.IsNullOrEmpty(m) && m != "Invalid");
-            if (models.Count == 0) { res.Status = CostumeStatus.NoModelForAppearance; res.Detail = "현재 외형에 맞는 모델이 없습니다."; continue; }
+            var fit = CheckCostume(row, plan.Male, plan.Infant, out var models, out var detail);
+            if (fit != CostumeStatus.Applied) { res.Status = fit; res.Detail = detail; continue; }
             var missing = models.Find(m => files.ModelDefPath(m) == null);
             if (missing != null) { res.Status = CostumeStatus.MissingResource; res.Detail = "모델을 찾을 수 없습니다: " + missing; continue; }
             res.Models.AddRange(models);

@@ -1,7 +1,7 @@
 // 앱 진입점과 시작 흐름 (ProgramFlow.md 1장, Startup.md)
 //   앱 설정 읽기 → 게임 경로 검사(실패 시 경로 지정 팝업) → 데이터 로딩
 //   → 마지막 작업 복원 / 없으면 기본 외형 2종 중 무작위 / 읽기 실패면 복구 안내 → 모델 조립 → 꾸미기
-// 꾸미기 창·저장 대화상자·종료 팝업은 이후 작업에서 붙인다.
+// 꾸미기 창(CustomizePanel)의 편집 요청은 Edit 로 받는다. 저장 대화상자·종료 팝업은 이후 작업에서 붙인다.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -25,6 +25,8 @@ public sealed class AppController : MonoBehaviour
     BundleCache bundles;
     CharacterView view;
     EditState state;
+    AssemblyPlan plan;
+    CustomizePanel panel;
 
     public EditState State => state;
     public GameData Data => data;
@@ -126,7 +128,7 @@ public sealed class AppController : MonoBehaviour
         if (settings.installPath != path)
         {
             settings.installPath = path;
-            try { settings.Save(); } catch (Exception e) { Debug.LogWarning("[MobiAtelier] 앱 설정 저장 실패: " + e.Message); }
+            SaveSettings();
         }
         RestoreOrStart();
     }
@@ -205,17 +207,15 @@ public sealed class AppController : MonoBehaviour
         ui.ShowLoading("캐릭터를 조립하는 중...");
         try
         {
-            var plan = PlanResolver.Resolve(newState, data, files);
-            var built = CharacterAssembler.Build(files, bundles, plan, characterShader);
-            if (view) Destroy(view.gameObject);
-            view = built;
-            state = newState;
+            Build(newState);
             var b = view.VisibleBounds();
             cameraCtl.Pivot = new Vector3(0, b.size.y > 0.1f ? b.center.y : 0.9f, 0);
             cameraCtl.FitSize(b.size.y, Mathf.Max(b.size.x, b.size.z));
             cameraCtl.Load(state.camera);
             ui.HideLoading();
-            ui.SetNotes(Notes(plan));
+            EnsurePanel();
+            panel.SetError(null);
+            panel.Refresh(state, plan);
             if (saveNow) autosave.Flush();
         }
         catch (Exception e)
@@ -230,6 +230,54 @@ public sealed class AppController : MonoBehaviour
         }
     }
 
+    /// <summary>상태를 조립해 장면을 교체한다. 실패하면 예외를 던지고 기존 장면·상태를 그대로 둔다.</summary>
+    void Build(EditState next)
+    {
+        var nextPlan = PlanResolver.Resolve(next, data, files);
+        var built = CharacterAssembler.Build(files, bundles, nextPlan, characterShader);
+        if (view) Destroy(view.gameObject);
+        view = built;
+        state = next;
+        plan = nextPlan;
+        ui.SetNotes(Notes(plan));
+    }
+
+    void EnsurePanel()
+    {
+        if (panel != null) return;
+        panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit);
+        panel.Bind(data);
+    }
+
+    void SaveSettings()
+    {
+        try { settings.Save(); } catch (Exception e) { Debug.LogWarning("[MobiAtelier] 앱 설정 저장 실패: " + e.Message); }
+    }
+
+    /// <summary>
+    /// 꾸미기 창의 편집 요청(ProgramFlow.md 2장). 현재 상태의 복사본을 바꿔 조립에 성공하면 장면·선택 UI 를 갱신하고 자동 저장 대상으로 표시한다.
+    /// 조립에 실패하면 이전 선택과 장면을 유지한다. 카메라 시점·기준점은 바꾸지 않는다.
+    /// </summary>
+    void Edit(Action<EditState> change)
+    {
+        if (state == null || data == null || ui.ModalOpen) return;
+        var next = state.Clone();
+        next.camera = cameraCtl.Save();
+        change(next);
+        try
+        {
+            Build(next);
+            panel.SetError(null);
+            autosave.MarkDirty();
+        }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            panel.SetError("변경을 적용하지 못해 이전 선택을 유지합니다. " + e.Message);
+        }
+        panel.Refresh(state, plan);
+    }
+
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
@@ -241,10 +289,6 @@ public sealed class AppController : MonoBehaviour
         Application.Quit();
     }
 
-    static IEnumerable<string> Notes(AssemblyPlan plan)
-    {
-        foreach (var c in plan.Costumes)
-            if (c.Status != CostumeStatus.Applied) yield return $"{c.Part}: {c.DisplayName ?? c.CostumeId} — {c.Detail}";
-        foreach (var n in plan.Notes) yield return n;
-    }
+    /// <summary>화면 구석 메모. 의상 미적용·가림은 꾸미기 창에 표시하므로 여기에는 조립 중 알게 된 문제만 쓴다.</summary>
+    static IEnumerable<string> Notes(AssemblyPlan plan) => plan.Notes;
 }
