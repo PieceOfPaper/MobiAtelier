@@ -81,6 +81,8 @@ public class CameraState
     public bool valid;
     public float yaw, pitch, distance;
     public Vector2 pan;
+    /// <summary>기본 렌즈 대비 배율(0.5, 1, 3). 필드가 없는 구버전의 0은 1x로 복원한다.</summary>
+    public float lensMultiplier;
 }
 
 public static class ColorOverrides

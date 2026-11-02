@@ -8,6 +8,7 @@ using System.IO;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UIElements;
 
@@ -46,6 +47,7 @@ public sealed class AppController : MonoBehaviour
             if (state == null) return;
             state.camera = cameraCtl.Save();
             autosave.MarkDirty();
+            ui.SetLensSelection(cameraCtl.LensMultiplier);
         };
         autosave = new Autosave(() => state);
         autosave.Failed += msg => Debug.LogWarning("[MobiAtelier] 자동 저장 실패: " + msg);
@@ -71,7 +73,12 @@ public sealed class AppController : MonoBehaviour
         go.AddComponent<InputSystemUIInputModule>();
     }
 
-    void Update() => autosave?.Tick(Time.unscaledDeltaTime);
+    void Update()
+    {
+        autosave?.Tick(Time.unscaledDeltaTime);
+        if (state != null && ui != null && !ui.ModalOpen && Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
+            ui.ToggleEditingUI();
+    }
 
     void LateUpdate()
     {
@@ -226,6 +233,7 @@ public sealed class AppController : MonoBehaviour
             cameraCtl.Load(state.camera);
             ui.HideLoading();
             EnsurePanel();
+            ui.SetLensSelection(cameraCtl.LensMultiplier);
             panel.SetError(bgError);
             panel.Refresh(state, plan);
             if (saveNow) autosave.Flush();
@@ -260,6 +268,7 @@ public sealed class AppController : MonoBehaviour
         panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit, EditColors, () => view,
             () => background?.CurrentId, SetBackground);
         panel.Bind(data);
+        ui.AddViewControls(cameraCtl.SetLensMultiplier, () => state != null && !ui.ModalOpen);
     }
 
     /// <summary>
