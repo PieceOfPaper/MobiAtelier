@@ -1,0 +1,124 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1062" viewBox="0 0 1280 1062" role="img" aria-labelledby="title desc">
+  <title id="title">가로 창의 패널 닫힘과 열림 배치</title>
+  <desc id="desc">위는 전체 카메라 영역과 오른쪽 중앙 열기 탭이다. 아래는 왼쪽 카메라 영역과 오른쪽 꾸미기 패널이며 화각과 안내가 카메라 영역을 따라간다.</desc>
+  <style>
+text{font-family:"Noto Sans KR","Malgun Gothic",sans-serif;fill:#203849;font-size:18px} .title{font-size:26px;font-weight:700}.sub{font-size:16px;fill:#536c7b}.small{font-size:15px}.white{fill:#fff}.strong{font-weight:700}.muted{fill:#617c8a}.num{font-size:14px;font-weight:700;fill:white}
+</style>
+  <defs>
+    <linearGradient id="bg" x2="0" y2="1">
+      <stop stop-color="#d3ebe5" />
+      <stop offset="1" stop-color="#f2e7cc" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1280" height="1062" rx="0" fill="#f7f9fb" stroke="none" />
+  <text x="32" y="43" class="title" text-anchor="start">가로 배치 · 패널 여닫기</text>
+  <text x="32" y="74" class="sub" text-anchor="start">같은 앱 크기에서 카메라 출력 영역만 달라진다. 도면의 크기·비율은 설명용이다.</text>
+  <text x="32" y="109" class="strong" text-anchor="start">1  패널 닫힘 · 기본 진입</text>
+  <rect x="32" y="126" width="1216" height="390" rx="12" fill="url(#bg)" stroke="none" />
+  <g transform="translate(640.0 315.0) scale(0.85)" opacity=".65">
+    <ellipse cx="0" cy="102" rx="37" ry="8" fill="#9abbb7" />
+    <circle cy="-55" r="20" fill="#527b80" />
+    <path d="M-20 -27Q0 -37 20 -27L30 30H-30Z" fill="#527b80" />
+    <path d="M-18 30L-21 89M18 30L21 89M-21 -20L-38 26M21 -20L38 26" fill="none" stroke="#527b80" stroke-width="13" stroke-linecap="round" />
+  </g>
+  <rect x="48" y="200" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="62" y="218" class="num" text-anchor="middle">S</text>
+  <text x="85" y="219" class="sub" text-anchor="start">카메라 출력 영역</text>
+  <rect x="48" y="460" width="286" height="40" rx="12" fill="#ffffff" stroke="none" />
+  <rect x="55" y="467" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="69" y="485" class="num" text-anchor="middle">C</text>
+  <text x="93" y="486" class="small" text-anchor="start">회전 · 화면 이동 · 거리  ⓘ</text>
+  <rect x="529.0" y="407" width="222" height="42" rx="12" fill="#fff" stroke="none" />
+  <rect x="537.0" y="415" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="551.0" y="433" class="num" text-anchor="middle">D</text>
+  <rect x="574.0" y="412" width="52" height="32" rx="9" fill="#f0f5f5" stroke="none" />
+  <text x="600.0" y="434" class="small" text-anchor="middle">0.5x</text>
+  <rect x="630.0" y="412" width="52" height="32" rx="9" fill="#d3eae6" stroke="none" />
+  <text x="656.0" y="434" class="small" text-anchor="middle">1x</text>
+  <rect x="686.0" y="412" width="52" height="32" rx="9" fill="#f0f5f5" stroke="none" />
+  <text x="712.0" y="434" class="small" text-anchor="middle">3x</text>
+  <rect x="48" y="140" width="79" height="42" rx="12" fill="#ffffff" stroke="none" />
+  <rect x="55" y="148" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="69" y="166" class="num" text-anchor="middle">A</text>
+  <path d="M91 161 Q104 146 117 161 Q104 176 91 161Z" fill="none" stroke="#285d73" stroke-width="2.5" />
+  <circle cx="104" cy="161" r="4.5" fill="#285d73" />
+  <rect x="1153" y="140" width="79" height="42" rx="12" fill="#fff" stroke="none" />
+  <rect x="1160" y="148" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="1174" y="166" class="num" text-anchor="middle">B</text>
+  <path d="M1196 153h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <path d="M1196 161h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <path d="M1196 169h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <rect x="1186" y="298.0" width="62" height="46" rx="8" fill="#fff" stroke="#c0d2dc" />
+  <rect x="1192" y="308.0" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="1206" y="326.0" class="num" text-anchor="middle">E</text>
+  <text x="1230" y="328.0" class="strong" text-anchor="middle">‹</text>
+  <text x="640" y="550" class="sub" text-anchor="middle">패널 열기 ↔ 닫기  /  회전 · 화면 이동 · 거리 · 화각은 유지</text>
+  <text x="32" y="581" class="strong" text-anchor="start">2  패널 열림 · 꾸미기</text>
+  <rect x="32" y="598" width="850" height="390" rx="12" fill="url(#bg)" stroke="none" />
+  <g transform="translate(457.0 787.0) scale(0.85)" opacity=".65">
+    <ellipse cx="0" cy="102" rx="37" ry="8" fill="#9abbb7" />
+    <circle cy="-55" r="20" fill="#527b80" />
+    <path d="M-20 -27Q0 -37 20 -27L30 30H-30Z" fill="#527b80" />
+    <path d="M-18 30L-21 89M18 30L21 89M-21 -20L-38 26M21 -20L38 26" fill="none" stroke="#527b80" stroke-width="13" stroke-linecap="round" />
+  </g>
+  <rect x="48" y="672" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="62" y="690" class="num" text-anchor="middle">S</text>
+  <text x="85" y="691" class="sub" text-anchor="start">카메라 출력 영역</text>
+  <rect x="48" y="932" width="286" height="40" rx="12" fill="#ffffff" stroke="none" />
+  <rect x="55" y="939" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="69" y="957" class="num" text-anchor="middle">C</text>
+  <text x="93" y="958" class="small" text-anchor="start">회전 · 화면 이동 · 거리  ⓘ</text>
+  <rect x="346.0" y="879" width="222" height="42" rx="12" fill="#fff" stroke="none" />
+  <rect x="354.0" y="887" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="368.0" y="905" class="num" text-anchor="middle">D</text>
+  <rect x="391.0" y="884" width="52" height="32" rx="9" fill="#f0f5f5" stroke="none" />
+  <text x="417.0" y="906" class="small" text-anchor="middle">0.5x</text>
+  <rect x="447.0" y="884" width="52" height="32" rx="9" fill="#d3eae6" stroke="none" />
+  <text x="473.0" y="906" class="small" text-anchor="middle">1x</text>
+  <rect x="503.0" y="884" width="52" height="32" rx="9" fill="#f0f5f5" stroke="none" />
+  <text x="529.0" y="906" class="small" text-anchor="middle">3x</text>
+  <rect x="882" y="662" width="366" height="326" rx="12" fill="#fff" stroke="#d0dce4" />
+  <text x="900" y="694" class="strong" text-anchor="start">꾸미기</text>
+  <rect x="1104" y="673" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="1118" y="691" class="num" text-anchor="middle">F</text>
+  <rect x="1148" y="670" width="36" height="34" rx="7" fill="#e5edf2" stroke="none" />
+  <path d="M1174 692Q1175 677 1158 682M1158 682l6 -7M1158 682l8 3" fill="none" stroke="#285d73" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="1192" y="670" width="36" height="34" rx="7" fill="#e5edf2" stroke="none" />
+  <path d="M1202 692Q1201 677 1218 682M1218 682l-6 -7M1218 682l-8 3" fill="none" stroke="#285d73" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="894" y="714" width="342" height="66" rx="8" fill="#f4f7f9" stroke="#d8e2e8" />
+  <rect x="904" y="723" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="918" y="741" class="num" text-anchor="middle">G</text>
+  <text x="943" y="743" class="strong" text-anchor="start">외형</text>
+  <text x="943" y="766" class="small muted" text-anchor="start">성별 · 체형 · 얼굴 · 색</text>
+  <rect x="894" y="786" width="342" height="66" rx="8" fill="#f4f7f9" stroke="#d8e2e8" />
+  <rect x="904" y="795" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="918" y="813" class="num" text-anchor="middle">H</text>
+  <text x="943" y="815" class="strong" text-anchor="start">의상</text>
+  <text x="943" y="838" class="small muted" text-anchor="start">부위별 선택 · 실제 염색 파트</text>
+  <rect x="894" y="858" width="342" height="66" rx="8" fill="#f4f7f9" stroke="#d8e2e8" />
+  <rect x="904" y="867" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="918" y="885" class="num" text-anchor="middle">I</text>
+  <text x="943" y="887" class="strong" text-anchor="start">배경</text>
+  <text x="943" y="910" class="small muted" text-anchor="start">색 배경 · 3D 배경</text>
+  <rect x="894" y="952" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="908" y="970" class="num" text-anchor="middle">J</text>
+  <text x="931" y="971" class="small" text-anchor="start">자동 저장 상태</text>
+  <path d="M1218 977l18 -18M1227 977l9 -9" stroke="#617c8a" stroke-width="2" />
+  <rect x="48" y="612" width="79" height="42" rx="12" fill="#ffffff" stroke="none" />
+  <rect x="55" y="620" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="69" y="638" class="num" text-anchor="middle">A</text>
+  <path d="M91 633 Q104 618 117 633 Q104 648 91 633Z" fill="none" stroke="#285d73" stroke-width="2.5" />
+  <circle cx="104" cy="633" r="4.5" fill="#285d73" />
+  <rect x="1153" y="612" width="79" height="42" rx="12" fill="#fff" stroke="none" />
+  <rect x="1160" y="620" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="1174" y="638" class="num" text-anchor="middle">B</text>
+  <path d="M1196 625h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <path d="M1196 633h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <path d="M1196 641h24" stroke="#285d73" stroke-width="3" stroke-linecap="round" />
+  <rect x="827" y="770.0" width="55" height="46" rx="8" fill="#fff" stroke="#c0d2dc" />
+  <rect x="833" y="780.0" width="28" height="26" rx="7" fill="#285d73" stroke="none" />
+  <text x="847" y="798.0" class="num" text-anchor="middle">E</text>
+  <text x="870" y="800.0" class="strong" text-anchor="middle">›</text>
+  <text x="32" y="1031" class="sub" text-anchor="start">A~S는 문서의 관련 기획서 표와 대응한다. C는 실제 UI에서 마우스 그림 중심으로 표시한다.</text>
+</svg>

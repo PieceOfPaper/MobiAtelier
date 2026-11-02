@@ -1,6 +1,6 @@
 # 염색 편집 기획
 
-> 정리일: 2026-11-02
+> 정리일: 2026-11-03
 > 확정 사항·제안·미정 표기를 유지한다. 구현 완료를 의미하지 않는다.
 > 화면·상태 전환은 [프로그램 플로우](ProgramFlow.md)를 참고한다.
 
@@ -65,6 +65,6 @@
 ## 참고 자료
 
 - [Prilus](https://prilus.gitlab.io/ko/charsimul): 색상 입력·부위별 편집 참고.
-- [저장·불러오기](SaveLoad.md): 새 의상 선택과 복원·실행 취소의 색상 처리 구분.
+- [내보내기·가져오기](SaveLoad.md): 새 의상 선택과 복원·실행 취소의 색상 처리 구분.
 - [언팩 분석 문서](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/main/Docs/CharacterSimulator.md): Costume.DyeColor0~5와 DyeInfo.
 

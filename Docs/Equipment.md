@@ -1,6 +1,6 @@
 # 의상 선택·표시·숨겨진 리소스 기획
 
-> 정리일: 2026-11-02
+> 정리일: 2026-11-03
 > 확정 사항·제안·미정 표기를 유지한다. 구현 완료를 의미하지 않는다.
 > 화면·상태 전환은 [프로그램 플로우](ProgramFlow.md)를 참고한다.
 
@@ -92,7 +92,7 @@ Costume 시트는 `align=exact`, 1,679행이다.
 - 일반 빌드에는 공개 대상인 시트 항목만 제공한다. 숨겨진 데이터와 패션장비 시트에 없는 직접 모델 리소스는 Unity 에디터에서만 탐색·선택·출력한다.
 - 개발용 노출·선택·직접 리소스 로딩 진입점은 `#if UNITY_EDITOR`로 제한한다. 일반 빌드의 설정·숨김 단축키·Development Build로 활성화하는 우회 경로를 두지 않는다.
 - 에디터에서는 숨김 항목과 직접 리소스도 같은 목록에서 확인할 수 있게 한다. 개발용 목록에는 아래 ID 표기와 숨김 표시를 적용한다.
-- 공개 범위는 일반 선택뿐 아니라 자동 복원·JSON 불러오기·실행 취소·초기 외형의 최종 조립에도 동일하게 적용한다. 목록에서만 숨기고 JSON으로 출력할 수 있게 만들지 않는다.
+- 공개 범위는 일반 선택뿐 아니라 자동 복원·JSON 가져오기·실행 취소·초기 외형의 최종 조립에도 동일하게 적용한다. 목록에서만 숨기고 JSON으로 출력할 수 있게 만들지 않는다.
 - 빌드에서 제한 항목이 든 파일을 열면 제한 사유를 안내한다. 선택 ID·색상은 미적용 상태로 보존하고 모델은 출력하지 않는다. 부분 복원 승인과 원본 보존은 SaveLoad.md를 따른다. 필수 외형은 공개된 호환 기본값으로 표시한다.
 - 에디터 여부·숨김 판정은 파일이 주장하는 값을 신뢰하지 않고 현재 데이터와 실행 환경에서 재평가한다.
 
@@ -150,7 +150,7 @@ Costume 시트는 `align=exact`, 1,679행이다.
 - [힐러 원피스 모델](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/ResourcesPackage/Starter/StageObjectModels/ModelParts/OnePiece/Female_Healer_OnePiece_00.StageObjectModel.sjon.json): 실제 점유 부위·접합·염색 연결.
 - [슬롯 충돌 처리 선언](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Dump/Shared/Shared.Characters.cs): AppearanceSlotConflictResolver. 선언만으로 알고리즘 완료를 판단하지 않는다.
 - [시험 조립기](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Scripts/UnityMMSim/Runtime/Install/MMInstallAssembler.cs): 모델 배열·기본 헤어 단계 처리의 현재 범위.
-- [저장·불러오기](SaveLoad.md): 부위별 패션장비 ID와 직접 리소스 식별.
+- [내보내기·가져오기](SaveLoad.md): 부위별 패션장비 ID와 직접 리소스 식별.
 - [염색](Dye.md): 의상 교체 시 기본색 초기화.
 - [언팩 분석 문서](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/main/Docs/CharacterSimulator.md): Costume의 HidingParts·모델 연결.
 - [CharacterHair](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/Sheetdata/client/CharacterHair.json), [CharacterHead](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/46e94a82112243850d68a39cde73890de016140d/Patch/Sheetdata/client/CharacterHead.json): HideOnCustomize·해금 조건 확인.

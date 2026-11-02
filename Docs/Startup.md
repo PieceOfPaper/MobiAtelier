@@ -1,6 +1,6 @@
 # 시작 설정·설치 경로·최초 캐릭터 기획
 
-> 정리일: 2026-11-02
+> 정리일: 2026-11-03
 > 확정 사항·제안·미정 표기를 유지한다. 구현 완료를 의미하지 않는다.
 > 화면·상태 전환은 [프로그램 플로우](ProgramFlow.md)를 참고한다.
 
@@ -75,7 +75,7 @@
 ## 마지막 작업이 있는 경우
 
 - 마지막 정상 편집 상태의 외형·착용 파츠·염색값을 복원한다.
-- 꾸미기 창의 마지막 위치·크기를 복원하고 현재 앱 화면 영역 안으로 보정한다([창·UI 기획](WindowAndCustomizationUI.md)).
+- 가로/세로별 패널 크기·펼침 UI 설정을 복원하고 현재 영역에 맞게 보정한다. 2026-11-03 결정에 따라 패널은 닫힘으로 시작하며 이전 이동식 창 위치는 적용하지 않는다([창·UI 기획](WindowAndCustomizationUI.md)).
 - 카메라 조작 상태도 복원한다. 외형·장면 데이터와 UI 설정은 저장 구조상 분리한다.
 - 복원된 상태는 자동 복원 데이터다. 사용자가 마지막으로 수동 저장한 JSON을 자동으로 덮어쓰지 않는다.
 
@@ -117,7 +117,7 @@
 **확정**
 - JSON 손상·지원하지 않는 형식·찾을 수 없는 파츠를 구분한다.
 - 손상된 자동 저장 파일을 빈 값이나 기본값으로 즉시 덮어쓰지 않는다.
-- 백업 복구, 다른 JSON 불러오기, 새 작업 중 가능한 경로를 안내한다.
+- 백업 복구, 다른 JSON 가져오기, 새 작업 중 가능한 경로를 안내한다.
 - 일부 파츠 누락·공개 제한·염색 파트 변경은 원본을 보존한 상태에서 안내하고 부분 복원 여부를 선택하게 한다. 선택 ID·색상은 지우지 않는다. 상세는 SaveLoad.md를 따른다.
 - 새로 시작하거나 불완전 복원을 수용하기 전까지 기존 복원 파일을 보존한다.
 
@@ -141,8 +141,8 @@
 
 ## 참고 자료
 
-- [저장·불러오기](SaveLoad.md): 자동 복원·앱 설정 저장 정책.
-- [종료 팝업과 입력 우선순위](ExitPopup.md).
+- [내보내기·가져오기](SaveLoad.md): 자동 복원·앱 설정 저장 정책.
+- [시스템 메뉴·종료·ESC](SystemMenu.md), [옵션의 경로 변경](Options.md).
 - [CharacterPresetAppearance](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/main/Patch/Sheetdata/client/CharacterPresetAppearance.json): 도구에서 사용할 남녀 기본 외형. 119행의 추출 시트에서 두 행을 확인했다.
 - [CharacterCustomizeCostumeSet](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/main/Patch/Sheetdata/client/CharacterCustomizeCostumeSet.json): 초보자 생성 미리보기 의상과 초기 장비 연결. 일반 패션장비 ID 대응은 추가 검증한다.
 - [CharacterCustomizeDefaultAppearance](https://github.com/PieceOfPaper/MabinogiMobileUnpack/blob/main/Patch/Sheetdata/client/CharacterCustomizeDefaultAppearance.json): 외형 후보별 AdultWeight·ChildWeight.
