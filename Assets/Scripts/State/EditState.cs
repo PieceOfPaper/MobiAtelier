@@ -18,6 +18,8 @@ public class EditState
     public CameraState camera = new CameraState();
     /// <summary>스튜디오 배경 시트(StudioBackground) Id(Background.md). 비어 있거나 고를 수 없는 ID 면 기본 배경으로 표시하고 값은 그대로 둔다.</summary>
     public string background;
+    /// <summary>무기 자세(WeaponPose.md). 필드가 없는 이전 파일은 넣은 자세·직업 자동으로 읽는다.</summary>
+    public WeaponPoseState weaponPose = new WeaponPoseState();
 
     public CostumeSlotState Costume(string part)
     {
@@ -65,6 +67,29 @@ public class CostumeSlotState
     public string resource;
     /// <summary>슬롯(Slot0~5 등)별 사용자 지정 색. 없으면 의상 기본색(원본 머티리얼 + 시트 DyeColor)을 쓴다.</summary>
     public List<ColorOverride> dyes = new List<ColorOverride>();
+}
+
+[Serializable]
+public class WeaponPoseState
+{
+    /// <summary>무기를 넣은 자세(기본). 빈 값도 이것으로 본다.</summary>
+    public const string Undrawn = "Undrawn";
+    /// <summary>무기를 꺼낸 경계 자세(AnimationStateSet AlertStand).</summary>
+    public const string Alert = "Alert";
+    /// <summary>무기를 꺼낸 전투 자세(AnimationStateSet CombatStand).</summary>
+    public const string Combat = "Combat";
+    /// <summary>게임 꾸미기 화면의 무기 포즈 1~3(Action Customize_Costume_04~06, 직업 계열별). 무기는 꺼낸 상태다.</summary>
+    public const string Pose1 = "Pose1", Pose2 = "Pose2", Pose3 = "Pose3";
+
+    /// <summary>Undrawn / Alert / Combat / Pose1~3. 알 수 없는 값은 Undrawn 으로 본다.</summary>
+    public string stance;
+    /// <summary>자세에 쓸 CombatJob.Id. 비어 있으면 무기 외형의 원래 직업(EquippableCombatJobs)을 쓴다. 무기 선택을 제한하지 않는다.</summary>
+    public string job;
+
+    public static bool IsPose(string stance) => stance == Pose1 || stance == Pose2 || stance == Pose3;
+    /// <summary>포즈 순번 0~2. 포즈가 아니면 -1.</summary>
+    public static int PoseIndex(string stance) => stance == Pose1 ? 0 : stance == Pose2 ? 1 : stance == Pose3 ? 2 : -1;
+    public static bool IsDrawn(string stance) => stance == Alert || stance == Combat || IsPose(stance);
 }
 
 [Serializable]

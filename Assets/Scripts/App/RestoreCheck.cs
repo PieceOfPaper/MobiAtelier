@@ -41,6 +41,16 @@ public static class RestoreCheck
                     issues.Add($"{PartLabel(c.part)} {c.costumeId}: 패션장비 데이터에 없는 ID입니다");
             }
 
+        // 무기 자세(WeaponPose.md): 없는 직업 ID 는 공통 자세로, 모르는 자세 값은 넣은 자세로 대신 표시한다. 값은 지우지 않는다.
+        var wp = s.weaponPose;
+        if (wp != null && data.CombatJobs.Count > 0)
+        {
+            if (!string.IsNullOrEmpty(wp.job) && data.CombatJob(wp.job) == null)
+                issues.Add($"자세 직업 {wp.job}: 데이터에 없는 ID입니다. 공통 자세로 대신 표시합니다");
+            if (!string.IsNullOrEmpty(wp.stance) && wp.stance != WeaponPoseState.Undrawn && !WeaponPoseState.IsDrawn(wp.stance))
+                issues.Add($"무기 자세 {wp.stance}: 알 수 없는 값입니다. 넣은 자세로 대신 표시합니다");
+        }
+
         string bg = StudioBackground.UnavailableReason(data, s.background);
         if (bg != null) issues.Add($"배경 {s.background}: {bg}. 기본 배경으로 대신 표시합니다");
         return issues;

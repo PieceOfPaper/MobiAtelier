@@ -354,6 +354,7 @@ public sealed class CustomizePanel
 
         var wear = Section("costume");
         foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
+        WeaponPoseRows(wear);
 
         BackgroundRow(Section("background"));
 
@@ -370,6 +371,9 @@ public sealed class CustomizePanel
         if (state == null || data == null) return;
         foreach (var r in refreshers) r();
     }
+
+    /// <summary>시험 촬영용: 본문을 맨 아래까지 내린다(배치 후 적용).</summary>
+    public void ScrollToEnd() => scroll.schedule.Execute(() => scroll.scrollOffset = new Vector2(0, float.MaxValue)).StartingIn(50);
 
     /// <summary>적용 실패 안내. null 이면 지운다.</summary>
     public void SetError(string message)
@@ -626,6 +630,87 @@ public sealed class CustomizePanel
         var box = Row(label, dd, status);
         box.Add(dyes);
         parent.Add(box);
+    }
+
+    // ------------------------------------------------------------ 무기 자세 (WeaponPose.md)
+
+    static readonly (string id, string name)[] Stances =
+    {
+        (WeaponPoseState.Undrawn, "넣음"),
+        (WeaponPoseState.Alert, "꺼냄 (경계)"),
+        (WeaponPoseState.Combat, "꺼냄 (전투)"),
+        (WeaponPoseState.Pose1, "꾸미기 포즈 1"),
+        (WeaponPoseState.Pose2, "꾸미기 포즈 2"),
+        (WeaponPoseState.Pose3, "꾸미기 포즈 3"),
+    };
+
+    static string StanceName(string id)
+    {
+        foreach (var (k, n) in Stances) if (k == id) return n;
+        return "넣음";
+    }
+
+    /// <summary>
+    /// 무기 아래의 자세(넣음·꺼냄)와 자세 직업. 직업은 기본으로 무기 외형의 원래 직업을 쓰고(자동), 바꿀 수 있다.
+    /// 직업은 자세만 바꾸며 무기 선택을 제한하지 않는다.
+    /// </summary>
+    void WeaponPoseRows(VisualElement parent)
+    {
+        var stanceStatus = StatusLabel();
+        var stance = Dropdown(() =>
+        {
+            var items = new List<DropdownItem>();
+            foreach (var (id, name) in Stances) items.Add(new DropdownItem { Id = id, Name = name });
+            return items;
+        }, it => edit(s => (s.weaponPose ??= new WeaponPoseState()).stance = it.Id == WeaponPoseState.Undrawn ? null : it.Id));
+        refreshers.Add(() =>
+        {
+            string id = state.weaponPose?.stance;
+            if (!WeaponPoseState.IsDrawn(id)) id = WeaponPoseState.Undrawn;
+            stance.SetValue(id, StanceName(id), null);
+            string note = null;
+            if (WeaponPoseState.IsDrawn(id) && plan != null && !plan.WeaponDrawn)
+                note = data.AnimationStates.Count == 0 ? "자세 데이터를 읽지 못해 넣은 자세로 표시합니다."
+                    : plan.WeaponId == null ? "무기가 표시되지 않아 넣은 자세로 표시합니다."
+                    : "이 외형·직업에 맞는 자세 클립이 없어 넣은 자세로 표시합니다.";
+            else if (WeaponPoseState.IsPose(id) && plan != null && plan.WeaponDrawn)
+                note = "꾸미기 포즈는 직업 계열(" + (JobName(LineJob(plan.StanceJob)) ?? "공통") + ")의 포즈입니다.";
+            SetStatus(stanceStatus, note, WeaponPoseState.IsPose(id) && plan != null && plan.WeaponDrawn ? AppUI.Sub : AppUI.WarnColor);
+        });
+        parent.Add(Row("무기 자세", stance, stanceStatus));
+
+        var job = Dropdown(JobItems, it => edit(s => (s.weaponPose ??= new WeaponPoseState()).job = it.Id));
+        refreshers.Add(() =>
+        {
+            string chosen = state.weaponPose?.job;
+            string current = PlanResolver.StanceJob(state, data, out bool auto);
+            string text = auto ? "자동 (" + (JobName(current) ?? "공통 자세") + ")" : JobName(chosen) ?? chosen;
+            job.SetValue(auto ? null : chosen, text, auto ? null : chosen);
+        });
+        parent.Add(Row("자세 직업", job, null));
+    }
+
+    string JobName(string id) => id == null ? null : data.CombatJob(id)?.DisplayName ?? id;
+
+    /// <summary>직업 계열의 기본 직업 ID(계열 이름과 같다. 예: SwordMaster → Warrior).</summary>
+    string LineJob(string id) => id == null ? null : data.CombatJob(id)?.LineType ?? id;
+
+    List<DropdownItem> JobItems()
+    {
+        string weaponJob = null;
+        var w = state.Costume("Weapon");
+        if (w != null && data.Costumes.TryGetValue(w.costumeId ?? "", out var row) && row.EquippableCombatJobs.Count > 0) weaponJob = row.EquippableCombatJobs[0];
+        var items = new List<DropdownItem>
+        {
+            new DropdownItem { Id = null, Name = "자동 (" + (JobName(weaponJob) ?? "공통 자세") + ")", Sub = "무기 외형의 직업" },
+        };
+        var jobs = new List<CombatJobData>(data.CombatJobs);
+        jobs.Sort((a, b) => a.Order.CompareTo(b.Order));
+        // 공개 직업만 보인다. 숨김 직업(ShowClass=false)은 자세 클립이 없다. 이미 고른 값은 남긴다.
+        foreach (var j in jobs)
+            if (j.ShowClass || j.Id == state.weaponPose?.job)
+                items.Add(new DropdownItem { Id = j.Id, Name = j.DisplayName ?? j.Id, Sub = j.Id, Dim = !j.ShowClass });
+        return items;
     }
 
     // ------------------------------------------------------------ 의상 염색

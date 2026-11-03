@@ -21,6 +21,7 @@
 - [화면 배치·꾸미기 UI](Docs/WindowAndCustomizationUI.md): 가로·세로·메뉴·옵션의 SVG 배치도와 UI 항목별 기획서 연결, 접이식 패널·카메라 출력 영역.
 - [조작 안내·도움말](Docs/ControlsHelp.md): 아이콘 중심 안내·툴팁·첫 사용 도움말과 시스템 메뉴·꾸미기 이력 설명.
 - [의상·리소스 선택](Docs/Equipment.md): 패션장비 선택·ID 표기, 미적용·가림 규칙, 공개 범위와 에디터 전용 리소스.
+- [무기 자세](Docs/WeaponPose.md): 무기 장착점(넣음·꺼냄)과 직업별 서 있기 자세, 무기 외형 기준 직업 자동 선택.
 - [염색](Docs/Dye.md): 기본색, 컬러피커와 색상 코드 입력.
 - [카메라](Docs/Camera.md): 회전·팬·거리 줌, 0.5x·1x·3x 렌즈 화각과 UI 입력 충돌 처리.
 - [내보내기·가져오기](Docs/SaveLoad.md): 자동 저장과 JSON 내보내기(Export)·가져오기(Import), 범위·식별자·파일 대화상자.

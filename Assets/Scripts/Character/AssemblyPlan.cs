@@ -55,6 +55,24 @@ public sealed class AssemblyPlan
     public string Pose;
     /// <summary>기본 아이들 모션(커스터마이즈 서 있기) 클립이 든 .fbx 에셋 경로. null 이면 정지 포즈만 쓴다.</summary>
     public string Idle;
+    /// <summary>얼굴(_Facial) 클립을 가져올 꾸미기 아이들 경로. Idle 이 직업 자세 클립이면 Idle 과 다르다.</summary>
+    public string FaceIdle;
+    /// <summary>무기를 꺼낸 자세로 조립한다(장착점 Drawn). 무기를 착용하지 않았거나 자세 클립이 없으면 false.</summary>
+    public bool WeaponDrawn;
+    /// <summary>자세에 쓴 직업(CombatJob.Id). null 이면 공통 자세.</summary>
+    public string StanceJob;
+    /// <summary>자세 클립을 고른 AnimationStateSet·Action 조건(진단용).</summary>
+    public string StanceCondition;
+    /// <summary>반복 전에 한 번 재생할 도입 클립(무기 꺼내기·넣기, 꾸미기 포즈 시작). null 이면 없다.</summary>
+    public string Intro;
+    /// <summary>도입 중 무기 상태 기본값. 꺼내기·포즈는 꺼냄, 넣기는 넣음이다.</summary>
+    public bool IntroDrawn;
+    /// <summary>도입 중 무기 상태 예외 구간(스테이지 타임라인 ToolState 트랙): 파츠 종류, 꺼냄 여부, 시작·끝 초.</summary>
+    public readonly List<(string toolType, bool drawn, float begin, float end)> IntroToolSpans = new List<(string, bool, float, float)>();
+    /// <summary>파츠 자체 클립 찾기(파츠 애니메이션 그룹, 몸 클립 상대 경로 → 파츠 클립 상대 경로). null 이면 쓰지 않는다.</summary>
+    public Func<string, string, string> PartClip;
+    /// <summary>현재 무기 외형 ID(적용된 경우). 전환 판정에 쓴다.</summary>
+    public string WeaponId;
 
     public static string CostumeKey(string part) => "costume:" + part;
 }
@@ -66,7 +84,8 @@ public static class PlanResolver
 
     public static Color ToColor(Rgba32 c) => new Color32(c.R, c.G, c.B, 255);
 
-    public static AssemblyPlan Resolve(EditState state, GameData data, InstallFiles files)
+    /// <param name="previous">직전 장면의 계획. 주면 같은 무기의 넣음↔꺼냄 변경에 꺼내기·넣기 도입 클립을 붙인다.</param>
+    public static AssemblyPlan Resolve(EditState state, GameData data, InstallFiles files, AssemblyPlan previous = null)
     {
         var plan = new AssemblyPlan();
         var a = state.appearance ?? new AppearanceState();
@@ -128,7 +147,135 @@ public static class PlanResolver
         plan.Idle = IdlePath(folder, $"{prefix}@Customize_Stand_{variant}");
         if (!files.HasAsset(plan.Idle)) plan.Idle = IdlePath(folder, $"{prefix}@Customize_Stand_Default");
         if (!files.HasAsset(plan.Idle)) { plan.Notes.Add("아이들 모션 없음: " + plan.Idle); plan.Idle = null; }
+        plan.FaceIdle = plan.Idle;
+        plan.PartClip = data.PartAnimations.Count > 0 ? data.PartAnimation : (Func<string, string, string>)null;
+        ResolveWeaponPose(plan, state, data, files, folder, previous);
         return plan;
+    }
+
+    /// <summary>
+    /// 자세에 쓸 직업. 사용자가 고른 직업이 있으면 그것, 없으면 착용 무기 외형의 원래 직업(EquippableCombatJobs 첫 값).
+    /// 무기 선택은 제한하지 않는다(Equipment.md). 둘 다 없으면 null(공통 자세).
+    /// </summary>
+    public static string StanceJob(EditState state, GameData data, out bool auto)
+    {
+        auto = false;
+        var job = state.weaponPose?.job;
+        if (!string.IsNullOrEmpty(job)) return job;
+        auto = true;
+        var w = state.Costume("Weapon");
+        if (w != null && w.kind == CostumeSlotState.KindCostume && data.Costumes.TryGetValue(w.costumeId ?? "", out var row) && row.EquippableCombatJobs != null)
+            foreach (var j in row.EquippableCombatJobs) if (!string.IsNullOrEmpty(j)) return j;
+        return null;
+    }
+
+    /// <summary>
+    /// 무기 자세(WeaponPose.md).
+    ///   꺼냄(경계·전투): AnimationStateSet 의 Player&lt;Female|Male|Infant&gt; 그룹에서 AlertStand/CombatStand 클립.
+    ///   꾸미기 포즈 1~3: Action 의 Player*_Customize 그룹 Customize_Costume_04~06(직업 계열별) 시작 → 반복 클립.
+    ///   직전 계획과 무기가 같고 넣음↔꺼냄만 바뀌면 ToolDraw/ToolUndraw 클립을 도입으로 한 번 재생한다.
+    /// 맞는 행이 없거나 클립이 설치 폴더에 없으면 넣은 자세로 둔다.
+    /// </summary>
+    static void ResolveWeaponPose(AssemblyPlan plan, EditState state, GameData data, InstallFiles files, string folder, AssemblyPlan previous)
+    {
+        string stance = state.weaponPose?.stance;
+        plan.StanceJob = StanceJob(state, data, out _);
+        var weapon = plan.Costumes.Find(c => c.Part == "Weapon");
+        bool hasWeapon = weapon != null && weapon.Status == CostumeStatus.Applied;
+        plan.WeaponId = hasWeapon ? weapon.CostumeId ?? weapon.DisplayName : null;
+        if (plan.Idle == null) return;
+        if (WeaponPoseState.IsDrawn(stance))
+        {
+            if (!hasWeapon) plan.Notes.Add("무기가 표시되지 않아 넣은 자세로 표시합니다.");
+            else if (WeaponPoseState.IsPose(stance)) ResolvePose(plan, data, files, folder, stance);
+            else ResolveStand(plan, data, files, folder, stance);
+        }
+        if (previous != null && hasWeapon && plan.Intro == null && previous.WeaponId == plan.WeaponId
+            && previous.Male == plan.Male && previous.Infant == plan.Infant && previous.WeaponDrawn != plan.WeaponDrawn)
+        {
+            // 넣기는 직전(꺼낸) 자세의 직업 클립을 쓴다.
+            string job = plan.WeaponDrawn ? plan.StanceJob : previous.StanceJob ?? plan.StanceJob;
+            var row = data.AnimationState("Player" + folder, plan.WeaponDrawn ? "ToolDraw" : "ToolUndraw", Facts(plan, data, job, false));
+            string path = row != null ? BundleCache.AssetRoot + row.Paths[0] : null;
+            if (path != null && files.HasAsset(path))
+            {
+                plan.Intro = path;
+                plan.IntroDrawn = plan.WeaponDrawn;
+                ReadToolSpans(plan, data, files, path);
+            }
+        }
+    }
+
+    static HashSet<string> Facts(AssemblyPlan plan, GameData data, string job, bool lineAsJob)
+    {
+        var facts = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "Gender:" + (plan.Male ? "Male" : "Female"),
+            "BodyType:" + plan.BodyType,
+        };
+        if (job != null)
+        {
+            facts.Add("CombatJob:" + job);
+            var j = data.CombatJob(job);
+            if (j?.LineType != null)
+            {
+                facts.Add("CombatJobLine:" + j.LineType);
+                // 꾸미기 포즈(Action)는 계열의 기본 직업 ID(Warrior·Archer 등 = 계열 이름)로 조건을 건다[추정].
+                if (lineAsJob) facts.Add("CombatJob:" + j.LineType);
+            }
+        }
+        return facts;
+    }
+
+    static void ResolveStand(AssemblyPlan plan, GameData data, InstallFiles files, string folder, string stance)
+    {
+        string symbol = stance == WeaponPoseState.Combat ? "CombatStand" : "AlertStand";
+        var row = data.AnimationState("Player" + folder, symbol, Facts(plan, data, plan.StanceJob, false));
+        if (row == null) { plan.Notes.Add($"자세 클립 없음: Player{folder} {symbol} {plan.StanceJob}"); return; }
+        string path = BundleCache.AssetRoot + row.Paths[0];
+        if (!files.HasAsset(path)) { plan.Notes.Add("자세 클립이 설치 폴더에 없음: " + path); return; }
+        plan.Idle = path;
+        plan.WeaponDrawn = true;
+        plan.StanceCondition = row.Condition;
+    }
+
+    static void ResolvePose(AssemblyPlan plan, GameData data, InstallFiles files, string folder, string stance)
+    {
+        string action = "Customize_Costume_0" + (4 + WeaponPoseState.PoseIndex(stance));
+        var row = data.CustomizeAction("Player" + folder + "_Customize", action, Facts(plan, data, plan.StanceJob, true));
+        if (row == null || string.IsNullOrEmpty(row.LoopClip)) { plan.Notes.Add($"꾸미기 포즈 없음: {action} {plan.StanceJob}"); return; }
+        string loop = BundleCache.AssetRoot + row.LoopClip;
+        if (!files.HasAsset(loop)) { plan.Notes.Add("꾸미기 포즈 클립이 설치 폴더에 없음: " + loop); return; }
+        plan.Idle = loop;
+        plan.WeaponDrawn = true;
+        plan.StanceCondition = action + " " + row.Condition;
+        // 게임 꾸미기 화면은 포즈 중 무기를 꺼낸 상태로 둔다(Customize_ToolStateTrack: MainTool·SubTool Drawn).
+        string start = string.IsNullOrEmpty(row.StartClip) ? null : BundleCache.AssetRoot + row.StartClip;
+        if (start != null && files.HasAsset(start)) { plan.Intro = start; plan.IntroDrawn = true; }
+    }
+
+    /// <summary>클립의 스테이지 타임라인(StageTimeline 시트 → StageTimelines/&lt;이름&gt;)에서 ToolState 트랙 구간을 읽는다.</summary>
+    static void ReadToolSpans(AssemblyPlan plan, GameData data, InstallFiles files, string clipPath)
+    {
+        string name = clipPath.Substring(clipPath.LastIndexOf('/') + 1);
+        if (name.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
+        if (!data.ClipTimelines.TryGetValue(name, out var timelines)) return;
+        foreach (var tl in timelines)
+        {
+            string path = files.FindResourcePathEndingWith("/" + tl + ".StageTimeline.sjon.bin");
+            if (path == null) continue;
+            foreach (var track in files.ReadSjon(path).Get("Tracks").Arr())
+            {
+                if (track.Get("Type").Str() != "ToolState") continue;
+                foreach (var iv in track.Get("Intervals").Arr())
+                {
+                    var pl = iv.Get("Playable");
+                    string type = pl.Get("ToolType").Str(), st = pl.Get("ToolState").Str();
+                    if (type == null || st == null) continue;
+                    plan.IntroToolSpans.Add((type, string.Equals(st, "Drawn", StringComparison.OrdinalIgnoreCase), iv.Get("BeginTime").F(), iv.Get("EndTime").F()));
+                }
+            }
+        }
     }
 
     public static string PosePath(string pose) => "Animation/Bones/" + pose + ".sjon.bin";

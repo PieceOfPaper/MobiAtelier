@@ -103,6 +103,27 @@ public static class InstallSmokeTest
                     return;
                 }
 
+                // -maProbeClips 경로1;경로2;... : 애니메이션 클립(.fbx, Assets/PatchableAssets/ 아래 상대 경로)의 길이·반복·이벤트를 로그에 쓴다.
+                string probeClips = Arg("-maProbeClips");
+                if (probeClips != null)
+                {
+                    foreach (var rel in probeClips.Split(';'))
+                    {
+                        string path = BundleCache.AssetRoot + rel;
+                        var bundle = files.HasAsset(path) ? bundles.BundleOf(path) : null;
+                        if (!bundle) { log.AppendLine($"[클립] {rel}: 없음"); continue; }
+                        foreach (var c in bundle.LoadAssetWithSubAssets<AnimationClip>(path))
+                        {
+                            if (!c) continue;
+                            log.AppendLine($"[클립] {rel}: {c.name} {c.length:F3}s {c.frameRate}fps 반복 {c.isLooping} 레거시 {c.legacy} 이벤트 {c.events.Length}");
+                            foreach (var e in c.events) log.AppendLine($"    {e.time:F3}s {e.functionName}({e.stringParameter}, {e.intParameter}, {e.floatParameter}, {(e.objectReferenceParameter ? e.objectReferenceParameter.name : "")})");
+                        }
+                    }
+                    File.WriteAllText(Path.Combine(outDir, "log.txt"), log.ToString(), new UTF8Encoding(false));
+                    EditorApplication.Exit(0);
+                    return;
+                }
+
                 // -maProbePrefab 경로1;경로2;... : 배경 프리팹을 열어 구성(렌더러·셰이더·조명·범위)을 로그에 쓰고 기본 외형과 함께 촬영한다.
                 //   경로는 Assets/PatchableAssets/ 아래 상대 경로. 한 항목에 여러 프리팹은 + 로 잇는다.
                 string probe = Arg("-maProbePrefab");
@@ -140,7 +161,7 @@ public static class InstallSmokeTest
                 }
 
                 // -maOutfit 이름:Top=ID,Gloves=ID;이름2:... : 지정 조합만 조립해 전신·팔·발을 촬영한다(관통 진단용).
-                //   age=14, height=-1, gender=Male, body=Fat 도 같은 자리에 쓸 수 있다.
+                //   age=14, height=-1, gender=Male, body=Fat, stance=Alert|Combat, job=CombatJob.Id 도 같은 자리에 쓸 수 있다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
                 if (outfit != null)
@@ -151,6 +172,7 @@ public static class InstallSmokeTest
                         int colon = entry.IndexOf(':');
                         string tag = colon > 0 ? entry.Substring(0, colon).Trim() : "outfit";
                         var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
+                        string prevStance = null;
                         foreach (var kv in entry.Substring(colon + 1).Split(','))
                         {
                             var p = kv.Split('=');
@@ -160,11 +182,24 @@ public static class InstallSmokeTest
                             else if (k == "height") s.appearance.heightModifier = float.Parse(v, System.Globalization.CultureInfo.InvariantCulture);
                             else if (k == "gender") s.appearance.gender = v;
                             else if (k == "body") s.appearance.bodyType = v;
+                            else if (k == "stance") s.weaponPose.stance = v;
+                            else if (k == "job") s.weaponPose.job = v;
+                            else if (k == "prev") prevStance = v;
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
                         log.AppendLine($"[{tag}]");
-                        var plan = PlanResolver.Resolve(s, data, files);
+                        // prev=자세 : 그 자세에서 바꾼 것으로 보고 직전 계획을 넘긴다(꺼내기·넣기 도입 모션 확인용).
+                        AssemblyPlan prevPlan = null;
+                        if (prevStance != null)
+                        {
+                            var ps = s.Clone();
+                            ps.weaponPose.stance = prevStance;
+                            prevPlan = PlanResolver.Resolve(ps, data, files);
+                        }
+                        var plan = PlanResolver.Resolve(s, data, files, prevPlan);
                         foreach (var c in plan.Costumes) log.AppendLine($"  의상 {c.Part} {c.CostumeId} {c.DisplayName}: {c.Status} {c.Detail}");
+                        foreach (var n in plan.Notes) log.AppendLine("  참고: " + n);
+                        log.AppendLine($"  자세: 꺼냄 {plan.WeaponDrawn}, 직업 {plan.StanceJob}, 조건 {plan.StanceCondition}, 클립 {plan.Idle}, 도입 {plan.Intro}, 도입 무기 구간 {plan.IntroToolSpans.Count}");
                         var view = CharacterAssembler.Build(files, bundles, plan, shader, log);
                         void Detail(string t)
                         {
@@ -174,6 +209,15 @@ public static class InstallSmokeTest
                             if (foot) Capture(cam, view, Path.Combine(outDir, t + "_foot.png"), 150, 15, 0.6f, foot.position + new Vector3(0, -0.03f, 0), 768, 768);
                         }
                         Detail(tag);
+                        var om = view.GetComponent<CharacterMotion>();
+                        string otimes = Arg("-maMotionTimes");
+                        if (om && otimes != null)
+                            foreach (var ts in otimes.Split(';'))
+                            {
+                                if (!float.TryParse(ts, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t)) continue;
+                                om.Sample(t);
+                                Capture(cam, view, Path.Combine(outDir, $"{tag}_t{ts}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                            }
                         if (variants)
                         {
                             view.SetBodyCut(false);
@@ -286,7 +330,8 @@ public static class InstallSmokeTest
         cam.transform.SetPositionAndRotation(target + rot * new Vector3(0, 0, -dist), rot);
         var rt = new RenderTexture(w, h, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { antiAliasing = 4 };
         cam.targetTexture = rt;
-        foreach (var (_, r) in ch.Renderers) if (r && r.gameObject.activeInHierarchy) { r.enabled = false; r.enabled = true; }   // 블렌드셰이프 갱신
+        // 블렌드셰이프 갱신. 원래 꺼진 렌더러(무기 Mesh_MainBuff 등)는 켜지 않는다.
+        foreach (var (_, r) in ch.Renderers) if (r && r.enabled && r.gameObject.activeInHierarchy) { r.enabled = false; r.enabled = true; }
         cam.Render();
         RenderTexture.active = rt;
         var tex = new Texture2D(w, h, TextureFormat.RGB24, false);

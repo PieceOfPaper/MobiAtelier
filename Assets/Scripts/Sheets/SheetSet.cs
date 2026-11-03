@@ -146,10 +146,14 @@ public sealed class SheetSet
             {
                 int n = (int)r.U();
                 var l = new List<object>(n);
-                for (int k = 0; k < n; k++) l.Add(One(r, f));
+                for (int k = 0; k < n; k++)
+                {
+                    l.Add(One(r, f.Op, f.Symbol));
+                    foreach (var (op, sym) in f.Extra) One(r, op, sym);
+                }
                 Put(outp, f.Name, l);
             }
-            else Put(outp, f.Name, One(r, f));
+            else Put(outp, f.Name, One(r, f.Op, f.Symbol));
         }
     }
 
@@ -159,18 +163,19 @@ public sealed class SheetSet
         outp[name] = v;
     }
 
-    object One(SheetDecoder r, SheetField f)
+    object One(SheetDecoder r, char op, string symbol)
     {
-        switch (f.Op)
+        switch (op)
         {
             case 'I': return r.I();
             case 'U': return (long)r.U();
             case 'S': case 'E': return Text((int)r.U());
-            case 'K': return symbols.Name(f.Symbol, r.K());
+            case 'K': return symbols.Name(symbol, r.K());
             case 'N': return r.N();
             case 'C': return r.Color();
             case 'B': return (long)r.Byte();
-            default: throw new SheetFormatException("알 수 없는 시트 연산: " + f.Op);
+            case 'D': return r.D();
+            default: throw new SheetFormatException("알 수 없는 시트 연산: " + op);
         }
     }
 }
@@ -220,6 +225,7 @@ sealed class SheetDecoder
         return e == 0 ? m : m * Math.Pow(10, -e);
     }
 
+    public double D() { double v = BitConverter.ToDouble(b, Pos); Pos += 8; return v; }
     public uint K() { uint v = BitConverter.ToUInt32(b, Pos); Pos += 4; return v; }
     public byte Byte() => b[Pos++];
 

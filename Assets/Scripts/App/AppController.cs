@@ -386,9 +386,10 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>상태를 조립해 장면을 교체한다. 실패하면 예외를 던지고 기존 장면·상태를 그대로 둔다.</summary>
-    void Build(EditState next)
+    /// <param name="transition">true 면 현재 계획을 직전 장면으로 넘겨 무기 꺼내기·넣기 도입 모션을 붙인다(편집·실행 취소).</param>
+    void Build(EditState next, bool transition = false)
     {
-        var nextPlan = PlanResolver.Resolve(next, data, files);
+        var nextPlan = PlanResolver.Resolve(next, data, files, transition ? plan : null);
         var built = CharacterAssembler.Build(files, bundles, nextPlan, characterShader);
         if (view) Destroy(view.gameObject);
         view = built;
@@ -467,7 +468,7 @@ public sealed class AppController : MonoBehaviour
         change(next);
         try
         {
-            Build(next);
+            Build(next, true);
             panel.SetError(null);
             MarkDirty();
             if (history.Record(before, state)) UpdateHistoryButtons();
@@ -548,7 +549,7 @@ public sealed class AppController : MonoBehaviour
         }
         try
         {
-            if (!EditHistory.SameCharacter(current, next)) Build(next);
+            if (!EditHistory.SameCharacter(current, next)) Build(next, true);
             else state = next;
         }
         catch (Exception e)
@@ -819,7 +820,7 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
-    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
+    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
         float delay = float.TryParse(CommandLine.Value("-maShotDelay"), out var d) ? d : 8f;
@@ -837,9 +838,29 @@ public sealed class AppController : MonoBehaviour
             // short·tall: 키 조절값을 -1·+1로 바꾼다(키 슬라이더 확인용)
             if (opts.Contains("short")) Edit(s => s.appearance.heightModifier = -1f);
             if (opts.Contains("tall")) Edit(s => s.appearance.heightModifier = 1f);
+            // weapon: 검술사 무기 + 꺼냄(경계) 자세(무기 자세 확인용)
+            if (opts.Contains("weapon"))
+                Edit(s =>
+                {
+                    s.costumes.RemoveAll(c => c.part == "Weapon");
+                    s.costumes.Add(new CostumeSlotState { part = "Weapon", costumeId = "Fashion_SwordMaster_Weapon_06" });
+                    s.weaponPose.stance = WeaponPoseState.Alert;
+                });
+            // draw: 넣은 무기를 꺼냄(경계)으로 바꾼다(꺼내기 도입 모션 확인용, -maShotUIWait 를 짧게 준다)
+            if (opts.Contains("draw"))
+            {
+                Edit(s =>
+                {
+                    s.costumes.RemoveAll(c => c.part == "Weapon");
+                    s.costumes.Add(new CostumeSlotState { part = "Weapon", costumeId = "Fashion_HighBard_Weapon_06" });
+                    s.weaponPose.stance = null;
+                });
+                Edit(s => s.weaponPose.stance = WeaponPoseState.Alert);
+            }
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
             if (opts.Contains("undo")) Undo();
             if (opts.Contains("open")) panel.SetOpen(true);
+            if (opts.Contains("weapon") || opts.Contains("draw")) panel.ScrollToEnd();
             if (opts.Contains("hidden")) ui.ToggleEditingUI();
             if (opts.Contains("menu")) OpenMenu();
             if (opts.Contains("options")) OpenOptions();

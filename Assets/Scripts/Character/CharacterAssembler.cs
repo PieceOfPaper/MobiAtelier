@@ -77,6 +77,8 @@ public static class CharacterAssembler
         var cloth = new List<SkinnedMeshRenderer>();
         var clothByKey = new List<(string key, SkinnedMeshRenderer smr)>();
         var slicers = new List<BodyCut.SlicerMesh>();
+        // 무기 등 장착점(AttachPointInfo)이 있는 파츠: 프리팹 본을 복제한 루트. 몸 본 계층이 정해진 뒤 장착점 본 아래에 붙인다.
+        var tools = new List<(Def d, Transform root)>();
 
         void AddBones(Def d)
         {
@@ -180,6 +182,17 @@ public static class CharacterAssembler
             if (!prefab) L($"  프리팹 없음: {prefabPath}");
             var prefabSmr = new Dictionary<string, SkinnedMeshRenderer>(StringComparer.Ordinal);
             if (prefab) foreach (var r in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (!prefabSmr.ContainsKey(r.name)) prefabSmr[r.name] = r;
+            // 무기는 BoneTemplate 이 없고 메시 본(_Sword_Root 등)이 프리팹 안에만 있다. 프리팹 본을 복제해 이 파츠 전용 본으로 쓴다.
+            bool tool = part.Role == PartRole.Costume && d.Root.Get("ModelPartInfo").Get("AttachPointInfo").Arr().Count > 0;
+            if (tool && prefab)
+            {
+                var toolRoot = new GameObject("@" + part.Model).transform;
+                toolRoot.SetParent(root.transform, false);
+                if (!partBones.TryGetValue(d, out var own)) partBones[d] = own = new Dictionary<string, Transform>(StringComparer.Ordinal);
+                CloneBones(prefab.transform, toolRoot, own);
+                tools.Add((d, toolRoot));
+            }
+            else if (tool) L($"  장착 파츠 프리팹 없음, 본을 만들지 못함: {part.Model}");
             Dictionary<string, SkinnedMeshRenderer> fbxSmr = null;
             var morph = part.Role == PartRole.Body ? MorphMaterials(d) : null;
 
@@ -256,7 +269,8 @@ public static class CharacterAssembler
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
                 // 의상 피부 조각(ClothingMaterialType=Skin)도 그 자리의 몸을 대신하므로 가리기 판정에 넣는다.
-                if (part.Role == PartRole.Costume && go2.activeSelf && partGo.activeSelf) { cloth.Add(smr); clothByKey.Add((part.Key, smr)); }
+                // 무기처럼 장착점에 붙는 파츠는 몸을 덮는 옷이 아니므로 넣지 않는다.
+                if (part.Role == PartRole.Costume && !tool && go2.activeSelf && partGo.activeSelf) { cloth.Add(smr); clothByKey.Add((part.Key, smr)); }
                 if (missing > 0) L($"  {part.Model}/{name}: 본 {missing}개 없음");
             }
 
@@ -285,6 +299,59 @@ public static class CharacterAssembler
         foreach (var t in bones)
             t.SetParent(BoneFor(boneOwner.TryGetValue(t, out var od) ? od : null, parentName[t]) ?? root.transform, false);
         if (partOwnBones > 0) L($"파츠 전용 본 {partOwnBones}개(기본 회전이 다른 같은 이름 본)");
+        var mounts = new List<ToolMount>();
+        foreach (var (d, toolRoot) in tools) mounts.Add(Mount(d, toolRoot));
+
+        // 장착점: 상태(Undrawn·Drawn)별 AttachTo 본 + 성별·어린 외형별 위치·회전(오일러 각, 도)·크기.
+        // ModelPartVisibleState 가 AlwaysInvisible 이면 그 상태에서 숨긴다(오브·코일·너클 등은 넣으면 사라진다).
+        // 두 상태를 모두 준비해 두고 모션이 도입 구간(꺼내기·넣기) 중에 바꾼다.
+        ToolMount Mount(Def d, Transform toolRoot)
+        {
+            var info = d.Root.Get("ModelPartInfo");
+            var m = new ToolMount
+            {
+                Model = d.Part.Model, Root = toolRoot,
+                ToolType = info.Get("AppearanceSlot").Str() ?? "MainTool",
+                AnimationGroup = info.Get("ModelPartAnimationGroupName").Str(),
+            };
+            string gender = plan.Male ? "Male" : "Female";
+            foreach (var ap in info.Get("AttachPointInfo").Arr())
+            {
+                bool drawn = string.Equals(ap.Get("State").Str(), "Drawn", StringComparison.OrdinalIgnoreCase);
+                if (drawn ? m.Drawn.Valid : m.Undrawn.Valid) continue;
+                string to = ap.Get("AttachTo").Str();
+                Transform parent = to == "#MODEL_ROOT" || string.IsNullOrEmpty(to) ? root.transform : BoneFor(null, to);
+                if (!parent) { L($"  장착 본 없음: {d.Part.Model} → {to}"); parent = root.transform; }
+                object pick = null; int best = -1;
+                foreach (var t in ap.Get("Transforms").Arr())
+                {
+                    bool infant = t.Get("IsInfant") is bool bb ? bb : t.Get("IsInfant").F() != 0;
+                    string g = t.Get("Gender").Str();
+                    int score = (infant == plan.Infant ? 4 : 0) + (g == gender ? 2 : g == "None" ? 1 : 0);
+                    if (score > best) { best = score; pick = t; }
+                }
+                var pl = new ToolMount.Placement
+                {
+                    Valid = true, Parent = parent,
+                    Hidden = ap.Get("ModelPartVisibleState").Str() == "AlwaysInvisible",
+                    Position = pick != null ? Vec(pick.Get("Position"), Vector3.zero) : Vector3.zero,
+                    Rotation = pick != null ? Quaternion.Euler(Vec(pick.Get("Rotation"), Vector3.zero)) : Quaternion.identity,
+                    Scale = pick != null ? Vec(pick.Get("LocalScale"), Vector3.one) : Vector3.one,
+                };
+                if (drawn) m.Drawn = pl; else m.Undrawn = pl;
+            }
+            string partName = d.Part.Key + ":" + d.Part.Model;
+            foreach (var (_, r) in view.Renderers)
+                if (r && r.transform.parent && r.transform.parent.name == partName) m.Renderers.Add((r.gameObject, r.gameObject.activeSelf));
+            foreach (var t in toolRoot.GetComponentsInChildren<Transform>(true))
+                if (t != toolRoot) m.Bones.Add((t, t.localPosition, t.localRotation, t.localScale));
+            bool start = plan.Intro != null ? plan.IntroDrawn : plan.WeaponDrawn;
+            foreach (var sp in plan.IntroToolSpans) if (plan.Intro != null && sp.toolType == m.ToolType && sp.begin <= 0f && sp.end > 0f) start = sp.drawn;
+            m.Apply(start);
+            var cur = start ? m.Drawn : m.Undrawn;
+            L($"  장착: {d.Part.Model} {(start ? "Drawn" : "Undrawn")} → {(cur.Parent == root.transform || !cur.Parent ? "루트" : cur.Parent.name)}{(cur.Hidden ? " (숨김)" : "")}, 종류 {m.ToolType}, 클립 그룹 {m.AnimationGroup}");
+            return m;
+        }
 
         int nb = bones.Count;
         view.Bones = bones.ToArray();
@@ -367,17 +434,17 @@ public static class CharacterAssembler
         }
         view.SetBodyCut(true);
         view.SetPosed(true);
-        AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, L);
+        AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, mounts, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         return view;
     }
 
     /// <summary>
-    /// 아이들 모션 클립(.fbx 의 AnimationClip 서브에셋)을 찾아 <see cref="CharacterMotion"/> 을 붙이고 첫 프레임을 적용한다.
-    /// 클립이 없거나 열리지 않으면 정지 포즈를 유지한다.
+    /// 모션 클립(.fbx 의 AnimationClip 서브에셋)을 찾아 <see cref="CharacterMotion"/> 을 붙이고 첫 프레임을 적용한다.
+    /// 도입 클립(plan.Intro)이 있으면 한 번 재생한 뒤 반복 클립(plan.Idle)으로 넘어간다. 클립이 없거나 열리지 않으면 정지 포즈를 유지한다.
     /// </summary>
     static void AttachIdle(InstallFiles files, BundleCache bundles, AssemblyPlan plan, CharacterView view, List<Transform> bones, Dictionary<string, Transform> map,
-        Dictionary<Transform, (Vector3 p, Quaternion r)> poseBase, List<(Vector3 p, Quaternion r, Vector3 s)> bind, float rawComY, Action<string> L)
+        Dictionary<Transform, (Vector3 p, Quaternion r)> poseBase, List<(Vector3 p, Quaternion r, Vector3 s)> bind, float rawComY, List<ToolMount> mounts, Action<string> L)
     {
         if (plan.Idle == null) return;
         AnimationClip LoadClip(string fbx)
@@ -388,14 +455,51 @@ public static class CharacterAssembler
                     if (c && !c.legacy) return c;
             return null;
         }
-        var clip = LoadClip(plan.Idle);
-        if (!clip) { L($"아이들 모션을 열지 못함: {plan.Idle}"); return; }
+        string Stem(string fbx) => fbx.Substring(0, fbx.Length - ".fbx".Length);
         // 얼굴: 같은 이름 + _Facial 의 본 클립(.fbx)과 블렌드셰이프·표시·셰이더 트랙(.xaf).
-        string faceFbx = plan.Idle.Substring(0, plan.Idle.Length - ".fbx".Length) + "_Facial.fbx";
-        var faceClip = LoadClip(faceFbx);
-        string xafPath = files.FindResourcePathEndingWith("/" + clip.name + "_Facial.xaf.sjon.bin");
-        var xaf = xafPath != null ? FacialXaf.Bind(files.ReadSjon(xafPath), view) : null;
-        L($"아이들 얼굴: 본 클립 {(faceClip ? $"{faceClip.name} {faceClip.length:F2}s" : "없음")}, xaf {(xaf != null ? $"트랙 {xaf.TrackCount} {xaf.Length:F2}s" : "없음")}");
+        (AnimationClip clip, FacialXaf xaf) Face(string fbx)
+        {
+            var fc = LoadClip(Stem(fbx) + "_Facial.fbx");
+            string n = Stem(fbx).Substring(fbx.LastIndexOf('/') + 1);
+            string xp = files.FindResourcePathEndingWith("/" + n + "_Facial.xaf.sjon.bin");
+            return (fc, xp != null ? FacialXaf.Bind(files.ReadSjon(xp), view) : null);
+        }
+        MotionSegment Segment(string fbx, bool drawn)
+        {
+            var body = LoadClip(fbx);
+            if (!body) return null;
+            var seg = new MotionSegment { Body = body, Drawn = drawn, Tools = new AnimationClip[mounts.Count] };
+            (seg.Face, seg.Xaf) = Face(fbx);
+            // 무기 자체 클립(ModelPartAnimation): 이 몸 클립 전용 행, 없으면 그룹의 Default 행.
+            string rel = fbx.StartsWith(BundleCache.AssetRoot, StringComparison.Ordinal) ? fbx.Substring(BundleCache.AssetRoot.Length) : fbx;
+            for (int i = 0; i < mounts.Count; i++)
+            {
+                string pc = plan.PartClip?.Invoke(mounts[i].AnimationGroup, rel);
+                if (pc != null) seg.Tools[i] = LoadClip(BundleCache.AssetRoot + pc);
+            }
+            return seg;
+        }
+        var loop = Segment(plan.Idle, plan.WeaponDrawn);
+        if (loop == null) { L($"아이들 모션을 열지 못함: {plan.Idle}"); return; }
+        MotionSegment intro = null;
+        if (plan.Intro != null)
+        {
+            intro = Segment(plan.Intro, plan.IntroDrawn);
+            if (intro == null) L($"도입 모션을 열지 못함: {plan.Intro}");
+            else intro.ToolSpans.AddRange(plan.IntroToolSpans);
+        }
+        // 구간에 얼굴 클립이 없으면(직업 자세 등) 꾸미기 아이들의 얼굴을 따로 반복한다.
+        AnimationClip fallbackFace = null; FacialXaf fallbackXaf = null;
+        if ((!loop.Face || (intro != null && !intro.Face)) && plan.FaceIdle != null)
+            (fallbackFace, fallbackXaf) = Face(plan.FaceIdle);
+        string Desc(MotionSegment sg)
+        {
+            int tc = 0; foreach (var t in sg.Tools) if (t) tc++;
+            return $"{sg.Body.name} {sg.Body.length:F2}s, 얼굴 {(sg.Face ? sg.Face.name : "대체")}, xaf {(sg.Xaf != null ? "있음" : "없음")}, 무기 클립 {tc}";
+        }
+        if (intro != null) L($"도입 모션: {Desc(intro)}, 무기 상태 구간 {intro.ToolSpans.Count}");
+        L($"반복 모션: {Desc(loop)}");
+        if (fallbackFace || fallbackXaf != null) L($"대체 얼굴: {(fallbackFace ? $"{fallbackFace.name} {fallbackFace.length:F2}s" : "없음")}, xaf {(fallbackXaf != null ? $"트랙 {fallbackXaf.TrackCount} {fallbackXaf.Length:F2}s" : "없음")}");
         int com = bones.FindIndex(x => x.name == "_COM" && x.parent == view.transform);
         // 클립의 _COM 위치는 원본 정지 포즈 높이 기준이다. 나이·키 보정 후 높이와의 비율로 줄인다.
         float comScale = com >= 0 && view.HasPose[com] && rawComY > 1e-3f ? view.PosePos[com].y / rawComY : 1f;
@@ -404,9 +508,9 @@ public static class CharacterAssembler
             if (poseBase.TryGetValue(bones[i], out var pb) && map.TryGetValue(bones[i].name, out var main))
                 parts.Add((bones[i], main, Quaternion.Inverse(pb.r) * bind[i].r));
         var motion = view.gameObject.AddComponent<CharacterMotion>();
-        motion.Init(view, clip, com, comScale, parts, faceClip, xaf);
+        motion.Init(view, com, comScale, parts, intro, loop, fallbackFace, fallbackXaf, mounts);
         motion.Sample(0);
-        L($"아이들 모션: {clip.name} {clip.length:F2}s, _COM 비율 {comScale:F3}, 파츠 전용 본 {parts.Count}");
+        L($"아이들 모션: {loop.Body.name} {loop.Body.length:F2}s, _COM 비율 {comScale:F3}, 파츠 전용 본 {parts.Count}");
     }
 
     /// <summary>
@@ -539,6 +643,22 @@ public static class CharacterAssembler
             if (t) y = float.IsNaN(y) ? t.position.y : Mathf.Min(y, t.position.y);
         }
         return y;
+    }
+
+    static Vector3 Vec(object o, Vector3 fallback) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : fallback; }
+
+    /// <summary>프리팹의 본(렌더러가 없는 Transform) 계층을 같은 로컬 값으로 복제한다. 이름 → 복제본을 <paramref name="byName"/> 에 넣는다.</summary>
+    static void CloneBones(Transform src, Transform dst, Dictionary<string, Transform> byName)
+    {
+        foreach (Transform c in src)
+        {
+            if (c.GetComponent<Renderer>()) continue;
+            var t = new GameObject(c.name).transform;
+            t.SetParent(dst, false);
+            t.localPosition = c.localPosition; t.localRotation = c.localRotation; t.localScale = c.localScale;
+            if (!byName.ContainsKey(c.name)) byName[c.name] = t;
+            CloneBones(c, t, byName);
+        }
     }
 
     static Vector3 V3(object o) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : Vector3.one; }
