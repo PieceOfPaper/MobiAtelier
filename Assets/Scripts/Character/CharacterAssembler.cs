@@ -55,6 +55,9 @@ public static class CharacterAssembler
             hideHair |= info.Get("HideHair").B();
             hideHead |= info.Get("HideHead").B();
             hideEye |= info.Get("HideEye").B();
+            // 치마 등 옷 모양 조건(Action·AnimationStateSet 의 Clothing:ShortSkirt 등). 앉기 같은 모션이 옷에 맞는 클립을 고른다.
+            string clothing = info.Get("ClothingCondition").Str();
+            if (!string.IsNullOrEmpty(clothing) && clothing != "None") plan.Clothing = clothing;
             foreach (var m in d.Root.Get("SkinnedMeshList").Arr())
             {
                 var match = HelmetLevel.Match(m.Get("MeshName").Str() ?? "");
@@ -116,45 +119,7 @@ public static class CharacterAssembler
             }
         }
 
-        Material Convert(Material m, bool keepOriginal, out bool shadow)
-        {
-            shadow = false;
-            if (!m) { var e = new Material(shader); view.Owned.Add(e); return e; }
-            var c = new Material(m) { name = m.name };
-            view.Owned.Add(c);
-            if (keepOriginal) return c;
-            string orig = m.shader ? m.shader.name : "";
-            float cull = m.HasProperty("_CullType") ? m.GetFloat("_CullType") : 2f;
-            // 눈 재질(Eye_Base·Eye_Pupil 등)은 큐 2440 대와 _ALPHAPREMULTIPLY_ON 으로 반투명을 표시한다.
-            bool transparent = m.renderQueue >= 2400 || m.IsKeywordEnabled("_ALPHAPREMULTIPLY_ON") ||
-                               orig.IndexOf("Transparent", StringComparison.OrdinalIgnoreCase) >= 0;
-            c.shader = shader;
-            c.renderQueue = -1;
-            c.SetFloat("_Cull", cull);
-            c.SetFloat("_Alpha", 1); c.SetFloat("_UseTexAlpha", 0);
-            c.SetFloat("_SrcBlend", 1); c.SetFloat("_DstBlend", 0); c.SetFloat("_ZWrite", 1);
-            c.SetFloat("_AlbedoOnly", 0);
-            c.SetColor("_ShadeColor", new Color(0.62f, 0.55f, 0.6f, 1));
-            if (!m.HasProperty("_IsDyable")) c.SetFloat("_IsDyable", 0);
-            if (orig.Contains("Hair_Shadow"))
-            {
-                shadow = true;
-                c.SetTexture("_BaseMap", Texture2D.whiteTexture);
-                c.SetFloat("_IsDyable", 0);
-                c.SetColor("_TintColor", Color.black);
-                c.SetFloat("_Alpha", 0.25f);
-                transparent = true;
-            }
-            else if (transparent) c.SetFloat("_UseTexAlpha", 1);
-            if (transparent)
-            {
-                c.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                c.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                c.SetFloat("_ZWrite", 0);
-                c.renderQueue = 3000;
-            }
-            return c;
-        }
+        Material Convert(Material m, bool keepOriginal, out bool shadow) => ConvertMaterial(m, shader, view.Owned, keepOriginal, out shadow);
 
         Material[] MorphMaterials(Def d)
         {
@@ -440,6 +405,70 @@ public static class CharacterAssembler
     }
 
     /// <summary>
+    /// 원본 캐릭터 재질을 앱 캐릭터 셰이더 재질로 바꾼다(복사본은 owned 가 소유). keepOriginal 이면 원본 셰이더 복사본을 돌려준다.
+    /// 조립기와 소셜 모션 소품(MMN/CH 셰이더)이 같이 쓴다.
+    /// </summary>
+    internal static Material ConvertMaterial(Material m, Shader shader, List<UnityEngine.Object> owned, bool keepOriginal, out bool shadow)
+    {
+        shadow = false;
+        if (!m) { var e = new Material(shader); owned.Add(e); return e; }
+        var c = new Material(m) { name = m.name };
+        owned.Add(c);
+        if (keepOriginal) return c;
+        string orig = m.shader ? m.shader.name : "";
+        float cull = m.HasProperty("_CullType") ? m.GetFloat("_CullType") : 2f;
+        // 눈 재질(Eye_Base·Eye_Pupil 등)은 큐 2440 대와 _ALPHAPREMULTIPLY_ON 으로 반투명을 표시한다.
+        bool transparent = m.renderQueue >= 2400 || m.IsKeywordEnabled("_ALPHAPREMULTIPLY_ON") ||
+                           orig.IndexOf("Transparent", StringComparison.OrdinalIgnoreCase) >= 0;
+        c.shader = shader;
+        c.renderQueue = -1;
+        c.SetFloat("_Cull", cull);
+        c.SetFloat("_Alpha", 1); c.SetFloat("_UseTexAlpha", 0);
+        c.SetFloat("_SrcBlend", 1); c.SetFloat("_DstBlend", 0); c.SetFloat("_ZWrite", 1);
+        c.SetFloat("_AlbedoOnly", 0);
+        c.SetColor("_ShadeColor", new Color(0.62f, 0.55f, 0.6f, 1));
+        if (!m.HasProperty("_IsDyable")) c.SetFloat("_IsDyable", 0);
+        if (orig.Contains("Hair_Shadow"))
+        {
+            shadow = true;
+            c.SetTexture("_BaseMap", Texture2D.whiteTexture);
+            c.SetFloat("_IsDyable", 0);
+            c.SetColor("_TintColor", Color.black);
+            c.SetFloat("_Alpha", 0.25f);
+            transparent = true;
+        }
+        else if (transparent) c.SetFloat("_UseTexAlpha", 1);
+        if (transparent)
+        {
+            c.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            c.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            c.SetFloat("_ZWrite", 0);
+            c.renderQueue = 3000;
+        }
+        return c;
+    }
+
+    /// <summary>.fbx 에셋(Assets/PatchableAssets/ 경로)의 AnimationClip 서브에셋. 없거나 열리지 않으면 null.</summary>
+    internal static AnimationClip LoadAnimationClip(InstallFiles files, BundleCache bundles, string fbx)
+    {
+        var bundle = fbx != null && files.HasAsset(fbx) ? bundles.BundleOf(fbx) : null;
+        if (bundle)
+            foreach (var c in bundle.LoadAssetWithSubAssets<AnimationClip>(fbx))
+                if (c && !c.legacy) return c;
+        return null;
+    }
+
+    /// <summary>얼굴: 같은 이름 + _Facial 의 본 클립(.fbx)과 블렌드셰이프·표시·셰이더 트랙(.xaf). 없으면 각각 null.</summary>
+    internal static (AnimationClip clip, FacialXaf xaf) LoadFace(InstallFiles files, BundleCache bundles, CharacterView view, string fbx)
+    {
+        string stem = fbx.Substring(0, fbx.Length - ".fbx".Length);
+        var fc = LoadAnimationClip(files, bundles, stem + "_Facial.fbx");
+        string n = stem.Substring(fbx.LastIndexOf('/') + 1);
+        string xp = files.FindResourcePathEndingWith("/" + n + "_Facial.xaf.sjon.bin");
+        return (fc, xp != null ? FacialXaf.Bind(files.ReadSjon(xp), view) : null);
+    }
+
+    /// <summary>
     /// 모션 클립(.fbx 의 AnimationClip 서브에셋)을 찾아 <see cref="CharacterMotion"/> 을 붙이고 첫 프레임을 적용한다.
     /// 도입 클립(plan.Intro)이 있으면 한 번 재생한 뒤 반복 클립(plan.Idle)으로 넘어간다. 클립이 없거나 열리지 않으면 정지 포즈를 유지한다.
     /// </summary>
@@ -447,23 +476,8 @@ public static class CharacterAssembler
         Dictionary<Transform, (Vector3 p, Quaternion r)> poseBase, List<(Vector3 p, Quaternion r, Vector3 s)> bind, float rawComY, List<ToolMount> mounts, Action<string> L)
     {
         if (plan.Idle == null) return;
-        AnimationClip LoadClip(string fbx)
-        {
-            var bundle = files.HasAsset(fbx) ? bundles.BundleOf(fbx) : null;
-            if (bundle)
-                foreach (var c in bundle.LoadAssetWithSubAssets<AnimationClip>(fbx))
-                    if (c && !c.legacy) return c;
-            return null;
-        }
-        string Stem(string fbx) => fbx.Substring(0, fbx.Length - ".fbx".Length);
-        // 얼굴: 같은 이름 + _Facial 의 본 클립(.fbx)과 블렌드셰이프·표시·셰이더 트랙(.xaf).
-        (AnimationClip clip, FacialXaf xaf) Face(string fbx)
-        {
-            var fc = LoadClip(Stem(fbx) + "_Facial.fbx");
-            string n = Stem(fbx).Substring(fbx.LastIndexOf('/') + 1);
-            string xp = files.FindResourcePathEndingWith("/" + n + "_Facial.xaf.sjon.bin");
-            return (fc, xp != null ? FacialXaf.Bind(files.ReadSjon(xp), view) : null);
-        }
+        AnimationClip LoadClip(string fbx) => LoadAnimationClip(files, bundles, fbx);
+        (AnimationClip clip, FacialXaf xaf) Face(string fbx) => LoadFace(files, bundles, view, fbx);
         MotionSegment Segment(string fbx, bool drawn)
         {
             var body = LoadClip(fbx);
@@ -645,7 +659,7 @@ public static class CharacterAssembler
         return y;
     }
 
-    static Vector3 Vec(object o, Vector3 fallback) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : fallback; }
+    internal static Vector3 Vec(object o, Vector3 fallback) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : fallback; }
 
     /// <summary>프리팹의 본(렌더러가 없는 Transform) 계층을 같은 로컬 값으로 복제한다. 이름 → 복제본을 <paramref name="byName"/> 에 넣는다.</summary>
     static void CloneBones(Transform src, Transform dst, Dictionary<string, Transform> byName)

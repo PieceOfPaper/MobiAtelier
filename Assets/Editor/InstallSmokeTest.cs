@@ -161,18 +161,21 @@ public static class InstallSmokeTest
                 }
 
                 // -maOutfit 이름:Top=ID,Gloves=ID;이름2:... : 지정 조합만 조립해 전신·팔·발을 촬영한다(관통 진단용).
-                //   age=14, height=-1, gender=Male, body=Fat, stance=Alert|Combat, job=CombatJob.Id 도 같은 자리에 쓸 수 있다.
+                //   age=14, height=-1, gender=Male, body=Fat, stance=Alert|Combat, job=CombatJob.Id, intro=클립, loop=클립 도 같은 자리에 쓸 수 있다.
+                //   social=SocialAction.Id [act=행동 이름] : 앱과 같은 방식(SocialMotionLoader)으로 소셜 모션을 재생한다. 촬영 시점은 행동 시작 기준이다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
                 if (outfit != null)
                 {
+                    // 소셜 모션 소품 일부는 배경 셰이더(MMN/BG, LightMode BG)로 그려진다. 앱과 같이 배경 패스를 건다.
+                    StudioBackgroundRendering.Install();
                     bool variants = Array.IndexOf(Environment.GetCommandLineArgs(), "-maOutfitVariants") >= 0;
                     foreach (var entry in outfit.Split(';'))
                     {
                         int colon = entry.IndexOf(':');
                         string tag = colon > 0 ? entry.Substring(0, colon).Trim() : "outfit";
                         var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
-                        string prevStance = null;
+                        string prevStance = null, introClip = null, loopClip = null, social = null, socialAct = null;
                         foreach (var kv in entry.Substring(colon + 1).Split(','))
                         {
                             var p = kv.Split('=');
@@ -185,6 +188,10 @@ public static class InstallSmokeTest
                             else if (k == "stance") s.weaponPose.stance = v;
                             else if (k == "job") s.weaponPose.job = v;
                             else if (k == "prev") prevStance = v;
+                            else if (k == "intro") introClip = v;
+                            else if (k == "loop") loopClip = v;
+                            else if (k == "social") social = v;
+                            else if (k == "act") socialAct = v;
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
                         log.AppendLine($"[{tag}]");
@@ -197,6 +204,9 @@ public static class InstallSmokeTest
                             prevPlan = PlanResolver.Resolve(ps, data, files);
                         }
                         var plan = PlanResolver.Resolve(s, data, files, prevPlan);
+                        // intro=클립, loop=클립 : 도입·반복 클립을 바꾼다(Assets/PatchableAssets/ 아래 상대 경로, 행동 모션 재생 확인용).
+                        if (introClip != null) { plan.Intro = BundleCache.AssetRoot + introClip; plan.IntroDrawn = plan.WeaponDrawn; plan.IntroToolSpans.Clear(); }
+                        if (loopClip != null) plan.Idle = BundleCache.AssetRoot + loopClip;
                         foreach (var c in plan.Costumes) log.AppendLine($"  의상 {c.Part} {c.CostumeId} {c.DisplayName}: {c.Status} {c.Detail}");
                         foreach (var n in plan.Notes) log.AppendLine("  참고: " + n);
                         log.AppendLine($"  자세: 꺼냄 {plan.WeaponDrawn}, 직업 {plan.StanceJob}, 조건 {plan.StanceCondition}, 클립 {plan.Idle}, 도입 {plan.Intro}, 도입 무기 구간 {plan.IntroToolSpans.Count}");
@@ -210,13 +220,35 @@ public static class InstallSmokeTest
                         }
                         Detail(tag);
                         var om = view.GetComponent<CharacterMotion>();
+                        if (om && social != null)
+                        {
+                            var sa = data.SocialActions.Find(x => x.Id == social);
+                            if (sa == null) log.AppendLine($"  소셜 모션 없음: {social} ({data.SocialError})");
+                            else
+                            {
+                                var am = SocialMotionLoader.Load(files, bundles, data, view, shader, sa, socialAct ?? SocialMotionLoader.PickAction(sa, new System.Random(1)), s2 => log.AppendLine("  " + s2), out string serr);
+                                if (am == null) log.AppendLine("  소셜 모션 실패: " + serr);
+                                else om.PlayAction(am, 0, false);
+                            }
+                        }
                         string otimes = Arg("-maMotionTimes");
                         if (om && otimes != null)
                             foreach (var ts in otimes.Split(';'))
                             {
                                 if (!float.TryParse(ts, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t)) continue;
-                                om.Sample(t);
+                                om.SampleAll(t);
                                 Capture(cam, view, Path.Combine(outDir, $"{tag}_t{ts}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                                var act = om.CurrentAction;
+                                if (act != null)
+                                    foreach (var pr in act.Props)
+                                        if (pr.Go && pr.Go.activeInHierarchy)
+                                        {
+                                            var rs = pr.Go.GetComponentsInChildren<Renderer>();
+                                            var bb = rs.Length > 0 ? rs[0].bounds : default;
+                                            log.AppendLine($"    t{ts} 소품 {pr.Go.name} 위치 {pr.Go.transform.position} 렌더러 {rs.Length} 범위 {bb.center}/{bb.size} 켜짐 {(rs.Length > 0 && rs[0].enabled)}");
+                                        }
+                                var hd = social != null ? view.FindBone("_Head") : null;
+                                if (hd) Capture(cam, view, Path.Combine(outDir, $"{tag}_t{ts}_upper.png"), 180, 5, 1.6f, hd.position + new Vector3(0, -0.25f, 0), 768, 768);
                             }
                         if (variants)
                         {

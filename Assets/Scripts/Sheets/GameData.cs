@@ -82,12 +82,32 @@ public sealed class AnimationStateRow
     public List<string> Paths;
 }
 
-/// <summary>꾸미기 화면 행동 행(Action, Player*_Customize 그룹).</summary>
-public sealed class CustomizeActionRow
+/// <summary>행동 행(Action). 꾸미기 포즈(Player*_Customize)와 소셜 모션(Player&lt;Female|Male|Infant&gt;) 그룹만 읽는다.</summary>
+public sealed class ActionRow
 {
     public string Name, Group, Condition, ToolIndices, StartClip, LoopClip;
     public string[] Terms;
     public bool HideWeapon;
+    /// <summary>들어올 때·나갈 때 섞는 시간(초).</summary>
+    public float FadeIn, FadeOut;
+}
+
+/// <summary>소셜 모션(게임 "모션" 메뉴) 한 줄.</summary>
+public sealed class SocialActionData
+{
+    public string Id, DisplayName, EmotionType, BehaviourType, PreviewAction;
+    public int DisplayPriority;
+    /// <summary>행동 이름(Action.ActionName). Random 은 이 중 하나를 고른다.</summary>
+    public List<string> Actions;
+    public bool IsLogic => BehaviourType == "Logic";
+    public bool IsRandom => BehaviourType == "Random";
+}
+
+/// <summary>행동별 스테이지 타임라인 행(ActionStageTimeline).</summary>
+public sealed class ActionTimelineRow
+{
+    public string[] Terms;
+    public string[] Start, Loop;
 }
 
 public sealed class GameData
@@ -113,8 +133,13 @@ public sealed class GameData
     public readonly List<CombatJobData> CombatJobs = new List<CombatJobData>();
     /// <summary>키: AnimationGroup + "|" + Symbol → 행들(조건별).</summary>
     public readonly Dictionary<string, List<AnimationStateRow>> AnimationStates = new Dictionary<string, List<AnimationStateRow>>(StringComparer.Ordinal);
-    /// <summary>꾸미기 화면 행동. 키: GroupName + "|" + ActionName.</summary>
-    public readonly Dictionary<string, List<CustomizeActionRow>> CustomizeActions = new Dictionary<string, List<CustomizeActionRow>>(StringComparer.Ordinal);
+    /// <summary>행동(꾸미기 포즈·소셜 모션 그룹). 키: GroupName + "|" + ActionName.</summary>
+    public readonly Dictionary<string, List<ActionRow>> Actions = new Dictionary<string, List<ActionRow>>(StringComparer.Ordinal);
+    /// <summary>소셜 모션(시트 순서). 읽지 못하면 비어 있고 SocialError 에 사유가 있다.</summary>
+    public readonly List<SocialActionData> SocialActions = new List<SocialActionData>();
+    /// <summary>행동별 스테이지 타임라인. 키: AnimationGroupName + "|" + ActionName.</summary>
+    public readonly Dictionary<string, List<ActionTimelineRow>> ActionTimelines = new Dictionary<string, List<ActionTimelineRow>>(StringComparer.Ordinal);
+    public string SocialError;
     /// <summary>파츠 클립. 키: 파츠 애니메이션 그룹 + "|" + 몸 클립 경로(또는 "Default") → 파츠 클립 경로(Assets/PatchableAssets/ 아래 상대).</summary>
     public readonly Dictionary<string, string> PartAnimations = new Dictionary<string, string>(StringComparer.Ordinal);
     /// <summary>클립 이름 → 스테이지 타임라인 이름들(조건 태그 없는 행).</summary>
@@ -262,16 +287,17 @@ public sealed class GameData
             foreach (var r in set.Read(SheetSchemas.Action))
             {
                 string group = r.Str("GroupName");
-                if (group == null || !group.EndsWith("_Customize", StringComparison.Ordinal)) continue;
-                var a = new CustomizeActionRow
+                if (group == null || !(group.EndsWith("_Customize", StringComparison.Ordinal) || IsSocialGroup(group))) continue;
+                var a = new ActionRow
                 {
                     Name = r.Str("ActionName"), Group = group, Condition = r.Str("Condition"), ToolIndices = r.Str("ToolIndices"),
                     HideWeapon = r.Bool("HideWeapon"), StartClip = r.Str("StartClipPath"), LoopClip = r.Str("LoopClipPath"),
+                    FadeIn = (float)r.Num("FadeInTime"), FadeOut = (float)r.Num("FadeOutTime"),
                 };
                 if (a.Name == null) continue;
                 a.Terms = ParseCondition(a.Condition);
                 string key = group + "|" + a.Name;
-                if (!g.CustomizeActions.TryGetValue(key, out var list)) g.CustomizeActions[key] = list = new List<CustomizeActionRow>();
+                if (!g.Actions.TryGetValue(key, out var list)) g.Actions[key] = list = new List<ActionRow>();
                 list.Add(a);
             }
             foreach (var r in set.Read(SheetSchemas.ModelPartAnimation))
@@ -291,18 +317,73 @@ public sealed class GameData
         }
         catch (Exception e)
         {
-            g.CustomizeActions.Clear();
+            g.Actions.Clear();
             g.PartAnimations.Clear();
             g.ClipTimelines.Clear();
             g.MotionError = "연출 데이터: " + e.Message;
         }
+        // 소셜 모션 목록과 행동별 타임라인. 읽지 못해도 꾸미기는 동작한다(모션 메뉴만 빠진다).
+        try
+        {
+            if (g.Actions.Count == 0) throw new InvalidOperationException(g.MotionError ?? "행동 시트가 비었습니다.");
+            foreach (var r in set.Read(SheetSchemas.SocialAction))
+            {
+                var s = new SocialActionData
+                {
+                    Id = r.Str("Id"), DisplayName = r.Str("DisplayName"), EmotionType = r.Str("EmotionBehaviorType"),
+                    BehaviourType = r.Str("BehaviourType"), PreviewAction = r.Str("PreviewActionName"),
+                    DisplayPriority = (int)r.Long("DisplayPriority"), Actions = r.Strs("Actions"),
+                };
+                s.Actions.RemoveAll(string.IsNullOrEmpty);
+                if (string.IsNullOrEmpty(s.Id) || s.Actions.Count == 0) continue;
+                g.SocialActions.Add(s);
+            }
+            foreach (var r in set.Read(SheetSchemas.ActionStageTimeline))
+            {
+                string name = r.Str("ActionName"), group = r.Str("AnimationGroupName");
+                if (name == null || group == null || !IsSocialGroup(group) || !string.IsNullOrEmpty(r.Str("TimelineOverrideConditionTag"))) continue;
+                var t = new ActionTimelineRow { Terms = ParseCondition(r.Str("MultiCondition")), Start = SplitNames(r.Str("StartTimelines")), Loop = SplitNames(r.Str("LoopTimelines")) };
+                string key = group + "|" + name;
+                if (!g.ActionTimelines.TryGetValue(key, out var list)) g.ActionTimelines[key] = list = new List<ActionTimelineRow>();
+                list.Add(t);
+            }
+        }
+        catch (Exception e)
+        {
+            g.SocialActions.Clear();
+            g.ActionTimelines.Clear();
+            g.SocialError = "모션 데이터: " + e.Message;
+        }
     }
 
-    /// <summary>꾸미기 행동 중 조건 항목이 모두 facts 에 있고 항목이 가장 많은 행. 없으면 null.</summary>
-    public CustomizeActionRow CustomizeAction(string group, string name, ICollection<string> facts)
+    static bool IsSocialGroup(string group) => group == "PlayerFemale" || group == "PlayerMale" || group == "PlayerInfant";
+
+    static string[] SplitNames(string s)
     {
-        if (!CustomizeActions.TryGetValue(group + "|" + name, out var list)) return null;
-        CustomizeActionRow best = null;
+        var list = new List<string>();
+        if (!string.IsNullOrEmpty(s)) foreach (var n in s.Split(',')) if (n.Trim().Length > 0) list.Add(n.Trim());
+        return list.ToArray();
+    }
+
+    /// <summary>행동의 스테이지 타임라인 행 중 조건 항목이 모두 facts 에 있고 항목이 가장 많은 행. 없으면 null.</summary>
+    public ActionTimelineRow ActionTimeline(string group, string name, ICollection<string> facts)
+    {
+        if (!ActionTimelines.TryGetValue(group + "|" + name, out var list)) return null;
+        ActionTimelineRow best = null;
+        foreach (var row in list)
+        {
+            bool ok = true;
+            foreach (var t in row.Terms) if (!facts.Contains(t)) { ok = false; break; }
+            if (ok && (best == null || row.Terms.Length > best.Terms.Length)) best = row;
+        }
+        return best;
+    }
+
+    /// <summary>행동 중 조건 항목이 모두 facts 에 있고 항목이 가장 많은 행. 없으면 null.</summary>
+    public ActionRow FindAction(string group, string name, ICollection<string> facts)
+    {
+        if (!Actions.TryGetValue(group + "|" + name, out var list)) return null;
+        ActionRow best = null;
         foreach (var row in list)
         {
             bool ok = true;

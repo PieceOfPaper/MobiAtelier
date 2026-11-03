@@ -73,6 +73,8 @@ public sealed class AssemblyPlan
     public Func<string, string, string> PartClip;
     /// <summary>현재 무기 외형 ID(적용된 경우). 전환 판정에 쓴다.</summary>
     public string WeaponId;
+    /// <summary>입은 의상의 옷 모양 조건(ModelPartInfo.ClothingCondition: ShortSkirt·LongSkirt 등). 조립할 때 채운다. 없으면 null.</summary>
+    public string Clothing;
 
     public static string CostumeKey(string part) => "costume:" + part;
 }
@@ -242,7 +244,7 @@ public static class PlanResolver
     static void ResolvePose(AssemblyPlan plan, GameData data, InstallFiles files, string folder, string stance)
     {
         string action = "Customize_Costume_0" + (4 + WeaponPoseState.PoseIndex(stance));
-        var row = data.CustomizeAction("Player" + folder + "_Customize", action, Facts(plan, data, plan.StanceJob, true));
+        var row = data.FindAction("Player" + folder + "_Customize", action, Facts(plan, data, plan.StanceJob, true));
         if (row == null || string.IsNullOrEmpty(row.LoopClip)) { plan.Notes.Add($"꾸미기 포즈 없음: {action} {plan.StanceJob}"); return; }
         string loop = BundleCache.AssetRoot + row.LoopClip;
         if (!files.HasAsset(loop)) { plan.Notes.Add("꾸미기 포즈 클립이 설치 폴더에 없음: " + loop); return; }

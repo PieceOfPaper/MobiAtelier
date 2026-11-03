@@ -145,12 +145,13 @@ public static class SheetSchemas
         "AssetPaths:[S+S]");
 
     /// <summary>
-    /// 행동(Action). 꾸미기 포즈(Player*_Customize 의 Customize_Costume_04~06)에 쓴다. preload 세 번째 문자열은 조건("CombatJob:Warrior, BodyType:Fat" 등)이다.
-    /// 클립 경로(AssetPath)는 문자열 두 개, 오프셋·페이드 시간(TimeSpan)은 double 이다. 시작에 필요하지 않다.
+    /// 행동(Action). 꾸미기 포즈(Player*_Customize 의 Customize_Costume_04~06)와 소셜 모션(Player&lt;Female|Male|Infant&gt;)에 쓴다.
+    /// preload 세 번째 문자열은 조건("CombatJob:Warrior, BodyType:Fat", "Clothing:ShortSkirt" 등)이다.
+    /// 클립 경로(AssetPath)는 문자열 두 개, 오프셋·페이드 시간(TimeSpan)은 double(초)이다. 시작에 필요하지 않다.
     /// </summary>
     public static readonly SheetSchema Action = new SheetSchema("Action",
         "ActionName:S GroupName:S Condition:S",
-        @"_:N _:N ToolIndices:S HideWeapon:U _:S _:S _:S StartClipPath:S _:S _:D _:D LoopClipPath:S _:S _:D _:D _:D _:D
+        @"_:N _:N ToolIndices:S HideWeapon:U _:S _:S _:S StartClipPath:S _:S _:D _:D LoopClipPath:S _:S _:D _:D FadeInTime:D FadeOutTime:D
           _:U _:U _:E _:E _:U _:U _:U");
 
     /// <summary>무기 등 파츠 자체 클립: (파츠 애니메이션 그룹, 몸 클립 경로 또는 "Default") → 파츠 클립 경로.</summary>
@@ -162,6 +163,23 @@ public static class SheetSchemas
     public static readonly SheetSchema StageTimeline = new SheetSchema("StageTimeline",
         "AnimationClipName:S",
         "TimelineOverrideConditionTag:S _:I StageTimelineNames:S");
+
+    /// <summary>
+    /// 소셜 모션(게임 "모션" 메뉴, SocialMotion.md). Actions 는 (행동 이름, 가중치) 구조체 배열이며 이름만 남긴다.
+    /// 행동 방식은 Normal·Random(Actions 중 하나)·Logic(2인)이다. 시작에 필요하지 않다.
+    /// </summary>
+    public static readonly SheetSchema SocialAction = new SheetSchema("SocialAction",
+        "Id:K(SocialActionSheet)",
+        @"DisplayName:S EmotionBehaviorType:E DisplayPriority:I _:S _:S BehaviourType:E Actions:[S+I] UnlockType:E _:[K]
+          _:U _:U _:[S] _:[S] PreviewActionName:S _:K _:S _:S _:S _:N");
+
+    /// <summary>
+    /// 행동별 스테이지 타임라인(소품·이펙트 등): (행동, 애니메이션 그룹, 조건) → 시작 클립·반복 클립의 타임라인 이름(쉼표 구분).
+    /// 같은 클립을 쓰는 행동이 다른 소품을 쓸 때(모자마술 햄스터·부엉이·토끼) 클립 이름 기준 StageTimeline 보다 먼저 본다.
+    /// </summary>
+    public static readonly SheetSchema ActionStageTimeline = new SheetSchema("ActionStageTimeline",
+        "",
+        "ActionName:S AnimationGroupName:S MultiCondition:S TimelineOverrideConditionTag:S _:I StartTimelines:S LoopTimelines:S");
 
     /// <summary>시작할 때 읽어야 하는 시트 전부.</summary>
     public static readonly SheetSchema[] Required =

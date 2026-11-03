@@ -4,6 +4,7 @@
 //   편집: 꾸미기 패널의 요청은 Edit·EditColors·SetBackground 로 받는다. 성공한 꾸미기 편집만 이력(EditHistory)에 넣는다.
 //   시스템 메뉴(SystemMenu.md): 내보내기·가져오기·초기화·옵션·종료. ESC 는 가장 위의 UI 한 곳만 처리한다.
 //   카메라 출력 영역: 패널이 열리면 남은 영역만 그린다(Camera.rect). 사용자 구도는 바꾸지 않는다.
+//   소셜 모션(SocialMotion.md): 카메라 영역의 모션 버튼으로 재생하는 보기 도구. 저장·이력에 넣지 않는다. 다시 조립해도 같은 시점부터 잇는다.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,6 +37,11 @@ public sealed class AppController : MonoBehaviour
     CustomizePanel panel;
     StudioBackground background;
     readonly EditHistory history = new EditHistory();
+    SocialMotionControl motionUI;
+    /// <summary>재생 중인 소셜 모션과 고른 행동 이름(Random 은 고른 것). 멈추면 null.</summary>
+    SocialActionData motionSocial;
+    string motionAction;
+    readonly System.Random motionRandom = new System.Random();
     /// <summary>Windows 파일·폴더 대화상자가 열려 있다. 뒤의 ESC·F1·단축키를 막는다.</summary>
     bool dialogOpen;
     /// <summary>저장 실패 안내에서 '저장 없이 종료'를 고른 경우만 true.</summary>
@@ -391,11 +397,86 @@ public sealed class AppController : MonoBehaviour
     {
         var nextPlan = PlanResolver.Resolve(next, data, files, transition ? plan : null);
         var built = CharacterAssembler.Build(files, bundles, nextPlan, characterShader);
+        // 재생 중인 소셜 모션은 새 캐릭터에서 같은 시점부터 잇는다(SocialMotion.md 4장 6·7).
+        var oldMotion = view ? view.GetComponent<CharacterMotion>() : null;
+        double motionTime = oldMotion && oldMotion.CurrentAction != null ? oldMotion.ActionTime : -1;
         if (view) Destroy(view.gameObject);
         view = built;
         state = next;
         plan = nextPlan;
         ui.SetNotes(Notes(plan));
+        if (motionSocial != null)
+        {
+            if (motionTime >= 0) StartMotion(motionSocial, motionAction, motionTime, false);
+            else StopMotionUI();
+        }
+    }
+
+    // ------------------------------------------------------------ 소셜 모션 (SocialMotion.md)
+
+    List<DropdownItem> MotionItems()
+    {
+        var items = new List<DropdownItem>();
+        foreach (var s in data.SocialActions)
+            if (SocialMotionLoader.Listed(s))
+                items.Add(new DropdownItem { Id = s.Id, Name = s.Id + (string.IsNullOrEmpty(s.DisplayName) ? "" : " - " + s.DisplayName) });
+        return items;
+    }
+
+    static string MotionLabel(SocialActionData s) => s.Id + (string.IsNullOrEmpty(s.DisplayName) ? "" : " - " + s.DisplayName);
+
+    /// <summary>모션 목록에서 고른 것을 처음부터 재생한다. Random 행동은 고를 때마다 하나를 새로 뽑는다.</summary>
+    void PlayMotion(string id)
+    {
+        var s = data.SocialActions.Find(x => x.Id == id);
+        if (s == null || !view) return;
+        StartMotion(s, SocialMotionLoader.PickAction(s, motionRandom), 0, true);
+    }
+
+    /// <summary>현재 캐릭터에 맞게 읽어 재생한다. 실패하면 알리고 모션을 멈춘다(장면은 그대로).</summary>
+    bool StartMotion(SocialActionData s, string actionName, double startTime, bool fadeIn)
+    {
+        var motion = view ? view.GetComponent<CharacterMotion>() : null;
+        if (!motion) { ui.ShowNotice("기본 모션이 없는 캐릭터라 모션을 재생할 수 없습니다.", true); StopMotionUI(); return false; }
+        ActionMotion a;
+        string error;
+        try { a = SocialMotionLoader.Load(files, bundles, data, view, characterShader, s, actionName, null, out error); }
+        catch (Exception e) { Debug.LogException(e); a = null; error = e.Message; }
+        if (a == null)
+        {
+            ui.ShowNotice($"{MotionLabel(s)}: {error}", true);
+            motion.StopAction(false);
+            StopMotionUI();
+            return false;
+        }
+        motionSocial = s;
+        motionAction = actionName;
+        motion.ActionFinished -= OnMotionFinished;
+        motion.ActionFinished += OnMotionFinished;
+        motion.PlayAction(a, startTime, fadeIn);
+        motionUI?.SetPlaying(MotionLabel(s));
+        return true;
+    }
+
+    void StopMotion()
+    {
+        var motion = view ? view.GetComponent<CharacterMotion>() : null;
+        StopMotionUI();
+        if (motion) motion.StopAction(true);
+    }
+
+    void OnMotionFinished()
+    {
+        var motion = view ? view.GetComponent<CharacterMotion>() : null;
+        if (motion && motion.CurrentAction != null) return;   // 다른 모션으로 바뀐 경우
+        StopMotionUI();
+    }
+
+    void StopMotionUI()
+    {
+        motionSocial = null;
+        motionAction = null;
+        motionUI?.SetIdle();
     }
 
     void EnsurePanel()
@@ -405,6 +486,12 @@ public sealed class AppController : MonoBehaviour
             () => background?.CurrentId, SetBackground, Undo, Redo);
         panel.Bind(data);
         ui.AddViewControls(cameraCtl.SetLensMultiplier, () => state != null && !ui.ModalOpen && !dialogOpen, OpenMenu, settings, SaveSettings);
+        if (data.SocialActions.Count > 0)
+        {
+            motionUI = new SocialMotionControl(() => ui.WindowLayer, MotionItems, PlayMotion, StopMotion, () => state != null && !ui.ModalOpen && !dialogOpen);
+            ui.AddMotionControl(motionUI.Root);
+        }
+        else if (data.SocialError != null) Debug.LogWarning("[MobiAtelier] " + data.SocialError);
         panel.CameraAreaChanged += area => UpdateCameraArea();
         UpdateCameraArea();
     }
@@ -820,7 +907,7 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
-    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
+    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw,motion:ID (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
         float delay = float.TryParse(CommandLine.Value("-maShotDelay"), out var d) ? d : 8f;
@@ -858,6 +945,8 @@ public sealed class AppController : MonoBehaviour
                 Edit(s => s.weaponPose.stance = WeaponPoseState.Alert);
             }
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
+            // motion:ID : 소셜 모션을 재생한다(모션 버튼 확인용, -maShotUIWait 로 재생 시점을 정한다)
+            foreach (var o in opts) if (o.StartsWith("motion:", StringComparison.Ordinal)) PlayMotion(o.Substring("motion:".Length));
             if (opts.Contains("undo")) Undo();
             if (opts.Contains("open")) panel.SetOpen(true);
             if (opts.Contains("weapon") || opts.Contains("draw")) panel.ScrollToEnd();

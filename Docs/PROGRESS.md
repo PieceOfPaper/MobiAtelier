@@ -5,6 +5,8 @@
 
 ## 1. 현재 단계
 
+- 소셜 모션(2026-11-03, Claude Code): 카메라 영역 오른쪽 아래 `모션` 버튼(검색 목록·■ 정지)으로 게임 모션 메뉴의 행동을 재생한다. 저장·이력 제외. 시작→반복 클립, 페이드, 무기 넣음·숨김, 소품(Prop·PropAnimation)·이펙트(Effect) 로드, 재조립 시 같은 시점부터 이어 재생. 배치·빌드 촬영으로 확인했고 마우스 조작·이어 재생은 [미확인](`Docs/SocialMotion.md` 5장).
+
 - 무기 자세(2026-11-03, Claude Code): 무기를 모델 정의의 장착점에 붙이고(넣음 허리·등, 꺼냄 손), 의상 › 무기 아래 "무기 자세"(넣음·꺼냄 경계·꺼냄 전투)와 "자세 직업"(자동 = 무기 외형의 원래 직업, 변경 가능)을 추가했다. 꺼냄은 `AnimationStateSet` 의 직업별 AlertStand/CombatStand 클립을 재생한다. 배치 촬영·빌드 촬영으로 확인했고 드롭다운 마우스 조작은 [미확인]이다(`Docs/WeaponPose.md`).
 
 - 새 UI 구현(2026-11-03, Claude Code): WindowAndCustomizationUI·SystemMenu·Options·UndoRedo·ControlsHelp·Reset의 확정 사항을 코드로 옮겼다. 고정 접이식 패널(시작 닫힘)과 카메라 출력 영역 전환, 눈·메뉴 아이콘, 카메라 영역 기준 화각·빠른 조작 안내·첫 사용 자세한 안내, 꾸미기 전용 실행 취소/다시 실행(아이콘·Ctrl+Z/Y), 시스템 메뉴(내보내기·가져오기·초기화·옵션·종료)와 ESC 우선순위, 최초·초기화 초보자 의상. 배치 모드 컴파일·빌드 성공, 빌드 촬영으로 화면을 확인했다. 마우스·키보드 조작은 [미확인](4장 확인 요청 7).
@@ -27,6 +29,10 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-03 | 소셜 모션 연출 트랙: 손 IK(IKControl, 2본 IK), 덧그림(AdditiveRenderer, 겹친 SkinnedMeshRenderer), 숨김(ObjectVisibility, forceRenderingOff), 셰이더 값(ShaderProperty, MaterialPropertyBlock). 클립·행동 타임라인을 합쳐 읽고 같은 프리팹·시각은 하나만. 소리(Sound·Footstep)는 사용자 결정으로 보류하고 SocialMotion.md 6장에 목록을 남겼다. 스모크 테스트 outfit 모드에 배경 패스 설치, 소셜 촬영에 상반신 사진 추가 |
+| 2026-11-03 | 소셜 모션 구현: 시트 `SocialAction`·`ActionStageTimeline` 추가, `Action` 의 FadeIn/Out 읽기(`CustomizeActionRow`→`ActionRow`, `CustomizeAction`→`FindAction`), 소셜 그룹 행도 읽음. `Character/SocialMotion.cs`(행동 해석·클립·타임라인 소품·이펙트 로드), `CharacterMotion` 에 행동 층(기본/행동 믹서, 페이드, 무기 넣음·숨김, 소품 클립, 이펙트), 조립기에서 재질 변환·클립·얼굴 로더를 정적 함수로 분리, `plan.Clothing`(ModelPartInfo.ClothingCondition). `UI/SocialMotionControl.cs`, `AppUI.AddMotionControl`, AppController 재생·정지·재조립 이어 재생. 스모크 테스트 `social=ID [act=행동]`(촬영은 `SampleAll`), 빌드 촬영 `-maShotUI motion:ID` |
+| 2026-11-03 | 소셜 모션 기획: SocialMotion.md 추가. 저장·이력 제외 보기 도구, 카메라 영역 오른쪽 아래 `모션` 버튼(배치 항목 T) 확정. AGENTS·UndoRedo·UI 배치·플로우·README 반영. 구현 전 결정 12개(4장)는 사용자 답 대기. 코드 변경 없음 |
+| 2026-11-03 | 행동(모션 메뉴) 재생 가능성 시험: 스모크 테스트 `-maOutfit` 에 `intro=클립`·`loop=클립` 추가. 화남1(여·남·12세)·전통댄스(여·남)를 기존 `CharacterMotion` 으로 재생·촬영해 몸·얼굴 재생 확인. 결과·남은 확인은 StudioFeatureReview.md 3장. 행동 선택 UI는 없다 |
 | 2026-11-03 | 무기 자세 2차: 꺼내기·넣기 전환(ToolDraw/ToolUndraw 도입 + StageTimeline ToolState 구간으로 장착점 전환), 무기 자체 클립(ModelPartAnimation), 꾸미기 포즈 1~3(Action Customize_Costume_04~06 시작→반복, 얼굴 클립 포함), 부분 복원에 없는 자세 직업·모르는 자세 값 안내. 시트 연산 `D`(double), Action·ModelPartAnimation·StageTimeline 시트. `CharacterMotion` 을 도입/반복 구간·무기 장착(ToolMount)·구간별 얼굴 구조로 다시 짰다. 스모크 테스트 `-maOutfit` 의 `prev=자세`, outfit 모드 `-maMotionTimes`, `-maProbeClips`, 빌드 촬영 `-maShotUI draw` |
 | 2026-11-03 | 무기 자세: 시트 리더에 구조체 배열 원소(`[S+S]`) 추가, `CombatJob`·`AnimationStateSet` 시트(시작 필수 아님, 실패 시 `MotionError`), `Costume.EquippableCombatJobs`. 조립기가 무기 프리팹 본을 복제해 `AttachPointInfo`(상태·성별·어린 외형별 위치·회전·크기, `AlwaysInvisible` 숨김)로 붙이고 무기는 몸 가리기에서 뺀다. `weaponPose { stance, job }` 저장. 직업 클립은 얼굴 클립이 없어 꾸미기 아이들 얼굴을 따로 반복(`CharacterMotion` faceLoop). 스모크 테스트 `-maOutfit` 에 `stance=`·`job=`, 빌드 촬영 `-maShotUI weapon`. 촬영 확인 목록은 WeaponPose.md 4장 |
 | 2026-11-03 | 키 조절 슬라이더: 외형 "나이" 아래 `키` 슬라이더(HeightModifier -1~+1, 0.01 단위, 값 두 번 누르면 0). 손을 뗄 때 한 번 조립·이력·자동 저장. 시험 옵션 `-maShotUI short,tall`. 빌드 촬영으로 -1·+1 몸 크기 변화, `autosave.json`의 `heightModifier: 1.0` 저장과 재실행 복원 확인. 마우스 끌기·키보드 조작은 [미확인] |
@@ -103,8 +109,19 @@
 8. ~~초기화(`Reset.md`)와 꾸미기 이력(`UndoRedo.md`)~~ (2026-11-03 구현).
 9. 확정 기획 구현(최초 초보자 의상·현재 성별 기준 초기화·확인 UI는 2026-11-03 구현): 외형 파츠의 이전 선택 보관·호환 기본값 대체, 업데이트 부분 복원, ID·숨김 표기, UNITY_EDITOR 노출 제한. 기존 의상 없는 최초 상태를 수정해야 한다.
 10. 남은 검증·조정: 키·나이 범위·조작 방식, 꾸밈 중첩·색상 연결, 카테고리 묶음·펼침 정책, 의상의 추가 공개 제어 참조. 게임 전체 공개 판정을 해석한 것으로 취급하지 않는다.
+11. 소셜 모션 사용자 확인(`SocialMotion.md` 5장): 목록 열기·검색·선택·■·ESC, 재생 중 의상·성별 변경 이어 재생, 페이드·이펙트 모양. 남은 구현: 어린 외형 소품 크기 보정.
+11. 소셜 모션 사용자 확인(`SocialMotion.md` 5장): 목록 열기·검색·선택·■·ESC, 재생 중 의상·성별 변경 이어 재생, 페이드·이펙트 모양. 남은 구현: 어린 외형 소품 크기 보정.
 
 ## 4. 인계 메모
+
+- **소셜 모션 (2026-11-03, Claude Code)**
+  - 시트 필드 순서: `SocialAction` 행은 `DisplayName:S EmotionBehaviorType:E DisplayPriority:I IconPath(S+S) BehaviourType:E Actions:[S+I] UnlockType:E SettingGroups:[K] U U [S] [S] PreviewActionName:S K S S S N`. `ActionStageTimeline` 은 preload 가 없고 마지막 두 문자열이 시작·반복 클립의 타임라인 이름(쉼표 구분)이다.
+  - 소품의 캐릭터 셰이더(MMN/CH) 재질을 원본 그대로 쓰면 검게 나온다. `CharacterAssembler.ConvertMaterial` 로 바꾼다. 배경 셰이더(MMN/BG)·이펙트 셰이더(MMN/FX)는 원본 그대로 그려졌다 [확인].
+  - 이펙트는 실행 중에는 실시간으로 재생하고, 시험 촬영(`CharacterMotion.SampleAll`)에서만 `ParticleSystem.Simulate` 로 시점을 맞춘다.
+  - 행동 소품·이펙트는 캐릭터 아래에 만들어 캐릭터와 함께 없어진다. 다시 조립하면 `AppController.Build` 가 새 캐릭터에 다시 읽어 같은 시점부터 잇는다.
+  - 덧그림 재질을 렌더러 재질 배열 끝에 붙이면 Unity 는 마지막 서브메시에만 그린다(머리는 서브메시 2개라 얼굴에 안 보였다). 같은 메시·본의 렌더러를 하나 더 만들어 그린다.
+  - 마시멜로·팝콘 등 일부 소품은 MMN/BG 셰이더(LightMode BG)라 배경 패스(`StudioBackgroundRendering`)가 있어야 보인다. 앱은 배경 생성 때 설치되고, 스모크 테스트 outfit 모드도 설치한다.
+  - 아직 안 한 것: 소품 크기 보정(`DefaultScaleSensitivity`), 소리(보류, `SocialMotion.md` 6장). 마우스 조작·이어 재생·전체 159개 재생은 [미확인](`Docs/SocialMotion.md` 5장).
 
 - **무기 자세 (2026-11-03, Claude Code)**
   - 무기 모델에는 BoneTemplate 이 없다. 메시 본은 프리팹 Transform 에만 있어 `CharacterAssembler.CloneBones` 로 복제하고 그 파츠 전용 본(`partBones`)으로 찾는다. 복제 본은 `view.Bones` 에 넣지 않으므로 모션 후처리(위치·스케일 복원)를 받지 않는다.

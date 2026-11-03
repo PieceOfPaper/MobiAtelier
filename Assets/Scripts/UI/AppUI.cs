@@ -16,7 +16,7 @@ public sealed class AppUI
     Action modalEscape;
     Label loading, notice;
     IVisualElementScheduledItem noticeHide;
-    VisualElement lensControls;
+    VisualElement lensControls, motionControls;
     Button eyeButton, menuButton;
     ControlsHelpView help;
     readonly List<(float multiplier, Button button)> lensButtons = new List<(float, Button)>();
@@ -134,6 +134,17 @@ public sealed class AppUI
 
     public ControlsHelpView Help => help;
 
+    /// <summary>T: 소셜 모션 버튼. 카메라 영역 오른쪽 아래(SocialMotion.md).</summary>
+    public void AddMotionControl(VisualElement control)
+    {
+        if (motionControls != null) return;
+        motionControls = control;
+        control.style.position = Position.Absolute;
+        viewport.Add(control);
+        control.RegisterCallback<GeometryChangedEvent>(e => PlaceViewTools());
+        PlaceViewTools();
+    }
+
     /// <summary>화각 버튼은 카메라 영역 하단 중앙에서 조금 위. 좁은 영역에서 빠른 안내와 겹치면 그 위로 올린다.</summary>
     void PlaceViewTools()
     {
@@ -148,9 +159,19 @@ public sealed class AppUI
             float qRight = 12 + q.layout.width + 8;
             if ((w - lw) * 0.5f < qRight) bottom = baseBottom + q.layout.height + 10;
         }
-        lensControls.style.left = Mathf.Max(8, (w - lw) * 0.5f);
+        float lensLeft = Mathf.Max(8, (w - lw) * 0.5f);
+        lensControls.style.left = lensLeft;
         lensControls.style.bottom = bottom;
         help?.SetDetailBottom(baseBottom);
+        // 모션 버튼: 오른쪽 아래. 좁아서 화각과 겹치면 화각 위 줄로 올린다.
+        if (motionControls != null)
+        {
+            float mw = motionControls.layout.width, lh = lensControls.layout.height;
+            float mBottom = baseBottom;
+            if (!float.IsNaN(mw) && w - 12 - mw < lensLeft + lw + 8) mBottom = bottom + (float.IsNaN(lh) ? 34 : lh) + 8;
+            motionControls.style.right = 12;
+            motionControls.style.bottom = mBottom;
+        }
     }
 
     /// <summary>카메라 출력 영역(UI 좌표). 보기 도구·안내가 이 영역을 따라간다.</summary>
