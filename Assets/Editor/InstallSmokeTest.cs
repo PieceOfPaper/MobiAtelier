@@ -58,6 +58,17 @@ public static class InstallSmokeTest
                     Capture(cam, view, Path.Combine(outDir, name + "_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
                     Capture(cam, view, Path.Combine(outDir, name + "_34.png"), 145, 10, 3.6f, new UnityEngine.Vector3(0, 0.88f, 0));
                     if (head) Capture(cam, view, Path.Combine(outDir, name + "_face.png"), 180, 0, 0.9f, head.position + new Vector3(0, 0.08f, 0), 768, 768);
+                    // -maMotionTimes 초;초;... : 아이들 모션을 그 시점으로 평가해 전신·얼굴을 촬영한다.
+                    var motion = view.GetComponent<CharacterMotion>();
+                    string times = Arg("-maMotionTimes");
+                    if (motion && times != null)
+                        foreach (var ts in times.Split(';'))
+                        {
+                            if (!float.TryParse(ts, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t)) continue;
+                            motion.Sample(t);
+                            Capture(cam, view, Path.Combine(outDir, $"{name}_t{ts}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                            if (head) Capture(cam, view, Path.Combine(outDir, $"{name}_t{ts}_face.png"), 180, 0, 0.6f, head.position + new Vector3(0, 0.08f, 0), 512, 512);
+                        }
                     UnityEngine.Object.DestroyImmediate(view.gameObject);
                 }
 
@@ -181,9 +192,16 @@ public static class InstallSmokeTest
                     return;
                 }
 
+                // -maAge 나이 : 기본 촬영의 나이를 바꾼다(예: 12 → 어린 외형).
+                // -maBodyType 체형 ID : 기본 촬영의 체형을 바꾼다(Default, Fat, Muscular, Thin 등 BodyTypes 시트 ID).
+                int age = int.TryParse(Arg("-maAge"), out var a) ? a : 0;
+                string bodyType = Arg("-maBodyType");
+                if (bodyType != null) log.AppendLine($"체형 ID: {string.Join(", ", data.BodyTypes.Keys)}");
                 foreach (var preset in StateFactory.DefaultPresets)
                 {
                     var s = StateFactory.FromPreset(data, preset);
+                    if (age > 0) s.appearance.age = age;
+                    if (bodyType != null) s.appearance.bodyType = bodyType;
                     Shoot(preset, s);
                     s.costumes.Add(new CostumeSlotState { part = "Top", costumeId = "Fashion_NewbieSword_Top" });
                     s.costumes.Add(new CostumeSlotState { part = "Bottom", costumeId = "Fashion_NewbieSword_Bottom" });

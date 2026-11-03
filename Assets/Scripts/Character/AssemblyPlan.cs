@@ -53,6 +53,8 @@ public sealed class AssemblyPlan
     /// <summary>체형 블렌드셰이프 이름. null 이면 기본 체형.</summary>
     public string BlendShape;
     public string Pose;
+    /// <summary>기본 아이들 모션(커스터마이즈 서 있기) 클립이 든 .fbx 에셋 경로. null 이면 정지 포즈만 쓴다.</summary>
+    public string Idle;
 
     public static string CostumeKey(string part) => "costume:" + part;
 }
@@ -120,10 +122,17 @@ public static class PlanResolver
         string variant = plan.BodyType == "Muscular" ? "Muscle" : plan.BodyType;
         plan.Pose = $"{prefix}@Customize_Pose_08_{variant}";
         if (!files.HasResource(PosePath(plan.Pose))) plan.Pose = $"{prefix}@Customize_Pose_08_Default";
+
+        // 아이들 모션: <접두>@Customize_Stand_<체형>. 체형별 클립이 없으면(여성 Thin 등) Default.
+        string folder = plan.Infant ? "Infant" : plan.Male ? "Male" : "Female";
+        plan.Idle = IdlePath(folder, $"{prefix}@Customize_Stand_{variant}");
+        if (!files.HasAsset(plan.Idle)) plan.Idle = IdlePath(folder, $"{prefix}@Customize_Stand_Default");
+        if (!files.HasAsset(plan.Idle)) { plan.Notes.Add("아이들 모션 없음: " + plan.Idle); plan.Idle = null; }
         return plan;
     }
 
     public static string PosePath(string pose) => "Animation/Bones/" + pose + ".sjon.bin";
+    static string IdlePath(string folder, string clip) => $"{BundleCache.AssetRoot}Animation/Player/Human/{folder}/Customize/{clip}.fbx";
 
     static PartPlan Add(AssemblyPlan plan, InstallFiles files, string key, PartRole role, string model)
     {

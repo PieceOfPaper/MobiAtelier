@@ -25,6 +25,10 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-03 | 체형별 모션 점검: 스모크 테스트 `-maBodyType 체형ID`(Default·Thin·Fat·Muscular) 추가. 17·12세 × Thin·Fat·Muscular × 남녀에서 체형별 클립 선택(여성 Muscle 11.00초 포함)·얼굴 연결, 0~8초 전신·얼굴 촬영으로 깨짐 없음 확인. 체형마다 몸 클립·자세가 다르다(Fat은 팔을 벌림). 표정 xaf는 남성·어린 외형은 체형 공통, 여성은 Fat·Muscle만 별도 |
+| 2026-11-03 | 어린 외형 모션 점검: 스모크 테스트 `-maAge 나이` 추가. 12세 남녀 기본·초보자 의상·원피스에서 HC 클립(9.33초)·얼굴 본 클립·xaf 연결, 의상 전용 본 4~5개 처리, 전신 비율·발 높이·치마/상의 모양, 3.70·7.27초 눈 감김을 촬영으로 확인 |
+| 2026-11-03 | 아이들 얼굴 표정: `Character/FacialXaf.cs`(xaf Morpher·Visibility·Shader 트랙 시간 평가, Constant 계단·Flat 부드러운 보간), `CharacterMotion`에 `_Facial.fbx` 얼굴 본 클립 레이어(AvatarMask: `_Head` 하위 본) 추가. 스모크 테스트 `-maMotionTimes 초;초`로 시점별 전신·얼굴 촬영. 여성 1.8~2.0초·남성 2.0초 눈 감김 촬영 확인, 빌드 실행 예외 없음 |
+| 2026-11-03 | 기본 아이들 모션 재생: 계획에 `Idle` 클립 경로(`<접두>@Customize_Stand_<체형>`, 없으면 Default), 조립 끝에 `Character/CharacterMotion.cs`(Animator + 수동 PlayableGraph, LateUpdate 반복, 위치·스케일·_COM 높이 보정, 파츠 전용 본 회전 복사). 배치 조립 시험·빌드 실행에서 성인 여성·12세 두 시점 촬영으로 움직임과 비율 유지 확인. 결과·함정은 4장 인계 메모 |
 | 2026-11-03 | UI 연출: 패널 슬라이드(카메라 출력 영역 동기), 메뉴·팝업·드롭다운·컬러피커·툴팁·알림·조작 안내 페이드, F1 숨김/표시 페이드, 폴드아웃 펼침 페이드, hover 색 전환(`UI/UIAnim.cs`, UI Toolkit 트랜지션). 중간 프레임 촬영으로 보간 확인 |
 | 2026-11-03 | 사용자 결정으로 패널 크기 조절 손잡이 제거(크기는 앱 창에서 계산, 설정 저장 안 함). 남은 과제 구현: 공개 빌드의 창 닫기·Alt+F4 → 시스템 메뉴, 시작 복원·가져오기의 부분 복원 안내(RestoreCheck), 배경 실패 시 이전 배경 유지·대체 사유·`ID - 이름` 표기, 아이콘 키보드 포커스 이름·테두리, 경로 표시 글꼴(₩ 문제). 빌드 촬영·창 닫기 메시지 시험 확인 |
 | 2026-11-03 | 새 UI 구현: 고정 접이식 패널·출력 영역(Camera.rect)·안쪽 가장자리 크기 조절, 눈/메뉴 아이콘·벡터 아이콘·툴팁, 화각·빠른 안내·자세한 안내, 꾸미기 이력(EditHistory), 시스템 메뉴·내보내기·가져오기·초기화 확인·경로 옵션·저장 후 종료, ESC 소유권, 초보자 의상. 빌드 촬영 확인 |
@@ -97,6 +101,16 @@
 
 ## 4. 인계 메모
 
+- **기본 아이들 모션 (2026-11-03, Claude Code)**: 사용자 결정으로 아이들 모션을 기본으로 항상 재생한다. 끄기·행동 선택 UI는 없다. 조립 직후 `Sample(0)`을 적용하므로 배치 촬영(InstallSmokeTest)도 아이들 첫 프레임으로 찍힌다(정지 포즈 T자 아님).
+  - 파츠 전용 본은 Animator 바인딩이 겹치지 않게 조립 뒤 이름에 `#part`를 붙인다. 이름으로 본을 찾는 새 코드는 이 점에 주의한다.
+  - `_COM` 높이 비율 = 보정 후 정지 포즈 `_COM` 높이 ÷ 포즈 데이터 원래 높이(로그 "아이들 모션 … _COM 비율"). 성인 남성 1.091, 성인 여성 1.000 [확인].
+  - 얼굴: 조립 때 정지 포즈의 `_Facial.xaf` 첫 프레임을 적용한 뒤, 아이들 클립 이름의 `_Facial.xaf`·`_Facial.fbx`를 매 프레임 같은 시간으로 평가한다. 얼굴 본은 클립 위치를 그대로 쓴다(표정 이동이 위치에 있음). 남성은 얼굴 클립(5.67초)이 몸(5.83초)보다 짧아 끝 값에 멈춘다.
+  - xaf 키의 Flat 탄젠트에 0이 아닌 탄젠트 값이 있으나 단위를 몰라 기울기 0 Hermite로 근사했다 [추정]. 어린 외형(HC)은 12세 촬영으로 [확인]. 체형별 클립은 배치 촬영으로 [확인]. 실시간 재생의 부드러움·프레임 비용은 [미확인].
+- **모션 재생 가능성 시험 (2026-11-03, Claude Code)**: 결론은 [확인] 가능.
+  - 클립: 몸 클립은 `Animation/Player/Human/<Female|Male|Infant>/Customize/<HF|HM|HC>@Customize_Stand_<Default|Fat|Muscle|Thin>.fbx`의 AnimationClip 서브에셋이다. `bundles.BundleOf(path).LoadAssetWithSubAssets<AnimationClip>(path)`로 열린다. Generic(휴머노이드 아님), 레거시 아님, 루프. 여성 7.77초·남성 5.83초 30fps [확인]. 본 82개의 회전·위치 + 78개 스케일 곡선, 경로는 `_COM/_Pelvis/...`(조립 루트 `Character` 기준)라 현재 본 계층과 그대로 맞는다.
+  - 재생: Animator(아바타·컨트롤러 없음) + PlayableGraph(AnimationClipPlayable)로 된다. `AnimationClip.SampleAnimation`은 번들 클립에서 아무것도 바꾸지 않았다. 에디터의 `AnimationUtility.GetCurveBindings`도 0개라 곡선을 읽어 직접 재생하는 방식은 안 된다.
+  - 함정: 클립이 위치·스케일까지 덮어써 나이·키(.bdc) 본 스케일과 발바닥 보정이 사라진다(12세가 성인 비율로, 남성 `_COM` 스케일 1.092 → 1). 시험에서는 평가 뒤 회전만 남기고 위치·스케일을 조립 값으로 되돌렸고, `_COM` 위치는 (정지 포즈 높이 ÷ 클립 높이)로 줄여 정상 비율로 보였다. 구현 때는 LateUpdate 후처리로 하고 비율 기준을 성별·나이별로 정확히 잡는다. `CharacterView.ApplyBones`와 매 프레임 충돌하지 않게 한다.
+  - 남은 확인: 파츠 전용 본(같은 이름 본, 12세에서 3개)은 클립이 한쪽만 바인딩하므로 변화량 복사 필요. 얼굴은 `_Facial.fbx` 클립과 기존 xaf 중 무엇을 쓸지 미정. 헤어·치마 PhysX 본은 클립 값만 따른다(물리 없음). 시작 연출용 `Customize_Stand_Start_*`, 다른 행동 클립은 미시험.
 - **UI 연출 (2026-11-03, Claude Code)**: 사용자가 DoTween(에셋 스토어) 임포트를 제안했으나 쓰지 않았다. UI가 UI Toolkit이라 자체 스타일 트랜지션으로 충분하고 패키지 추가도 필요 없다. `UI/UIAnim.cs`: FadeIn(투명·오프셋→제자리), FadeOutAndRemove, SetShown(display 요소 페이드, 사라지는 동안 클릭 차단, 의도 상태는 `IsShown`으로 확인), SmoothColor. 패널은 `CustomizePanel.StepSlide`가 0.22초 동안 진행도를 올리며 dock translate·탭·카메라 출력 영역을 매 프레임 같이 갱신한다(Camera.rect가 같이 움직여 캐릭터가 부드럽게 옆으로 간다). 모달을 연달아 열 때(메뉴→옵션)는 딤을 다시 페이드하지 않는다. F1 숨김 때 카메라 영역은 즉시 전체로 바뀌고 패널은 페이드로 사라진다. 시험 인자 `-maShotUIWait 초`로 연출 중간 프레임을 찍을 수 있다.
 - **새 UI 구현 (2026-11-03, Claude Code)** — 아래 '최신 UI 확정'의 런타임 구현이다.
   - 파일: `UI/AppUI.cs`(층·A/B/C/D·모달·메뉴·옵션·알림), `UI/CustomizePanel.cs`(고정 패널·탭·크기 조절·이력 아이콘·상태 줄. 본문 항목은 그대로), `UI/ControlsHelpView.cs`, `UI/UIIcons.cs`(Painter2D 아이콘·툴팁), `UI/UIEscape.cs`, `State/EditHistory.cs`, `App/AppController.cs`(이력·ESC/F1/Ctrl+Z/Y·메뉴 동작·출력 영역), `WindowsDialogs.SaveFile`, `JsonStore.WriteUserFile`, `StateFactory.ResetFor/WithStarterCostumes`. 새 `.cs`의 `.meta`는 Unity가 만들었다(같이 커밋).

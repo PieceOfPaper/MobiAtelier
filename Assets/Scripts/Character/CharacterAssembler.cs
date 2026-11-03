@@ -292,6 +292,7 @@ public static class CharacterAssembler
         for (int i = 0; i < nb; i++) { view.BindPos[i] = bind[i].p; view.BindRot[i] = bind[i].r; view.BindScl[i] = bind[i].s; }
         view.PosePos = new Vector3[nb]; view.PoseRot = new Quaternion[nb]; view.PoseScl = new Vector3[nb]; view.HasPose = new bool[nb];
         int posed = 0;
+        float rawComY = 0;
         string posePath = PlanResolver.PosePath(plan.Pose ?? "");
         if (files.HasResource(posePath) && files.ReadSjon(posePath).Get("Transforms") is Dictionary<string, object> tr)
         {
@@ -300,6 +301,7 @@ public static class CharacterAssembler
                 if (!tr.TryGetValue(bones[i].name, out var t)) continue;
                 view.HasPose[i] = true; posed++;
                 view.PosePos[i] = V3(t.Get("LocalPosition")); view.PoseRot[i] = Q(t.Get("LocalRotation")); view.PoseScl[i] = V3(t.Get("LocalScale"));
+                if (bones[i].name == "_COM" && parentName[bones[i]] == null) rawComY = view.PosePos[i].y;
                 if (poseBase.TryGetValue(bones[i], out var pb))
                 {
                     view.PoseRot[i] = view.PoseRot[i] * Quaternion.Inverse(pb.r) * bind[i].r;
@@ -365,8 +367,46 @@ public static class CharacterAssembler
         }
         view.SetBodyCut(true);
         view.SetPosed(true);
+        AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         return view;
+    }
+
+    /// <summary>
+    /// 아이들 모션 클립(.fbx 의 AnimationClip 서브에셋)을 찾아 <see cref="CharacterMotion"/> 을 붙이고 첫 프레임을 적용한다.
+    /// 클립이 없거나 열리지 않으면 정지 포즈를 유지한다.
+    /// </summary>
+    static void AttachIdle(InstallFiles files, BundleCache bundles, AssemblyPlan plan, CharacterView view, List<Transform> bones, Dictionary<string, Transform> map,
+        Dictionary<Transform, (Vector3 p, Quaternion r)> poseBase, List<(Vector3 p, Quaternion r, Vector3 s)> bind, float rawComY, Action<string> L)
+    {
+        if (plan.Idle == null) return;
+        AnimationClip LoadClip(string fbx)
+        {
+            var bundle = files.HasAsset(fbx) ? bundles.BundleOf(fbx) : null;
+            if (bundle)
+                foreach (var c in bundle.LoadAssetWithSubAssets<AnimationClip>(fbx))
+                    if (c && !c.legacy) return c;
+            return null;
+        }
+        var clip = LoadClip(plan.Idle);
+        if (!clip) { L($"아이들 모션을 열지 못함: {plan.Idle}"); return; }
+        // 얼굴: 같은 이름 + _Facial 의 본 클립(.fbx)과 블렌드셰이프·표시·셰이더 트랙(.xaf).
+        string faceFbx = plan.Idle.Substring(0, plan.Idle.Length - ".fbx".Length) + "_Facial.fbx";
+        var faceClip = LoadClip(faceFbx);
+        string xafPath = files.FindResourcePathEndingWith("/" + clip.name + "_Facial.xaf.sjon.bin");
+        var xaf = xafPath != null ? FacialXaf.Bind(files.ReadSjon(xafPath), view) : null;
+        L($"아이들 얼굴: 본 클립 {(faceClip ? $"{faceClip.name} {faceClip.length:F2}s" : "없음")}, xaf {(xaf != null ? $"트랙 {xaf.TrackCount} {xaf.Length:F2}s" : "없음")}");
+        int com = bones.FindIndex(x => x.name == "_COM" && x.parent == view.transform);
+        // 클립의 _COM 위치는 원본 정지 포즈 높이 기준이다. 나이·키 보정 후 높이와의 비율로 줄인다.
+        float comScale = com >= 0 && view.HasPose[com] && rawComY > 1e-3f ? view.PosePos[com].y / rawComY : 1f;
+        var parts = new List<(Transform dup, Transform main, Quaternion rel)>();
+        for (int i = 0; i < bones.Count; i++)
+            if (poseBase.TryGetValue(bones[i], out var pb) && map.TryGetValue(bones[i].name, out var main))
+                parts.Add((bones[i], main, Quaternion.Inverse(pb.r) * bind[i].r));
+        var motion = view.gameObject.AddComponent<CharacterMotion>();
+        motion.Init(view, clip, com, comScale, parts, faceClip, xaf);
+        motion.Sample(0);
+        L($"아이들 모션: {clip.name} {clip.length:F2}s, _COM 비율 {comScale:F3}, 파츠 전용 본 {parts.Count}");
     }
 
     /// <summary>
