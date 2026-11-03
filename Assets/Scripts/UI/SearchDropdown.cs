@@ -41,6 +41,9 @@ public sealed class SearchDropdown : VisualElement
     readonly List<DropdownItem> shown = new List<DropdownItem>();
     string currentId;
     bool layoutSeen;
+    public bool RememberScroll { get; set; }
+    float savedScroll;
+    IVisualElementScheduledItem scrollRestore;
 
     /// <param name="popupHost">목록을 띄울 화면 전체 크기의 요소</param>
     /// <param name="source">열 때마다 부르는 후보 목록</param>
@@ -188,7 +191,29 @@ public sealed class SearchDropdown : VisualElement
 
         Filter("");
         int cur = shown.FindIndex(i => i.Id == currentId);
-        if (cur >= 0)
+        if (RememberScroll && savedScroll > 0)
+        {
+            // ListView의 가상화 영역과 스크롤 범위가 배치된 다음에 복원한다.
+            var openedList = list;
+            var scrollView = openedList.Q<ScrollView>();
+            int attempts = 0;
+            scrollRestore = openedList.schedule.Execute(() =>
+            {
+                if (list != openedList || ++attempts > 120) { scrollRestore?.Pause(); return; }
+                float viewportHeight = scrollView.contentViewport.resolvedStyle.height;
+                if (float.IsNaN(viewportHeight) || viewportHeight <= 0) return;
+                float expectedMax = Mathf.Max(0, shown.Count * RowHeight - viewportHeight);
+                float actualMax = scrollView.verticalScroller.highValue;
+                // 배치 전 highValue 기본값은 0이 아닐 수 있으므로 목록 전체 높이와 비교한다.
+                if (actualMax < expectedMax - 1) return;
+                scrollView.scrollOffset = new Vector2(0, Mathf.Min(savedScroll, actualMax));
+                scrollRestore?.Pause();
+            }).Every(16);
+            openedList.RegisterCallback<WheelEvent>(e => scrollRestore?.Pause(), TrickleDown.TrickleDown);
+            openedList.RegisterCallback<PointerDownEvent>(e => scrollRestore?.Pause(), TrickleDown.TrickleDown);
+            openedList.RegisterCallback<KeyDownEvent>(e => scrollRestore?.Pause(), TrickleDown.TrickleDown);
+        }
+        else if (cur >= 0)
         {
             list.SetSelectionWithoutNotify(new[] { cur });
             list.schedule.Execute(() => list?.ScrollToItem(cur));
@@ -197,9 +222,24 @@ public sealed class SearchDropdown : VisualElement
         else list.schedule.Execute(() => list?.Focus());
     }
 
-    public void Close()
+    public void Close() => Close(null);
+
+    void Close(float? selectedOffset)
     {
         if (catcher == null) return;
+        scrollRestore?.Pause();
+        scrollRestore = null;
+        if (RememberScroll && list != null)
+        {
+            float offset = selectedOffset ?? list.Q<ScrollView>().scrollOffset.y;
+            if (!string.IsNullOrEmpty(search?.value) && shown.Count > 0)
+            {
+                int first = Mathf.Clamp(Mathf.FloorToInt(offset / RowHeight), 0, shown.Count - 1);
+                int index = all.IndexOf(shown[first]);
+                if (index >= 0) offset = index * RowHeight + offset % RowHeight;
+            }
+            savedScroll = offset;
+        }
         catcher.RemoveFromHierarchy();
         catcher = null; search = null; list = null; empty = null;
         if (openOne == this) openOne = null;
@@ -211,7 +251,7 @@ public sealed class SearchDropdown : VisualElement
         q = q?.Trim();
         shown.Clear();
         foreach (var it in all)
-            if (string.IsNullOrEmpty(q) || Has(it.Name, q) || Has(it.Sub, q)) shown.Add(it);
+            if (string.IsNullOrEmpty(q) || Has(it.Name, q) || Has(it.Id, q) || Has(it.Sub, q)) shown.Add(it);
         list.RefreshItems();
         empty.style.display = shown.Count == 0 ? DisplayStyle.Flex : DisplayStyle.None;
         list.style.display = shown.Count == 0 ? DisplayStyle.None : DisplayStyle.Flex;
@@ -255,11 +295,11 @@ public sealed class SearchDropdown : VisualElement
         list.ScrollToItem(i);
     }
 
-    void Choose(int index)
+    void Choose(int index, float? selectedOffset = null)
     {
         if (index < 0 || index >= shown.Count) return;
         var it = shown[index];
-        Close();
+        Close(selectedOffset);
         if (it.Id != currentId) chosen?.Invoke(it);
     }
 
@@ -284,7 +324,13 @@ public sealed class SearchDropdown : VisualElement
         s.style.color = AppUI.Sub;
         s.style.marginLeft = 6;
         row.Add(n); row.Add(s);
-        row.RegisterCallback<ClickEvent>(e => { if (row.userData is int i) Choose(i); });
+        float? pointerOffset = null;
+        row.RegisterCallback<PointerDownEvent>(e =>
+        {
+            // ListView가 포인터 입력을 처리하기 전의 위치를 선택과 함께 보관한다.
+            pointerOffset = list?.Q<ScrollView>().scrollOffset.y;
+        }, TrickleDown.TrickleDown);
+        row.RegisterCallback<ClickEvent>(e => { if (row.userData is int i) Choose(i, pointerOffset); pointerOffset = null; });
         return row;
     }
 

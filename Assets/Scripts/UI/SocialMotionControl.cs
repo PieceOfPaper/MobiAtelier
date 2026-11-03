@@ -1,6 +1,6 @@
 // 소셜 모션 버튼 (SocialMotion.md, WindowAndCustomizationUI.md 항목 T)
 //   카메라 출력 영역 오른쪽 아래. 누르면 검색 목록이 열리고, 고르면 바로 재생한다.
-//   재생 중에는 "▶ ID - 이름" 과 ■(정지)를 보인다. 같은 항목을 다시 고르면 처음부터 재생한다.
+//   재생 중에는 "▶ 이름"과 ■(정지)를 보인다. 같은 항목을 다시 고르면 처음부터 재생한다.
 //   저장·이력과 관계없는 보기 도구다.
 using System;
 using System.Collections.Generic;
@@ -28,6 +28,7 @@ public sealed class SocialMotionControl
         AppUI.Round(Root, 9);
 
         dropdown = new SearchDropdown(popupHost, () => canUse() ? items() : null, item => { if (item?.Id != null) play(item.Id); });
+        dropdown.RememberScroll = true;
         dropdown.style.width = 210;
         dropdown.style.flexGrow = 0;
         Root.Add(dropdown);

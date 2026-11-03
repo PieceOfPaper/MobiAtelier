@@ -1,6 +1,6 @@
 // 꾸미기 패널 (WindowAndCustomizationUI.md, Appearance.md, Equipment.md)
 //   고정 접이식 패널(2026-11-03 사용자 결정). 가로로 넓은 앱 창에서는 오른쪽, 세로로 긴 창에서는 아래쪽에 붙는다.
-//   시작할 때는 닫혀 있다. 가장자리 탭(E)으로 여닫는다. 임의 위치 이동·크기 조절은 하지 않는다(2026-11-03 사용자 결정).
+//   시작할 때는 열려 있다. 가장자리 탭(E)으로 여닫는다. 임의 위치 이동·크기 조절은 하지 않는다(2026-11-03 사용자 결정).
 //   폭·높이는 앱 창 크기에서 계산한다(가로 창 폭 360, 세로 창 높이 45%, 카메라 영역이 최소한 남도록 보정).
 //   여닫기는 카메라 출력 영역만 바꾼다(CameraAreaChanged). 카메라 구도·꾸미기 이력에는 영향이 없다. 열림 상태는 저장하지 않는다.
 //   최상단은 '꾸미기' 제목과 실행 취소·다시 실행 아이콘(F), 아래는 외형·의상·배경 폴드아웃(G·H·I), 맨 아래는 자동 저장 상태 줄(J)이다.
@@ -11,7 +11,7 @@
 //   피부·헤어·눈 색은 게임 색 시트(CharacterSkinColor·HairColor·EyeColor)의 행을 검색 드롭다운으로 고른다.
 //   꾸미기 숨김 행은 공개 빌드 후보에서 빼고, 현재 선택이면 흐리게 남긴다. 에디터에서는 [숨김] 표기로 함께 보인다.
 //
-// 표기(Equipment.md): 모든 후보·선택 필드는 `데이터ID - 이름`, 숨김(에디터 전용) 항목은 `[숨김] 데이터ID - 이름`이다. 이름·ID 로 검색된다.
+// 표기(Equipment.md): 이름이 없을 때만 ID를 표시하고 숨김 항목은 앞에 `[숨김]`을 붙인다. 이름·ID로 검색된다.
 // 필수 외형을 표시할 수 없으면 조립 계획이 공개 기본값으로 대신 표시한다. 선택 필드에는 원래 선택을 두고 대체·사유를 상태 줄에 쓴다.
 //   의상 염색은 표시 중인 의상의 실제 염색 파트(모델 DyeInfo 에 연결이 있는 Slot0~5)만 견본으로 보이고,
 //   견본을 누르면 컬러피커(ColorPicker)를 연다. 색만 바뀌는 편집은 다시 조립하지 않는다(editColors).
@@ -56,6 +56,7 @@ public sealed class CustomizePanel
     readonly Label error, saveStatus;
     readonly AppSettings settings;
     readonly Action saveSettings;
+    readonly Action beginHeightEdit, endHeightEdit;
     readonly Action<Action<EditState>> edit, editColors;
     readonly Func<CharacterView> view;
     readonly Func<string> backgroundId;
@@ -66,7 +67,7 @@ public sealed class CustomizePanel
     GameData data;
     EditState state;
     AssemblyPlan plan;
-    bool open, tall;
+    bool open = true, tall;
     /// <summary>지금 화면에 적용한 패널 폭(가로 창)·높이(세로 창).</summary>
     float shownSize;
     Rect cameraArea;
@@ -88,8 +89,10 @@ public sealed class CustomizePanel
     /// <param name="redo">꾸미기 다시 실행</param>
     public CustomizePanel(VisualElement host, AppSettings settings, Action saveSettings, Action<Action<EditState>> edit,
         Action<Action<EditState>> editColors, Func<CharacterView> view, Func<string> backgroundId, Action<string> setBackground,
-        Action undo, Action redo)
+        Action undo, Action redo, Action beginHeightEdit, Action endHeightEdit)
     {
+        this.beginHeightEdit = beginHeightEdit;
+        this.endHeightEdit = endHeightEdit;
         this.backgroundId = backgroundId;
         this.setBackground = setBackground;
         this.host = host;
@@ -215,7 +218,7 @@ public sealed class CustomizePanel
 
     const float SlideSeconds = 0.22f;
     /// <summary>패널이 나온 정도(0 닫힘 ~ 1 열림).</summary>
-    float amount, animFrom, animStart;
+    float amount = 1, animFrom, animStart;
     IVisualElementScheduledItem slide;
 
     void StepSlide()
@@ -482,7 +485,7 @@ public sealed class CustomizePanel
 
     /// <summary>
     /// 키 조절값(HeightModifier, -1 작게 ~ 0 보통 ~ 1 크게). 같은 나이·체형 안에서 몸 .bdc 의 Short·Medium·Tall 사이를 보간한다.
-    /// 끄는 동안에는 값 표시만 바꾸고, 손을 떼거나 키 입력이 끝났을 때 한 번만 조립·이력·자동 저장에 반영한다.
+    /// 끄는 동안 캐릭터에 즉시 반영하고 한 번의 끌기를 하나의 이력으로 기록한다.
     /// </summary>
     void HeightRow(VisualElement parent)
     {
@@ -548,12 +551,13 @@ public sealed class CustomizePanel
             float v = Snap(e.newValue);
             if (!Mathf.Approximately(v, e.newValue)) slider.SetValueWithoutNotify(v);
             value.text = Text(v);
+            Commit();
         });
-        slider.RegisterCallback<PointerDownEvent>(e => dragging = true, TrickleDown.TrickleDown);
-        slider.RegisterCallback<PointerUpEvent>(e => { dragging = false; Commit(); }, TrickleDown.TrickleDown);
-        slider.RegisterCallback<PointerCaptureOutEvent>(e => { if (dragging) { dragging = false; Commit(); } }, TrickleDown.TrickleDown);
+        slider.RegisterCallback<PointerDownEvent>(e => { dragging = true; beginHeightEdit(); }, TrickleDown.TrickleDown);
+        slider.RegisterCallback<PointerUpEvent>(e => { dragging = false; Commit(); endHeightEdit(); }, TrickleDown.TrickleDown);
+        slider.RegisterCallback<PointerCaptureOutEvent>(e => { if (dragging) { dragging = false; Commit(); endHeightEdit(); } }, TrickleDown.TrickleDown);
         slider.RegisterCallback<KeyUpEvent>(e => Commit(), TrickleDown.TrickleDown);
-        slider.RegisterCallback<FocusOutEvent>(e => { dragging = false; Commit(); });
+        slider.RegisterCallback<FocusOutEvent>(e => { dragging = false; Commit(); endHeightEdit(); });
         value.RegisterCallback<PointerDownEvent>(e =>
         {
             if (e.clickCount < 2 || state == null) return;
@@ -594,7 +598,7 @@ public sealed class CustomizePanel
         parent.Add(Row(label, dd, status));
     }
 
-    /// <summary>대체 표시 중이면 선택 필드 보조 표시 "표시: ID - 이름".</summary>
+    /// <summary>대체 표시 중이면 선택 필드에 실제 표시 이름을 보조 표시한다.</summary>
     string SubstituteSub(string key)
     {
         var sub = plan?.Substitute(key);
@@ -728,7 +732,7 @@ public sealed class CustomizePanel
             string chosen = state.weaponPose?.job;
             string current = PlanResolver.StanceJob(state, data, out bool auto);
             string text = auto ? "자동 (" + (JobName(current) ?? "공통 자세") + ")" : JobName(chosen) ?? chosen;
-            job.SetValue(auto ? null : chosen, text, auto ? null : chosen);
+            job.SetValue(auto ? null : chosen, text, null);
         });
         parent.Add(Row("자세 직업", job, null));
     }
@@ -752,7 +756,7 @@ public sealed class CustomizePanel
         // 공개 직업만 보인다. 숨김 직업(ShowClass=false)은 자세 클립이 없다. 이미 고른 값은 남긴다.
         foreach (var j in jobs)
             if (j.ShowClass || j.Id == state.weaponPose?.job)
-                items.Add(new DropdownItem { Id = j.Id, Name = j.DisplayName ?? j.Id, Sub = j.Id, Dim = !j.ShowClass });
+                items.Add(new DropdownItem { Id = j.Id, Name = ItemLabel.Of(j.Id, j.DisplayName), Dim = !j.ShowClass });
         return items;
     }
 
@@ -956,9 +960,9 @@ public sealed class CustomizePanel
         return items;
     }
 
-    /// <summary>공통 표기 `ID - 이름`, 에디터 전용은 `[숨김] ID - 이름`(Background.md 7장 3).</summary>
+    /// <summary>배경 이름과 에디터 전용 숨김 표시.</summary>
     static string BackgroundName(StudioBackgroundData b) =>
-        (b.DevOnly ? "[숨김] " : "") + b.Id + (string.IsNullOrEmpty(b.DisplayName) ? "" : " - " + b.DisplayName);
+        ItemLabel.Of(b.Id, b.DisplayName, b.DevOnly);
 
     static string BackgroundSub(StudioBackgroundData b) => b.Is3D ? "3D" : null;
 

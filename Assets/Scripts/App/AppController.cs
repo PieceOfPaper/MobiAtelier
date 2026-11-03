@@ -524,11 +524,11 @@ public sealed class AppController : MonoBehaviour
         var items = new List<DropdownItem>();
         foreach (var s in data.SocialActions)
             if (SocialMotionLoader.Listed(s))
-                items.Add(new DropdownItem { Id = s.Id, Name = s.Id + (string.IsNullOrEmpty(s.DisplayName) ? "" : " - " + s.DisplayName) });
+                items.Add(new DropdownItem { Id = s.Id, Name = MotionLabel(s) });
         return items;
     }
 
-    static string MotionLabel(SocialActionData s) => s.Id + (string.IsNullOrEmpty(s.DisplayName) ? "" : " - " + s.DisplayName);
+    static string MotionLabel(SocialActionData s) => ItemLabel.Of(s.Id, s.DisplayName);
 
     /// <summary>모션 목록에서 고른 것을 처음부터 재생한다. Random 행동은 고를 때마다 하나를 새로 뽑는다.</summary>
     void PlayMotion(string id)
@@ -588,7 +588,7 @@ public sealed class AppController : MonoBehaviour
     {
         if (panel != null) return;
         panel = new CustomizePanel(ui.WindowLayer, settings, SaveSettings, Edit, EditColors, () => view,
-            () => background?.CurrentId, SetBackground, Undo, Redo);
+            () => background?.CurrentId, SetBackground, Undo, Redo, BeginHeightEdit, EndHeightEdit);
         panel.Bind(data);
         ui.AddViewControls(cameraCtl.SetLensMultiplier, () => state != null && !ui.ModalOpen && !dialogOpen, OpenMenu, settings, SaveSettings);
         if (data.SocialActions.Count > 0)
@@ -651,6 +651,15 @@ public sealed class AppController : MonoBehaviour
     /// 꾸미기 패널의 편집 요청(ProgramFlow.md 2장). 현재 상태의 복사본을 바꿔 조립에 성공하면 장면·선택 UI 를 갱신하고 자동 저장·이력에 넣는다.
     /// 조립에 실패하면 이전 선택과 장면을 유지한다. 카메라 시점·기준점은 바꾸지 않는다.
     /// </summary>
+    EditState heightEditBefore;
+    void BeginHeightEdit() { if (state != null && heightEditBefore == null) heightEditBefore = state.Clone(); }
+    void EndHeightEdit()
+    {
+        if (heightEditBefore == null) return;
+        if (history.Record(heightEditBefore, state)) UpdateHistoryButtons();
+        heightEditBefore = null;
+    }
+
     void Edit(Action<EditState> change)
     {
         if (state == null || data == null || ui.ModalOpen) return;
@@ -675,7 +684,7 @@ public sealed class AppController : MonoBehaviour
             Commit(p);
             panel.SetError(null);
             MarkDirty();
-            if (history.Record(before, state)) UpdateHistoryButtons();
+            if (heightEditBefore == null && history.Record(before, state)) UpdateHistoryButtons();
         }
         catch (Exception e)
         {

@@ -172,14 +172,14 @@ public static class Disclosure
     public static bool IsHidden(CostumeData c) => CostumeReason(c) != null;
 }
 
-/// <summary>아이템 표기(Equipment.md): `데이터ID - 이름`, 숨김 항목은 `[숨김] 데이터ID - 이름`.</summary>
+/// <summary>아이템 이름을 표시하고, 이름이 없으면 ID를 사용한다.</summary>
 public static class ItemLabel
 {
     public const string HiddenPrefix = "[숨김] ";
 
     public static string Of(string id, string name, bool hidden = false)
     {
-        string core = string.IsNullOrEmpty(id) ? (name ?? "") : string.IsNullOrEmpty(name) || name == id ? id : id + " - " + name;
+        string core = string.IsNullOrWhiteSpace(name) ? (id ?? "") : name;
         return hidden ? HiddenPrefix + core : core;
     }
 }

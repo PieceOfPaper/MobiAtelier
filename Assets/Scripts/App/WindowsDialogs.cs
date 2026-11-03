@@ -59,39 +59,59 @@ public static class WindowsDialogs
     /// <summary>filter 예: "JSON (*.json)\0*.json\0"</summary>
     public static Task<string> OpenFile(string title, string filter, string initialDir) => RunSta(owner =>
     {
-        var file = new StringBuilder(2048);
+        IntPtr file = Marshal.AllocHGlobal(2048 * 2);
+        IntPtr nativeFilter = Marshal.StringToHGlobalUni(filter + "\0");
+        IntPtr nativeDir = Marshal.StringToHGlobalUni(initialDir);
+        IntPtr nativeTitle = Marshal.StringToHGlobalUni(title);
+        IntPtr nativeExt = Marshal.StringToHGlobalUni("json");
+        Marshal.WriteInt16(file, 0);
+        try
+        {
         var ofn = new OPENFILENAME
         {
             lStructSize = Marshal.SizeOf(typeof(OPENFILENAME)),
             hwndOwner = owner,
-            lpstrFilter = filter + "\0",
+            lpstrFilter = nativeFilter,
             lpstrFile = file,
-            nMaxFile = file.Capacity,
-            lpstrInitialDir = initialDir,
-            lpstrTitle = title,
+            nMaxFile = 2048,
+            lpstrInitialDir = nativeDir,
+            lpstrTitle = nativeTitle,
             Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER,
-            lpstrDefExt = "json",
+            lpstrDefExt = nativeExt,
         };
-        return GetOpenFileNameW(ref ofn) ? file.ToString() : null;
+        return GetOpenFileNameW(ref ofn) ? Marshal.PtrToStringUni(file) : null;
+        }
+        finally { Marshal.FreeHGlobal(nativeFilter); Marshal.FreeHGlobal(nativeDir); Marshal.FreeHGlobal(nativeTitle); Marshal.FreeHGlobal(nativeExt); Marshal.FreeHGlobal(file); }
     });
 
     /// <summary>파일 저장(내보내기) 대화상자. 같은 이름의 파일이 있으면 Windows 가 덮어쓰기를 묻는다.</summary>
     public static Task<string> SaveFile(string title, string filter, string initialDir, string defaultName) => RunSta(owner =>
     {
-        var file = new StringBuilder(defaultName ?? "", 2048);
+        IntPtr file = Marshal.AllocHGlobal(2048 * 2);
+        IntPtr nativeFilter = Marshal.StringToHGlobalUni(filter + "\0");
+        IntPtr nativeDir = Marshal.StringToHGlobalUni(initialDir);
+        IntPtr nativeTitle = Marshal.StringToHGlobalUni(title);
+        IntPtr nativeExt = Marshal.StringToHGlobalUni("json");
+        string initial = defaultName ?? "";
+        if (initial.Length >= 2048) initial = initial.Substring(0, 2047);
+        Marshal.Copy((initial + "\0").ToCharArray(), 0, file, initial.Length + 1);
+        try
+        {
         var ofn = new OPENFILENAME
         {
             lStructSize = Marshal.SizeOf(typeof(OPENFILENAME)),
             hwndOwner = owner,
-            lpstrFilter = filter + "\0",
+            lpstrFilter = nativeFilter,
             lpstrFile = file,
-            nMaxFile = file.Capacity,
-            lpstrInitialDir = initialDir,
-            lpstrTitle = title,
+            nMaxFile = 2048,
+            lpstrInitialDir = nativeDir,
+            lpstrTitle = nativeTitle,
             Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER,
-            lpstrDefExt = "json",
+            lpstrDefExt = nativeExt,
         };
-        return GetSaveFileNameW(ref ofn) ? file.ToString() : null;
+        return GetSaveFileNameW(ref ofn) ? Marshal.PtrToStringUni(file) : null;
+        }
+        finally { Marshal.FreeHGlobal(nativeFilter); Marshal.FreeHGlobal(nativeDir); Marshal.FreeHGlobal(nativeTitle); Marshal.FreeHGlobal(nativeExt); Marshal.FreeHGlobal(file); }
     });
 
     const uint BIF_RETURNONLYFSDIRS = 0x1, BIF_NEWDIALOGSTYLE = 0x40;
@@ -119,23 +139,23 @@ public static class WindowsDialogs
         public int lStructSize;
         public IntPtr hwndOwner;
         public IntPtr hInstance;
-        public string lpstrFilter;
-        public string lpstrCustomFilter;
+        public IntPtr lpstrFilter;
+        public IntPtr lpstrCustomFilter;
         public int nMaxCustFilter;
         public int nFilterIndex;
-        public StringBuilder lpstrFile;
+        public IntPtr lpstrFile;
         public int nMaxFile;
-        public string lpstrFileTitle;
+        public IntPtr lpstrFileTitle;
         public int nMaxFileTitle;
-        public string lpstrInitialDir;
-        public string lpstrTitle;
+        public IntPtr lpstrInitialDir;
+        public IntPtr lpstrTitle;
         public int Flags;
         public short nFileOffset;
         public short nFileExtension;
-        public string lpstrDefExt;
+        public IntPtr lpstrDefExt;
         public IntPtr lCustData;
         public IntPtr lpfnHook;
-        public string lpTemplateName;
+        public IntPtr lpTemplateName;
         public IntPtr pvReserved;
         public int dwReserved;
         public int FlagsEx;

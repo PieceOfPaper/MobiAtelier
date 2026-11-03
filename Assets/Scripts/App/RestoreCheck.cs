@@ -54,7 +54,7 @@ public static class RestoreCheck
         return list;
     }
 
-    /// <summary>대신 표시하는 값의 표기(`ID - 이름`).</summary>
+    /// <summary>대신 표시하는 값의 이름. 이름이 없으면 ID를 쓴다.</summary>
     public static string ShownLabel(GameData data, AppearanceSubstitute sub)
     {
         string name = null;
