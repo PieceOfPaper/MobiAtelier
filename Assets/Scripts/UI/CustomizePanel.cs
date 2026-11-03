@@ -332,6 +332,7 @@ public sealed class CustomizePanel
         look.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, BodyTypeName, (s, id) => s.appearance.bodyType = id), null));
         look.Add(Row("나이", Choice(AgeItems, () => state.appearance.age.ToString(), id => id + "세",
             (s, id) => s.appearance.age = int.Parse(id)), null));
+        HeightRow(look);
         ColorRow(look, "피부색", () => data.SkinColors, () => state.appearance.skinColor, new[] { "Skin" }, null,
             (s, id) => s.appearance.skinColor = id);
 
@@ -473,6 +474,98 @@ public sealed class CustomizePanel
         var dd = Dropdown(items, it => edit(s => set(s, it.Id)));
         refreshers.Add(() => { string id = current(); dd.SetValue(id, name(id) ?? id ?? "(없음)", null); });
         return dd;
+    }
+
+    /// <summary>
+    /// 키 조절값(HeightModifier, -1 작게 ~ 0 보통 ~ 1 크게). 같은 나이·체형 안에서 몸 .bdc 의 Short·Medium·Tall 사이를 보간한다.
+    /// 끄는 동안에는 값 표시만 바꾸고, 손을 떼거나 키 입력이 끝났을 때 한 번만 조립·이력·자동 저장에 반영한다.
+    /// </summary>
+    void HeightRow(VisualElement parent)
+    {
+        var box = new VisualElement();
+        box.style.flexDirection = FlexDirection.Row;
+        box.style.alignItems = Align.Center;
+        box.style.flexGrow = 1;
+        box.style.flexShrink = 1;
+        box.style.minWidth = 0;
+
+        var slider = new Slider(-1f, 1f) { name = "height-slider", tooltip = "키 조절 (같은 나이에서 더 작게 ~ 더 크게)" };
+        slider.style.flexGrow = 1;
+        slider.style.flexShrink = 1;
+        slider.style.minWidth = 0;
+        slider.style.marginLeft = 0; slider.style.marginRight = 0;
+        var tracker = slider.Q(className: "unity-base-slider__tracker");
+        if (tracker != null)
+        {
+            tracker.style.backgroundColor = AppUI.FieldBg;
+            SearchDropdown.SetBorder(tracker, AppUI.Border, 1, 2);
+        }
+        var dragger = slider.Q(className: "unity-base-slider__dragger");
+        if (dragger != null)
+        {
+            dragger.style.backgroundColor = AppUI.Text;
+            SearchDropdown.SetBorder(dragger, AppUI.Border, 1, 3);
+        }
+        box.Add(slider);
+
+        var value = new Label();
+        value.style.width = 64;
+        value.style.flexShrink = 0;
+        value.style.marginLeft = 6;
+        value.style.fontSize = 12;
+        value.style.color = AppUI.Text;
+        value.style.unityTextAlign = TextAnchor.MiddleRight;
+        // 값 글자를 두 번 누르면 보통(0)으로 되돌린다.
+        value.tooltip = "두 번 눌러 보통(0)으로";
+        box.Add(value);
+
+        static float Snap(float v) => Mathf.Round(Mathf.Clamp(v, -1f, 1f) * 100f) / 100f;
+        static string Text(float v) =>
+            Mathf.Approximately(v, 0f) ? "0 보통" : (v > 0 ? "+" : "") + v.ToString("0.00") + (v > 0 ? " 크게" : " 작게");
+
+        bool dragging = false;
+        void Commit()
+        {
+            if (state == null) return;
+            float v = Snap(slider.value);
+            if (Mathf.Approximately(v, Snap(state.appearance.heightModifier))) return;
+            edit(s => s.appearance.heightModifier = v);
+            // 편집이 거절되면(창이 열려 있음·조립 실패) 지금 상태 값으로 되돌린다.
+            if (state != null && !Mathf.Approximately(Snap(state.appearance.heightModifier), v))
+            {
+                float cur = Snap(state.appearance.heightModifier);
+                slider.SetValueWithoutNotify(cur);
+                value.text = Text(cur);
+            }
+        }
+
+        slider.RegisterValueChangedCallback(e =>
+        {
+            float v = Snap(e.newValue);
+            if (!Mathf.Approximately(v, e.newValue)) slider.SetValueWithoutNotify(v);
+            value.text = Text(v);
+        });
+        slider.RegisterCallback<PointerDownEvent>(e => dragging = true, TrickleDown.TrickleDown);
+        slider.RegisterCallback<PointerUpEvent>(e => { dragging = false; Commit(); }, TrickleDown.TrickleDown);
+        slider.RegisterCallback<PointerCaptureOutEvent>(e => { if (dragging) { dragging = false; Commit(); } }, TrickleDown.TrickleDown);
+        slider.RegisterCallback<KeyUpEvent>(e => Commit(), TrickleDown.TrickleDown);
+        slider.RegisterCallback<FocusOutEvent>(e => { dragging = false; Commit(); });
+        value.RegisterCallback<PointerDownEvent>(e =>
+        {
+            if (e.clickCount < 2 || state == null) return;
+            slider.SetValueWithoutNotify(0f);
+            value.text = Text(0f);
+            Commit();
+        });
+
+        refreshers.Add(() =>
+        {
+            if (dragging) return;
+            float v = Snap(state.appearance.heightModifier);
+            slider.SetValueWithoutNotify(v);
+            value.text = Text(v);
+        });
+        parent.Add(Row("키", box, null));
     }
 
     void AppearanceRow(VisualElement parent, string label, Func<List<DropdownItem>> items, Func<string> current, Func<string> issue,

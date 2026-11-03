@@ -819,7 +819,7 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
-    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
+    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
         float delay = float.TryParse(CommandLine.Value("-maShotDelay"), out var d) ? d : 8f;
@@ -834,6 +834,9 @@ public sealed class AppController : MonoBehaviour
             // edit: 상의를 벗긴다, bg: 배경을 바꾼다, undo: 한 번 실행 취소(이력 동작 확인용)
             if (opts.Contains("edit")) Edit(s => s.costumes.RemoveAll(c => c.part == "Top"));
             if (opts.Contains("bg")) SetBackground("BG_Gradation2");
+            // short·tall: 키 조절값을 -1·+1로 바꾼다(키 슬라이더 확인용)
+            if (opts.Contains("short")) Edit(s => s.appearance.heightModifier = -1f);
+            if (opts.Contains("tall")) Edit(s => s.appearance.heightModifier = 1f);
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
             if (opts.Contains("undo")) Undo();
             if (opts.Contains("open")) panel.SetOpen(true);
