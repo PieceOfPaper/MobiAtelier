@@ -82,7 +82,11 @@ public sealed class AppController : MonoBehaviour
         Application.wantsToQuit += OnWantsToQuit;
 
         string shot = CommandLine.Value("-maScreenshot");
-        if (shot != null) StartCoroutine(ShotAndQuit(shot));
+        if (shot != null)
+        {
+            Application.runInBackground = true;
+            StartCoroutine(ShotAndQuit(shot));
+        }
 
         settings = AppSettings.Load();
         string path = string.IsNullOrEmpty(settings.installPath) ? AppSettings.DefaultInstallPath : settings.installPath;
@@ -103,7 +107,7 @@ public sealed class AppController : MonoBehaviour
 
     void Update()
     {
-        autosave?.Tick(Time.unscaledDeltaTime);
+        if (!dialogOpen && pending == null) autosave?.Tick(Time.unscaledDeltaTime);
         var kb = Keyboard.current;
         if (state == null || ui == null || kb == null || dialogOpen) return;
 
@@ -161,6 +165,7 @@ public sealed class AppController : MonoBehaviour
         Application.wantsToQuit -= OnWantsToQuit;
         ColorPicker.CancelAny();
         SearchDropdown.CloseAny();
+        DiscardPending();
         if (view) DestroyImmediate(view.gameObject);
         background?.Dispose();
         bundles?.Dispose();
@@ -239,10 +244,30 @@ public sealed class AppController : MonoBehaviour
         }
     }
 
-    /// <summary>새 작업: 기본 외형 2종 중 무작위 + 초보자 상의·하의·신발(Startup.md).</summary>
-    void StartNew()
+    /// <summary>
+    /// 새 작업: 기본 외형 2종 중 무작위 + 초보자 상의·하의·신발(Startup.md).
+    /// 기본 코디에 없는 ID·제한·리소스 누락이 있으면 빈·불완전 상태를 정상 최초 결과로 확정하지 않고 다시 시도·종료를 안내한다.
+    /// </summary>
+    void StartNew(Action beforeCommit = null)
     {
-        Apply(StateFactory.NewRandom(data, new System.Random()), true);
+        ui.ShowLoading("캐릭터를 조립하는 중...");
+        Prepared p;
+        try { p = Stage(StateFactory.NewRandom(data, new System.Random())); }
+        catch (Exception e) { Debug.LogException(e); ui.HideLoading(); ShowStartNewFailed(e.Message, beforeCommit); return; }
+        var problems = RestoreCheck.CharacterProblems(p.Plan);
+        if (problems.Count > 0) { DiscardPending(); ui.HideLoading(); ShowStartNewFailed(RestoreCheck.Describe(problems), beforeCommit); return; }
+        StartWith(p, true, beforeCommit);
+    }
+
+    void ShowStartNewFailed(string detail, Action beforeCommit)
+    {
+        ui.ShowChoice("기본 코디를 준비하지 못했습니다", "기본 외형·초보자 의상을 지금 설치본으로 조립하지 못했습니다. 게임 패치가 끝난 뒤 다시 시도해 주세요.", detail,
+            new List<(string, Action)>
+            {
+                ("다시 시도", () => { ui.CloseModal(); StartNew(beforeCommit); }),
+                ("다른 JSON 가져오기", () => LoadOtherJson(beforeCommit)),
+                ("종료", Quit),
+            });
     }
 
     void ShowRestoreFailed(LoadResult<EditState> lr)
@@ -250,9 +275,9 @@ public sealed class AppController : MonoBehaviour
         var actions = new List<(string, Action)>();
         var bak = JsonStore.ReadEditState(JsonStore.AutosavePath + ".bak");
         if (bak.Status == LoadStatus.Ok)
-            actions.Add(("백업에서 복구", () => { ui.CloseModal(); PreserveBroken(); ApplyChecked(bak.Value, true, false); }));
-        actions.Add(("다른 JSON 가져오기", LoadOtherJson));
-        actions.Add(("새 작업 시작", () => { ui.CloseModal(); PreserveBroken(); StartNew(); }));
+            actions.Add(("백업에서 복구", () => { ui.CloseModal(); ApplyChecked(bak.Value, true, false, PreserveBroken); }));
+        actions.Add(("다른 JSON 가져오기", () => LoadOtherJson(PreserveBroken)));
+        actions.Add(("새 작업 시작", () => { ui.CloseModal(); StartNew(PreserveBroken); }));
         actions.Add(("종료", Quit));
         string msg = lr.Status == LoadStatus.Unsupported
             ? "마지막 작업 파일의 형식을 지원하지 않습니다."
@@ -262,18 +287,15 @@ public sealed class AppController : MonoBehaviour
 
     void PreserveBroken()
     {
-        try
-        {
-            string kept = Autosave.PreserveBroken();
-            if (kept != null) Debug.Log("[MobiAtelier] 읽지 못한 자동 저장 파일을 보존했습니다: " + kept);
-        }
-        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
-        {
-            Debug.LogWarning("[MobiAtelier] 자동 저장 파일 보존 실패: " + e.Message);
-        }
+        string kept = Autosave.PreserveBroken();
+        if (kept != null) Debug.Log("[MobiAtelier] 읽지 못한 자동 저장 파일을 보존했습니다: " + kept);
     }
 
-    async void LoadOtherJson()
+    /// <summary>
+    /// 시작 화면(복구 안내)에서 다른 JSON 을 고른다. 취소하면 안내 화면을 그대로 둔다.
+    /// beforeApply: 조립·검사·승인을 마친 뒤 장면 교체 직전에 실행한다(기존 자동 저장 파일 보존 등).
+    /// </summary>
+    async void LoadOtherJson(Action beforeApply = null)
     {
         dialogOpen = true;
         string file = await WindowsDialogs.OpenFile("코디 JSON 가져오기", JsonFilter, JsonFolder());
@@ -282,62 +304,87 @@ public sealed class AppController : MonoBehaviour
         var lr = JsonStore.ReadEditState(file);
         if (lr.Status != LoadStatus.Ok)
         {
+            DiscardPending();
             ui.ShowChoice("가져오기 실패", "선택한 JSON 을 읽지 못했습니다.", lr.Error,
                 new List<(string, Action)> { ("돌아가기", RestoreOrStart) });
             return;
         }
         ui.CloseModal();
-        PreserveBroken();
-        ApplyChecked(lr.Value, true, false);
+        ApplyChecked(lr.Value, true, false, beforeApply);
     }
 
     /// <summary>
-    /// 시작 시 작업을 복원하기 전에 지금 설치본으로 복원할 수 없는 항목을 검사한다(SaveLoad.md 부분 복원).
-    /// 문제가 있으면 사유를 보이고 부분 복원 / 다른 선택을 고르게 한다. 승인 전에는 자동 저장 파일을 건드리지 않는다.
-    /// 승인하면 원본 자동 저장 파일을 따로 보존하고 선택 ID·색은 그대로 둔 채(표시만 하지 않음) 시작한다.
+    /// 시작 시 작업을 복원한다(SaveLoad.md 부분 복원). 새 캐릭터를 화면 밖에서 먼저 조립하고, 계획·조립 결과에서
+    /// 지금 설치본으로 복원할 수 없는 항목을 찾는다. 문제가 있으면 사유를 보이고 부분 복원 / 다른 선택을 고르게 한다.
+    /// 승인 전에는 자동 저장 파일을 건드리지 않는다. 승인하면 원본 자동 저장 파일을 따로 보존하고
+    /// 선택 ID·색은 그대로 둔 채(제한·누락 항목은 표시하지 않고 필수 외형은 공개 기본값으로 대신 표시) 시작한다.
     /// </summary>
-    void ApplyChecked(EditState s, bool saveNow, bool fromAutosave)
+    void ApplyChecked(EditState s, bool saveNow, bool fromAutosave, Action beforeCommit = null)
     {
-        var issues = RestoreCheck.Inspect(s, data);
-        if (issues.Count == 0) { Apply(s, saveNow); return; }
-        var actions = new List<(string, Action)>
+        ui.ShowLoading("캐릭터를 조립하는 중...");
+        Prepared p;
+        try { p = Stage(s); }
+        catch (Exception e)
         {
-            ("부분 복원", () =>
+            Debug.LogException(e);
+            ui.HideLoading();
+            ShowRestoreChoices("캐릭터를 조립하지 못했습니다", "작업 파일의 캐릭터를 지금 설치본으로 조립하지 못했습니다. 기존 파일은 그대로 보존합니다.",
+                e.Message, null, saveNow, fromAutosave, beforeCommit);
+            return;
+        }
+        var issues = InspectPrepared(p);
+        if (issues.Count == 0) { StartWith(p, saveNow, beforeCommit); return; }
+        ui.HideLoading();
+        ShowRestoreChoices("일부 항목을 복원할 수 없습니다",
+            "작업의 일부 항목을 지금 설치된 게임 데이터로 표시할 수 없습니다. 부분 복원하면 그 항목의 선택 ID·색은 보존하고 표시만 하지 않습니다(필수 외형은 공개 기본값으로 대신 표시).",
+            RestoreCheck.Describe(issues), p, saveNow, fromAutosave, beforeCommit);
+    }
+
+    /// <summary>시작 복원의 선택지. prepared 가 있으면 부분 복원을 제공한다(그 외 선택은 준비한 캐릭터를 버린다).</summary>
+    void ShowRestoreChoices(string title, string message, string detail, Prepared prepared, bool saveNow, bool fromAutosave, Action beforeCommit)
+    {
+        var actions = new List<(string, Action)>();
+        if (prepared != null)
+            actions.Add(("부분 복원", () =>
             {
                 ui.CloseModal();
-                if (fromAutosave) PreservePartial();
-                Apply(s, saveNow);
-            }),
-        };
+                StartWith(prepared, saveNow, fromAutosave ? PreservePartial : beforeCommit);
+            }));
         if (fromAutosave)
         {
             var bak = JsonStore.ReadEditState(JsonStore.AutosavePath + ".bak");
-            if (bak.Status == LoadStatus.Ok && RestoreCheck.Inspect(bak.Value, data).Count == 0)
-                actions.Add(("백업에서 복구", () => { ui.CloseModal(); PreservePartial(); Apply(bak.Value, true); }));
+            if (bak.Status == LoadStatus.Ok && BackupLooksClean(bak.Value))
+                actions.Add(("백업에서 복구", () => { DiscardPending(); ui.CloseModal(); ApplyChecked(bak.Value, true, false, PreservePartial); }));
         }
-        actions.Add(("다른 JSON 가져오기", LoadOtherJson));
-        actions.Add(("새 작업 시작", () => { ui.CloseModal(); if (fromAutosave) PreservePartial(); StartNew(); }));
+        actions.Add(("다른 JSON 가져오기", () => LoadOtherJson(fromAutosave ? PreservePartial : beforeCommit)));
+        actions.Add(("새 작업 시작", () => { DiscardPending(); ui.CloseModal(); StartNew(fromAutosave ? PreservePartial : beforeCommit); }));
         actions.Add(("종료", Quit));
-        ui.ShowChoice("일부 항목을 복원할 수 없습니다",
-            "작업의 일부 항목을 지금 설치된 게임 데이터로 표시할 수 없습니다. 부분 복원하면 그 항목의 선택 ID·색은 보존하고 표시만 하지 않습니다.",
-            RestoreCheck.Describe(issues), actions);
+        ui.ShowChoice(title, message, detail, actions);
+        // 시험 촬영: -maShotUI 에 partial 이 있으면 부분 복원을 고른다(승인 뒤 화면 확인용).
+        if (prepared != null && ShotOption("partial")) actions[0].Item2();
+    }
+
+    /// <summary>백업 파일이 계획 단계에서 문제가 없는지(조립하지 않는 빠른 검사). 고르면 다시 전체 검사를 한다.</summary>
+    bool BackupLooksClean(EditState s)
+    {
+        try { return RestoreCheck.Inspect(s, data, PlanResolver.Resolve(s, data, files)).Count == 0; }
+        catch (Exception) { return false; }
+    }
+
+    static bool ShotOption(string name)
+    {
+        string v = CommandLine.Value("-maShotUI");
+        return v != null && CommandLine.Value("-maScreenshot") != null && Array.IndexOf(v.Split(','), name) >= 0;
     }
 
     /// <summary>부분 복원·새 작업으로 자동 저장을 덮어쓰기 전에 원본을 보존한다.</summary>
     void PreservePartial()
     {
-        try
-        {
             string src = JsonStore.AutosavePath;
             if (!File.Exists(src)) return;
-            string dst = Path.Combine(JsonStore.DataDir, $"autosave.partial-{DateTime.Now:yyyyMMdd-HHmmss}.json");
+            string dst = Path.Combine(JsonStore.DataDir, $"autosave.partial-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");
             File.Copy(src, dst, false);
             Debug.Log("[MobiAtelier] 부분 복원 전 자동 저장 파일을 보존했습니다: " + dst);
-        }
-        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
-        {
-            Debug.LogWarning("[MobiAtelier] 자동 저장 파일 보존 실패: " + e.Message);
-        }
     }
 
     /// <summary>MobiAtelier 실행 파일이 있는 폴더(SaveLoad.md).</summary>
@@ -349,35 +396,30 @@ public sealed class AppController : MonoBehaviour
 
     // ------------------------------------------------------------ 조립
 
-    /// <summary>시작 시 작업을 적용한다. 실패하면 새 작업·종료를 안내한다.</summary>
-    void Apply(EditState newState, bool saveNow)
+    /// <summary>시작 시 준비한 작업으로 장면을 연다(검사·승인을 마친 뒤).</summary>
+    void StartWith(Prepared p, bool saveNow, Action beforeCommit = null)
     {
-        ui.ShowLoading("캐릭터를 조립하는 중...");
-        try
+        try { beforeCommit?.Invoke(); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
         {
-            Build(newState);
-            string bgError = background.Apply(StudioBackground.Resolve(data, state.background));
-            if (bgError != null) Debug.LogWarning("[MobiAtelier] " + bgError);
             ui.HideLoading();
-            EnsurePanel();
-            FrameCamera(state.camera);
-            history.Clear();
-            UpdateHistoryButtons();
-            panel.SetError(bgError);
-            panel.Refresh(state, plan);
-            if (saveNow) autosave.Flush();
-            if (!helpOffered) { helpOffered = true; ui.Help?.ShowOnFirstUse(); }
+            ui.ShowChoice("원본 보존 실패", "원본 자동 저장을 보존하지 못해 작업을 교체하지 않았습니다.", e.Message,
+                new List<(string, Action)> { ("다시 시도", () => { ui.CloseModal(); StartWith(p, saveNow, beforeCommit); }), ("종료", Quit) });
+            return;
         }
-        catch (Exception e)
-        {
-            Debug.LogException(e);
-            ui.ShowChoice("캐릭터를 조립하지 못했습니다", "모델을 읽는 중 오류가 발생했습니다.", e.Message,
-                new List<(string, Action)>
-                {
-                    ("새 작업 시작", () => { ui.CloseModal(); StartNew(); }),
-                    ("종료", Quit),
-                });
-        }
+        string bgError = p.Background?.Error;
+        if (p.Background != null) background.Commit(p.Background);
+        Commit(p);
+        if (bgError != null) Debug.LogWarning("[MobiAtelier] " + bgError);
+        ui.HideLoading();
+        EnsurePanel();
+        FrameCamera(state.camera);
+        history.Clear();
+        UpdateHistoryButtons();
+        panel.SetError(bgError);
+        panel.Refresh(state, plan);
+        if (saveNow) autosave.Flush();
+        if (!helpOffered) { helpOffered = true; ui.Help?.ShowOnFirstUse(); }
     }
 
     /// <summary>캐릭터 크기로 기준점·기본 거리를 정하고 저장된 시점(없으면 기본 구도)을 적용한다.</summary>
@@ -391,19 +433,82 @@ public sealed class AppController : MonoBehaviour
         ui.SetLensSelection(cameraCtl.LensMultiplier);
     }
 
-    /// <summary>상태를 조립해 장면을 교체한다. 실패하면 예외를 던지고 기존 장면·상태를 그대로 둔다.</summary>
-    /// <param name="transition">true 면 현재 계획을 직전 장면으로 넘겨 무기 꺼내기·넣기 도입 모션을 붙인다(편집·실행 취소).</param>
-    void Build(EditState next, bool transition = false)
+    /// <summary>화면 밖에서 조립을 마쳤지만 아직 장면에 넣지 않은 캐릭터와 그 상태·계획.</summary>
+    sealed class Prepared
     {
-        var nextPlan = PlanResolver.Resolve(next, data, files, transition ? plan : null);
-        var built = CharacterAssembler.Build(files, bundles, nextPlan, characterShader);
+        public EditState State;
+        public AssemblyPlan Plan;
+        public CharacterView View;
+        public StudioBackground.Prepared Background;
+    }
+
+    /// <summary>승인 대기 중인 캐릭터를 두는 위치(카메라에 보이지 않는 곳).</summary>
+    static readonly Vector3 StagingPosition = new Vector3(0, -10000, 0);
+
+    /// <summary>복원·가져오기 승인을 기다리는 준비본. 한 번에 하나만 둔다.</summary>
+    Prepared pending;
+
+    /// <summary>
+    /// 상태를 조립 계획으로 풀고 새 캐릭터를 화면 밖에 조립한다. 기존 장면·상태·이력은 바꾸지 않는다.
+    /// 필수 외형의 공개 기본값도 준비하지 못하면(PlanException)·조립이 예외로 끝나면 던진다.
+    /// </summary>
+    /// <param name="transition">true 면 현재 계획을 직전 장면으로 넘겨 무기 꺼내기·넣기 도입 모션을 붙인다(편집·실행 취소).</param>
+    Prepared Prepare(EditState next, bool transition)
+    {
+        var built = CharacterAssembler.BuildValidated(files, bundles, next, data, characterShader, out var nextPlan, transition ? plan : null);
+        built.transform.position = StagingPosition;
+        built.gameObject.SetActive(false);
+        return new Prepared { State = next, Plan = nextPlan, View = built };
+    }
+
+    /// <summary>승인 대기용 준비. 이전 대기본은 버린다.</summary>
+    Prepared Stage(EditState next)
+    {
+        DiscardPending();
+        var p = Prepare(next, false);
+        try { p.Background = background.Prepare(StudioBackground.Resolve(data, next.background)); }
+        catch { Discard(p); throw; }
+        return pending = p;
+    }
+
+    void Discard(Prepared p)
+    {
+        if (p == null) return;
+        CharacterAssembler.Release(p.View);
+        p.Background?.Dispose();
+        p.View = null;
+        if (pending == p) pending = null;
+    }
+
+    void DiscardPending() => Discard(pending);
+
+    static PlanIssue NewBuildFailure(AssemblyPlan before, AssemblyPlan after) =>
+        after.Issues.Find(i => i.IsFailure && (before == null || !before.Issues.Exists(o => o.IsFailure && o.Same(i))));
+
+    List<string> InspectPrepared(Prepared p)
+    {
+        var issues = RestoreCheck.Inspect(p.State, data, p.Plan);
+        if (p.Background?.Error != null) issues.Add(p.Background.Error + ". 색 배경으로 대신 표시합니다");
+        return issues;
+    }
+
+    /// <summary>준비한 캐릭터로 장면을 교체한다. 필수 외형 대체 기록을 상태에 적는다(보관한 원래 선택은 그대로).</summary>
+    void Commit(Prepared p)
+    {
+        var built = p.View;
+        if (!built) throw new InvalidOperationException("이미 폐기된 조립 요청입니다.");
+        if (pending == p) pending = null;
+        built.transform.position = Vector3.zero;
+        built.gameObject.SetActive(true);
         // 재생 중인 소셜 모션은 새 캐릭터에서 같은 시점부터 잇는다(SocialMotion.md 4장 6·7).
         var oldMotion = view ? view.GetComponent<CharacterMotion>() : null;
         double motionTime = oldMotion && oldMotion.CurrentAction != null ? oldMotion.ActionTime : -1;
-        if (view) Destroy(view.gameObject);
+        CharacterAssembler.Release(view);
         view = built;
-        state = next;
-        plan = nextPlan;
+        state = p.State;
+        plan = p.Plan;
+        p.View = null;
+        RecordSubstitutes(state, plan);
         ui.SetNotes(Notes(plan));
         if (motionSocial != null)
         {
@@ -553,9 +658,21 @@ public sealed class AppController : MonoBehaviour
         var next = state.Clone();
         next.camera = cameraCtl.Save();
         change(next);
+        Prepared p = null;
         try
         {
-            Build(next, true);
+            p = Prepare(next, true);
+            // 이 편집이 새로 만든 리소스 읽기 실패(모델 정의·프리팹·메시 누락)가 있으면 확정하지 않는다.
+            // 이전부터 있던 실패(부분 복원한 항목)는 다른 편집을 막지 않는다. 정상적인 착용 불가·가림은 실패가 아니다.
+            var failed = NewBuildFailure(plan, p.Plan);
+            if (failed != null)
+            {
+                Discard(p);
+                panel.SetError("변경을 적용하지 못해 이전 선택을 유지합니다. " + failed.Describe());
+                panel.Refresh(state, plan);
+                return;
+            }
+            Commit(p);
             panel.SetError(null);
             MarkDirty();
             if (history.Record(before, state)) UpdateHistoryButtons();
@@ -563,9 +680,19 @@ public sealed class AppController : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogException(e);
+            Discard(p);
             panel.SetError("변경을 적용하지 못해 이전 선택을 유지합니다. " + e.Message);
         }
         panel.Refresh(state, plan);
+    }
+
+    /// <summary>필수 외형 대체 기록(참고용)을 현재 계획으로 다시 쓴다. 원래 선택 필드는 건드리지 않는다.</summary>
+    static void RecordSubstitutes(EditState s, AssemblyPlan p)
+    {
+        if (s?.appearance == null || p == null) return;
+        s.appearance.substitutes = new List<AppearanceSubstitute>();
+        foreach (var x in p.Substitutes)
+            s.appearance.substitutes.Add(new AppearanceSubstitute { part = x.part, selected = x.selected, shown = x.shown, reason = x.reason });
     }
 
     /// <summary>
@@ -583,10 +710,17 @@ public sealed class AppController : MonoBehaviour
         try
         {
             var nextPlan = PlanResolver.Resolve(next, data, files);
+            // 공개 시각·호환 기본값·이전 읽기 실패 때문에 표시 모델이 달라졌다면 색만 덮어쓰지 않는다.
+            bool sameModels = plan.Parts.Count == nextPlan.Parts.Count;
+            for (int i = 0; sameModels && i < plan.Parts.Count; i++)
+                sameModels = plan.Parts[i].Key == nextPlan.Parts[i].Key && plan.Parts[i].Model == nextPlan.Parts[i].Model;
+            if (!sameModels) { Edit(change); return; }
+            CharacterAssembler.CarryBuildResults(plan, nextPlan, view);
             view.ApplyPlanColors(nextPlan);
             view.Plan = nextPlan;
             state = next;
             plan = nextPlan;
+            RecordSubstitutes(state, plan);
             panel.SetError(null);
             MarkDirty();
             if (history.Record(before, state)) UpdateHistoryButtons();
@@ -621,32 +755,35 @@ public sealed class AppController : MonoBehaviour
         next.camera = cameraCtl.Save();
         next.appVersion = current.appVersion;
         string label = back ? "실행 취소" : "다시 실행";
-        // 배경을 먼저 준비한다. 실패하면 아무것도 바꾸지 않는다.
-        string bgError = null, previousBg = background.CurrentId;
+        // 캐릭터·배경을 모두 준비하고 실제 실패를 확인한 뒤 함께 확정한다.
+        string bgError = null;
         bool bgChanged = current.background != next.background;
-        if (bgChanged)
-        {
-            bgError = background.Apply(StudioBackground.Resolve(data, next.background), true);
-            if (background.LastFailed)
-            {
-                panel.SetError(label + "의 배경을 준비하지 못해 현재 상태를 유지합니다. " + bgError);
-                panel.Refresh(state, plan);
-                return;
-            }
-        }
+        Prepared prepared = null;
+        StudioBackground.Prepared preparedBg = null;
         try
         {
-            if (!EditHistory.SameCharacter(current, next)) Build(next, true);
-            else state = next;
+            // 배경만 바뀌어도 현재 공개 판정은 다시 확인한다. 과거 이력이 제한 모델을 되살리지 않는다.
+            prepared = Prepare(next, true);
+            var failure = NewBuildFailure(plan, prepared.Plan);
+            if (failure != null) throw new PlanException(failure.Describe());
+            if (bgChanged)
+            {
+                preparedBg = background.Prepare(StudioBackground.Resolve(data, next.background), true);
+                bgError = preparedBg.Error;
+                if (preparedBg.Failed) throw new PlanException(bgError);
+                background.Commit(preparedBg);
+            }
+            Commit(prepared);
         }
         catch (Exception e)
         {
             Debug.LogException(e);
-            if (bgChanged) background.Apply(StudioBackground.Resolve(data, previousBg));
+            Discard(prepared);
             panel.SetError(label + "를 적용하지 못해 현재 상태를 유지합니다. " + e.Message);
             panel.Refresh(state, plan);
             return;
         }
+        finally { preparedBg?.Dispose(); }
         if (back) history.CommitUndo(current); else history.CommitRedo(current);
         UpdateHistoryButtons();
         MarkDirty();
@@ -657,27 +794,25 @@ public sealed class AppController : MonoBehaviour
     void UpdateHistoryButtons() => panel?.SetHistory(history.CanUndo, history.CanRedo);
 
     /// <summary>
-    /// 작업 전체 교체(가져오기·초기화). 새 상태를 조립한 뒤에만 장면을 바꾸고 이력을 비운다.
-    /// 실패하면 기존 장면·작업·이력을 유지한다. 바꾸기 전 대기 중인 자동 저장을 먼저 써서 직전 작업이 백업(.bak)에 남게 한다.
+    /// 작업 전체 교체(가져오기·초기화). 화면 밖에서 조립·검사·승인을 마친 준비본으로만 장면을 바꾸고 이력을 비운다.
+    /// 준비·검사에 실패하거나 취소하면 호출자가 준비본을 버리며 기존 장면·작업·자동 저장·이력은 그대로다.
+    /// 바꾸기 전 대기 중인 자동 저장을 먼저 써서 직전 작업이 백업(.bak)에 남게 한다.
     /// </summary>
-    bool ReplaceWork(EditState next, bool defaultCamera, out string error)
+    bool ReplaceWork(Prepared next, bool defaultCamera)
     {
-        error = null;
         SearchDropdown.CloseAny();
         ColorPicker.CancelAny();
         state.camera = cameraCtl.Save();
-        autosave.Flush();
-        try
+        if (autosave.Pending && !autosave.Flush())
         {
-            Build(next);
-        }
-        catch (Exception e)
-        {
-            Debug.LogException(e);
-            error = e.Message;
+            Discard(next);
+            ui.ShowChoice("작업 교체 실패", "현재 작업을 저장하지 못해 기존 작업과 이력을 유지합니다.", autosave.LastError,
+                new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
             return false;
         }
-        string bgError = background.Apply(StudioBackground.Resolve(data, state.background));
+        string bgError = next.Background?.Error;
+        if (next.Background != null) background.Commit(next.Background);
+        Commit(next);
         FrameCamera(defaultCamera ? null : state.camera);
         history.Clear();
         UpdateHistoryButtons();
@@ -748,27 +883,40 @@ public sealed class AppController : MonoBehaviour
                 new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
             return;
         }
-        var issues = RestoreCheck.Inspect(lr.Value, data);
-        if (issues.Count == 0) { FinishImport(lr.Value, file, false); return; }
-        // 부분 복원 / 취소. 승인 전에는 현재 작업·자동 저장·이력을 그대로 둔다. 선택한 JSON 파일은 고치지 않는다.
-        ui.ShowChoice("일부 항목을 복원할 수 없습니다",
-            "선택한 파일의 일부 항목을 지금 설치된 게임 데이터로 표시할 수 없습니다. 부분 복원하면 그 항목의 선택 ID·색은 보존하고 표시만 하지 않습니다.",
-            RestoreCheck.Describe(issues),
-            new List<(string, Action)> { ("취소", OpenMenu), ("부분 복원", () => FinishImport(lr.Value, file, true)) }, OpenMenu);
+        PrepareImport(lr.Value, file);
     }
 
-    void FinishImport(EditState s, string file, bool partial)
+    // 파일 대화상자와 별개인 가져오기 처리. 자동 시험도 동일한 검사·승인 경로를 호출한다.
+    void PrepareImport(EditState imported, string file)
     {
+        // 새 캐릭터를 화면 밖에서 먼저 조립해 계획·조립 결과를 검사한다. 승인 전에는 현재 작업·자동 저장·이력을 그대로 둔다.
         ui.CloseModal();
         ui.ShowLoading("캐릭터를 조립하는 중...");
-        bool ok = ReplaceWork(s, false, out string error);
-        ui.HideLoading();
-        if (!ok)
+        Prepared p;
+        try { p = Stage(imported); }
+        catch (Exception e)
         {
-            ui.ShowChoice("가져오기 실패", "선택한 코디를 적용하지 못해 현재 작업을 유지합니다.", error,
+            Debug.LogException(e);
+            ui.HideLoading();
+            ui.ShowChoice("가져오기 실패", "선택한 코디를 조립하지 못해 현재 작업을 유지합니다.", e.Message,
                 new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
             return;
         }
+        ui.HideLoading();
+        var issues = InspectPrepared(p);
+        if (issues.Count == 0) { FinishImport(p, file, false); return; }
+        // 부분 복원 / 취소. 선택한 JSON 파일은 고치지 않는다. 취소·닫기는 준비한 캐릭터를 버린다.
+        void Cancel() { Discard(p); OpenMenu(); }
+        ui.ShowChoice("일부 항목을 복원할 수 없습니다",
+            "선택한 파일의 일부 항목을 지금 설치된 게임 데이터로 표시할 수 없습니다. 부분 복원하면 그 항목의 선택 ID·색은 보존하고 표시만 하지 않습니다(필수 외형은 공개 기본값으로 대신 표시).",
+            RestoreCheck.Describe(issues),
+            new List<(string, Action)> { ("취소", Cancel), ("부분 복원", () => FinishImport(p, file, true)) }, Cancel);
+    }
+
+    void FinishImport(Prepared p, string file, bool partial)
+    {
+        ui.CloseModal();
+        if (!ReplaceWork(p, false)) return;
         ui.ShowNotice((partial ? "일부 항목을 제외하고 가져왔습니다: " : "가져왔습니다: ") + Path.GetFileName(file), false);
     }
 
@@ -793,14 +941,28 @@ public sealed class AppController : MonoBehaviour
         }
         ui.CloseModal();
         ui.ShowLoading("캐릭터를 조립하는 중...");
-        bool ok = ReplaceWork(next, true, out string error);
-        ui.HideLoading();
-        if (!ok)
+        Prepared p = null;
+        string error = null;
+        try
         {
+            p = Stage(next);
+            // 기본 코디에 없는 ID·제한·리소스 누락이 있으면 불완전한 기본 상태로 확정하지 않는다(Reset.md).
+            var problems = RestoreCheck.CharacterProblems(p.Plan);
+            if (problems.Count > 0) error = RestoreCheck.Describe(problems);
+        }
+        catch (Exception e) { Debug.LogException(e); error = e.Message; }
+        ui.HideLoading();
+        if (error != null)
+        {
+            Discard(p);
             ui.ShowChoice("초기화 실패", "기본 코디를 조립하지 못해 현재 작업을 유지합니다.", error,
                 new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
             return;
         }
+        // 초기화는 현재 표시 중인 배경도 유지한다. 새 배경 준비본은 사용하지 않는다.
+        p.Background?.Dispose();
+        p.Background = null;
+        if (!ReplaceWork(p, true)) return;
         ui.ShowNotice("코디를 초기화했습니다.", false);
     }
 
@@ -907,7 +1069,7 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
-    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw,motion:ID (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
+    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw,male,partial,motion:ID (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
         float delay = float.TryParse(CommandLine.Value("-maShotDelay"), out var d) ? d : 8f;
@@ -915,6 +1077,17 @@ public sealed class AppController : MonoBehaviour
         float uiWait = float.TryParse(CommandLine.Value("-maShotUIWait"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var uw) ? uw : 1f;
         yield return new WaitForSecondsRealtime(Mathf.Max(0, delay - uiWait));
         string shotUI = CommandLine.Value("-maShotUI");
+        // 별도 시험 데이터 폴더를 지정한 촬영 실행에서만 파일 대화상자를 생략한다. 실제 가져오기 검사·승인 경로는 같다.
+        string shotImport = CommandLine.Value("-maDataDir") != null ? CommandLine.Value("-maShotImport") : null;
+        if (shotImport != null && state != null)
+        {
+            var imported = JsonStore.ReadEditState(shotImport);
+            if (imported.Status == LoadStatus.Ok)
+            {
+                PrepareImport(imported.Value, shotImport);
+                if (pending != null && ShotOption("partial")) FinishImport(pending, shotImport, true);
+            }
+        }
         if (shotUI != null && state != null && panel != null)
         {
             var opts = new HashSet<string>(shotUI.Split(','));
@@ -944,6 +1117,8 @@ public sealed class AppController : MonoBehaviour
                 });
                 Edit(s => s.weaponPose.stance = WeaponPoseState.Alert);
             }
+            // male: 성별을 남성으로 바꾼다(필수 외형 호환 대체·실행 취소 확인용)
+            if (opts.Contains("male")) Edit(s => s.appearance.gender = "Male");
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
             // motion:ID : 소셜 모션을 재생한다(모션 버튼 확인용, -maShotUIWait 로 재생 시점을 정한다)
             foreach (var o in opts) if (o.StartsWith("motion:", StringComparison.Ordinal)) PlayMotion(o.Substring("motion:".Length));
@@ -956,6 +1131,24 @@ public sealed class AppController : MonoBehaviour
         }
         yield return new WaitForSecondsRealtime(Mathf.Min(uiWait, delay));
         yield return new WaitForEndOfFrame();
+        string report = CommandLine.Value("-maDataDir") != null ? CommandLine.Value("-maShotReport") : null;
+        if (report != null)
+        {
+            var lines = new List<string>
+            {
+                "allowRestricted=" + Disclosure.AllowRestricted,
+                "development=" + Debug.isDebugBuild,
+                "pending=" + (pending != null),
+                "state=" + (state == null ? "null" : JsonUtility.ToJson(state)),
+            };
+            if (plan != null)
+            {
+                foreach (var p in plan.Parts) lines.Add("part=" + p.Key + ":" + p.Model);
+                foreach (var i in plan.Issues) lines.Add("issue=" + i.Describe());
+            }
+            if (view) foreach (var r in view.Renderers) lines.Add("renderer=" + r.partKey + ":" + r.renderer.name);
+            File.WriteAllLines(report, lines);
+        }
         ScreenCapture.CaptureScreenshot(file);
         yield return null; yield return null;
         quitApproved = true;

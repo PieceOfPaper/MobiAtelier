@@ -85,8 +85,23 @@ public static class JsonStore
         }
     }
 
-    public static LoadResult<EditState> ReadEditState(string path) =>
-        Read<EditState>(path, s => s.formatVersion >= 1 && s.formatVersion <= EditState.CurrentFormatVersion && s.appearance != null);
+    public static LoadResult<EditState> ReadEditState(string path)
+    {
+        var result = Read<EditState>(path, s => s.formatVersion >= 1 && s.formatVersion <= EditState.CurrentFormatVersion && s.appearance != null);
+        if (result.Status != LoadStatus.Ok) return result;
+        var state = result.Value;
+        state.costumes ??= new List<CostumeSlotState>();
+        state.appearance.colors ??= new List<ColorOverride>();
+        state.weaponPose ??= new WeaponPoseState();
+        var parts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var slot in state.costumes)
+        {
+            if (slot == null || string.IsNullOrEmpty(slot.part) || !parts.Add(slot.part))
+                return new LoadResult<EditState>(LoadStatus.Corrupt, null, "의상 부위가 비어 있거나 중복되어 선택·염색을 안전하게 대응할 수 없습니다.");
+            slot.dyes ??= new List<ColorOverride>();
+        }
+        return result;
+    }
 }
 
 /// <summary>앱 설정. 장면 상태(EditState)와 분리해 보관한다.</summary>

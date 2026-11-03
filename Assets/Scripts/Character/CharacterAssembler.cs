@@ -33,18 +33,70 @@ public static class CharacterAssembler
         public object Root;
     }
 
+    /// <summary>
+    /// 실제 읽기 실패까지 반영한 조립. 실패한 의상은 숨김·절단 효과와 함께 제외하고,
+    /// 필수 외형은 실패 모델을 피한 공개 기본값으로 다시 준비한다. 원래 선택은 바꾸지 않는다.
+    /// </summary>
+    public static CharacterView BuildValidated(InstallFiles files, BundleCache bundles, EditState state, GameData data,
+        Shader shader, out AssemblyPlan plan, AssemblyPlan previous = null, StringBuilder log = null)
+    {
+        var failed = new HashSet<string>(StringComparer.Ordinal);
+        var failures = new List<PlanIssue>();
+        while (true)
+        {
+            plan = PlanResolver.Resolve(state, data, files, previous, failed);
+            var view = Build(files, bundles, plan, shader, log);
+            var errors = plan.Issues.FindAll(i => i.FromBuild && i.IsFailure);
+            if (errors.Count == 0)
+            {
+                foreach (var issue in failures) if (!plan.Issues.Exists(i => i.Same(issue))) plan.Issues.Add(issue);
+                return view;
+            }
+            Release(view);
+            bool progress = false;
+            foreach (var issue in errors)
+            {
+                if (issue.Key == "body") throw new PlanException(issue.Describe());
+                progress |= failed.Add(issue.Id);
+                if (!failures.Exists(i => i.Same(issue))) failures.Add(issue);
+            }
+            if (!progress) throw new PlanException("필수 외형을 정상적으로 조립하지 못했습니다.");
+        }
+    }
+
+    public static void Release(CharacterView view)
+    {
+        if (!view) return;
+        view.gameObject.SetActive(false);
+        if (Application.isPlaying) UnityEngine.Object.Destroy(view.gameObject);
+        else UnityEngine.Object.DestroyImmediate(view.gameObject);
+    }
+
     public static CharacterView Build(InstallFiles files, BundleCache bundles, AssemblyPlan plan, Shader shader, StringBuilder log = null)
     {
+        var root = new GameObject("Character");
+        var view = root.AddComponent<CharacterView>();
+        view.Plan = plan;
+        try { return BuildCore(files, bundles, plan, shader, view, log); }
+        catch { Release(view); throw; }
+    }
+
+    static CharacterView BuildCore(InstallFiles files, BundleCache bundles, AssemblyPlan plan, Shader shader, CharacterView view, StringBuilder log)
+    {
+        var root = view.gameObject;
         var sw = Stopwatch.StartNew();
         void L(string s) { log?.AppendLine(s); }
+        // 리소스 읽기 실패는 로그만 남기지 않고 계획의 문제로 기록한다. 호출자가 복원 안내·편집 거절에 쓴다.
+        void Fail(PartPlan p, string message) => plan.AddIssue(p.Key, IssueKind.MissingResource, p.Model, null, message, true);
 
         // 1. 모델 정의 읽기와 숨김 규칙 수집
         var defs = new List<Def>();
         foreach (var p in plan.Parts)
         {
             string path = files.ModelDefPath(p.Model);
-            if (path == null) { L($"모델 정의 없음: {p.Model}"); continue; }
-            defs.Add(new Def { Part = p, Path = path, Dir = path.Substring(0, path.LastIndexOf('/') + 1), Root = files.ReadSjon(path) });
+            if (path == null) { L($"모델 정의 없음: {p.Model}"); Fail(p, "모델 정의를 설치 폴더에서 찾지 못했습니다"); continue; }
+            try { defs.Add(new Def { Part = p, Path = path, Dir = path.Substring(0, path.LastIndexOf('/') + 1), Root = files.ReadSjon(path) }); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(p, "모델 정의 읽기 실패: " + e.Message); }
         }
         bool hideHair = false, hideHead = false, hideEye = false;
         int hairLevel = 0;
@@ -65,9 +117,6 @@ public static class CharacterAssembler
             }
         }
 
-        var root = new GameObject("Character");
-        var view = root.AddComponent<CharacterView>();
-        view.Plan = plan;
         var bones = new List<Transform>();
         var bind = new List<(Vector3 p, Quaternion r, Vector3 s)>();
         var map = new Dictionary<string, Transform>(StringComparer.Ordinal);
@@ -99,6 +148,7 @@ public static class CharacterAssembler
                     if (Mathf.Abs(Quaternion.Dot(eb.r, rot)) >= 0.999f) continue;
                     if (!partBones.TryGetValue(d, out var own)) partBones[d] = own = new Dictionary<string, Transform>(StringComparer.Ordinal);
                     var dup = new GameObject(name).transform;
+                    dup.SetParent(root.transform, false);
                     own[name] = dup;
                     poseBase[dup] = (eb.p, eb.r);
                     partOwnBones++;
@@ -111,6 +161,7 @@ public static class CharacterAssembler
                 }
                 int pi = n.Get("ParentIndex").I();
                 var t = new GameObject(name).transform;
+                t.SetParent(root.transform, false);
                 map[name] = t;
                 boneOwner[t] = d;
                 parentName[t] = pi >= 0 && pi < nodes.Count ? nodes[pi].Get("Name").Str() : null;
@@ -144,7 +195,7 @@ public static class CharacterAssembler
 
             string prefabPath = BundleCache.AssetRoot + d.Root.Get("AssetPathToLoad").Str();
             var prefab = bundles.LoadAsset<GameObject>(prefabPath);
-            if (!prefab) L($"  프리팹 없음: {prefabPath}");
+            if (!prefab) { L($"  프리팹 없음: {prefabPath}"); Fail(part, "프리팹(재질·텍스처)을 읽지 못했습니다: " + prefabPath); }
             var prefabSmr = new Dictionary<string, SkinnedMeshRenderer>(StringComparer.Ordinal);
             if (prefab) foreach (var r in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (!prefabSmr.ContainsKey(r.name)) prefabSmr[r.name] = r;
             // 무기는 BoneTemplate 이 없고 메시 본(_Sword_Root 등)이 프리팹 안에만 있다. 프리팹 본을 복제해 이 파츠 전용 본으로 쓴다.
@@ -157,11 +208,12 @@ public static class CharacterAssembler
                 CloneBones(prefab.transform, toolRoot, own);
                 tools.Add((d, toolRoot));
             }
-            else if (tool) L($"  장착 파츠 프리팹 없음, 본을 만들지 못함: {part.Model}");
+            else if (tool) { L($"  장착 파츠 프리팹 없음, 본을 만들지 못함: {part.Model}"); Fail(part, "장착 파츠 프리팹이 없어 본을 만들지 못했습니다"); }
             Dictionary<string, SkinnedMeshRenderer> fbxSmr = null;
             var morph = part.Role == PartRole.Body ? MorphMaterials(d) : null;
 
             var list = d.Root.Get("SkinnedMeshList").Arr();
+            if (list.Count == 0) Fail(part, "모델의 메시 목록이 비어 있습니다");
             var byIndex = new Dictionary<int, Material[]>();
             for (int i = 0; i < list.Count; i++)
             {
@@ -197,7 +249,7 @@ public static class CharacterAssembler
                             foreach (var go in fb.LoadAllAssets<GameObject>())
                                 foreach (var r in go.GetComponentsInChildren<SkinnedMeshRenderer>(true)) fbxSmr[r.name] = r;
                     }
-                    if (!fbxSmr.TryGetValue(name, out var fsmr) || !fsmr.sharedMesh) { L($"  메시 없음: {part.Model}/{name}"); continue; }
+                    if (!fbxSmr.TryGetValue(name, out var fsmr) || !fsmr.sharedMesh) { L($"  메시 없음: {part.Model}/{name}"); Fail(part, "메시를 읽지 못했습니다: " + name); continue; }
                     mesh = fsmr.sharedMesh; boneNames = BoneNames(fsmr);
                 }
                 if (owned) view.Owned.Add(mesh);
@@ -221,6 +273,7 @@ public static class CharacterAssembler
                 for (int s = 0; s < subMats.Length; s++)
                 {
                     var src = srcMats.Length == 0 ? null : srcMats[Mathf.Min(s, srcMats.Length - 1)];
+                    if (!src) Fail(part, "메시 재질을 읽지 못했습니다: " + name);
                     if (DebugMaterials && src) L($"  재질 {part.Model}/{name}[{s}]: {src.name} 셰이더 {(src.shader ? src.shader.name : "-")} 큐 {src.renderQueue} 텍스처 {DescribeTextures(src)}");
                     subMats[s] = Convert(src, (part.Role == PartRole.Eyes && KeepOriginalEyeShader) || (part.Role == PartRole.Head && KeepOriginalHeadShader), out _);
                 }
@@ -236,7 +289,7 @@ public static class CharacterAssembler
                 // 의상 피부 조각(ClothingMaterialType=Skin)도 그 자리의 몸을 대신하므로 가리기 판정에 넣는다.
                 // 무기처럼 장착점에 붙는 파츠는 몸을 덮는 옷이 아니므로 넣지 않는다.
                 if (part.Role == PartRole.Costume && !tool && go2.activeSelf && partGo.activeSelf) { cloth.Add(smr); clothByKey.Add((part.Key, smr)); }
-                if (missing > 0) L($"  {part.Model}/{name}: 본 {missing}개 없음");
+                if (missing > 0) { L($"  {part.Model}/{name}: 본 {missing}개 없음"); Fail(part, $"메시 {name}의 본 {missing}개를 찾지 못했습니다"); }
             }
 
             foreach (var slot in d.Root.Get("DyeInfo").Get("Slots").Arr())
@@ -246,15 +299,20 @@ public static class CharacterAssembler
                 foreach (var w in slot.Get("Wirings").Arr())
                 {
                     int mi = w.Get("MeshIndex").I(), ma = w.Get("MaterialIndex").I(), ch = w.Get("ChannelIndex").I();
-                    if (!byIndex.TryGetValue(mi, out var mats) || ma >= mats.Length || ch < 0 || ch > 2) continue;
+                    if (!byIndex.TryGetValue(mi, out var mats) || ma < 0 || ma >= mats.Length || ch < 0 || ch > 2) continue;
                     var m = mats[ma]; string prop = "_DyeColor" + (ch + 1);
+                    if (!m || !m.HasProperty(prop)) continue;
                     view.Dyes.Add(new DyeBinding { PartKey = part.Key, Slot = sname, Material = m, Property = prop, Original = m.GetColor(prop), DyeMaterial = smat });
                 }
             }
         }
 
-        foreach (var d in defs) AddBones(d);
-        foreach (var d in defs) if (d.Part.Role != PartRole.Mouth) AddModel(d);
+        foreach (var d in defs)
+            try { AddBones(d); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "본 읽기 실패: " + e.Message); }
+        foreach (var d in defs) if (d.Part.Role != PartRole.Mouth)
+            try { AddModel(d); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "모델 조립 실패: " + e.Message); }
         Transform BoneFor(Def d, string name)
         {
             if (name == null) return null;
@@ -385,7 +443,11 @@ public static class CharacterAssembler
             }
         }
 
-        foreach (var d in defs) if (d.Part.Role == PartRole.Mouth) ApplyMouth(bundles, d.Root, view, L);
+        foreach (var d in defs) if (d.Part.Role == PartRole.Mouth && !plan.Issues.Exists(i => i.Key == "head" && i.FromBuild && i.IsFailure))
+            try { if (!ApplyMouth(bundles, d.Root, view, L)) Fail(d.Part, "입 텍스처를 얼굴에 적용하지 못했습니다"); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "입 텍스처 읽기 실패: " + e.Message); }
+        // 실패한 임시 조립본으로 몸 절단·애니메이션을 확정하지 않는다. 호출자가 제외·대체 후 다시 조립한다.
+        if (plan.Issues.Exists(i => i.FromBuild && i.IsFailure)) return view;
         ApplyFacialAnimation(files, plan, view, L);
         view.ApplyBlendShape(plan.BlendShape);
         view.ApplyPlanColors(plan);
@@ -400,6 +462,7 @@ public static class CharacterAssembler
         view.SetBodyCut(true);
         view.SetPosed(true);
         AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, mounts, L);
+        CheckDyes(plan, view);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         return view;
     }
@@ -446,6 +509,37 @@ public static class CharacterAssembler
             c.renderQueue = 3000;
         }
         return c;
+    }
+
+    /// <summary>
+    /// 사용자가 지정한 의상 염색 슬롯이 조립한 모델의 DyeInfo 에 있는지 확인한다(SaveLoad.md "사라진 염색 파트").
+    /// 없으면 값은 보존하고 다른 파트에 옮기지 않으며 문제로만 남긴다. 색만 바꾼 편집 뒤에도 다시 부른다.
+    /// </summary>
+    public static void CheckDyes(AssemblyPlan plan, CharacterView view)
+    {
+        plan.Issues.RemoveAll(i => i.FromBuild && i.Kind == IssueKind.DyeUnresolved);
+        var have = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var d in view.Dyes) have.Add(d.PartKey + "|" + d.Slot);
+        foreach (var p in plan.Parts)
+        {
+            if (p.Role != PartRole.Costume) continue;
+            var res = plan.Costumes.Find(c => AssemblyPlan.CostumeKey(c.Part) == p.Key);
+            foreach (var slot in p.UserSlots)
+                if (!have.Contains(p.Key + "|" + slot))
+                    plan.AddIssue(p.Key, IssueKind.DyeUnresolved, res?.CostumeId ?? p.Model, res?.DisplayName,
+                        $"염색 파트 {slot}: 이 모델에 해당 파트가 없어 적용하지 않습니다(값 보존)", true);
+        }
+    }
+
+    /// <summary>색만 바꾼 편집: 새 계획에 이전 조립에서 찾은 문제(리소스 읽기 실패)와 옷 모양 조건을 옮기고 염색 파트를 다시 확인한다.</summary>
+    public static void CarryBuildResults(AssemblyPlan from, AssemblyPlan to, CharacterView view)
+    {
+        if (from != null)
+        {
+            foreach (var i in from.Issues) if (i.FromBuild && i.Kind != IssueKind.DyeUnresolved && !to.Issues.Exists(x => x.Same(i))) to.Issues.Add(i);
+            to.Clothing = from.Clothing;
+        }
+        CheckDyes(to, view);
     }
 
     /// <summary>.fbx 에셋(Assets/PatchableAssets/ 경로)의 AnimationClip 서브에셋. 없거나 열리지 않으면 null.</summary>
@@ -600,11 +694,11 @@ public static class CharacterAssembler
     ///   _MouthMap = AssetPathToLoad 텍스처, _MouthMapScalePosition = TextureInfo.BaseTexcoord,
     ///   _MouthMapRotation = TextureInfo.Rotation, _MouthPushStrength = TextureInfo.PushStrength
     /// </summary>
-    static void ApplyMouth(BundleCache bundles, object def, CharacterView view, Action<string> log)
+    static bool ApplyMouth(BundleCache bundles, object def, CharacterView view, Action<string> log)
     {
         string path = BundleCache.AssetRoot + def.Get("AssetPathToLoad").Str();
         var tex = bundles.LoadAsset<Texture2D>(path);
-        if (!tex) { log?.Invoke("입 텍스처 없음: " + path); return; }
+        if (!tex) { log?.Invoke("입 텍스처 없음: " + path); return false; }
         var info = def.Get("TextureInfo");
         var st = info.Get("BaseTexcoord").Arr();
         var scalePos = st.Count >= 4 ? new Vector4(st[0].F(), st[1].F(), st[2].F(), st[3].F()) : new Vector4(1, 1, 0, 0);
@@ -623,6 +717,7 @@ public static class CharacterAssembler
             }
         }
         log?.Invoke($"입: {tex.name}, 크기·위치 {scalePos}, 얼굴 머티리얼 {applied}개" + (applied == 0 ? " (머리 셰이더에 _MouthMap 없음)" : ""));
+        return applied > 0;
     }
 
     static string DescribeTextures(Material m)

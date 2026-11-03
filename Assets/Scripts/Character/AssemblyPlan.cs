@@ -1,5 +1,9 @@
 // 장면 상태(EditState) + 시트(GameData) → 조립할 모델과 색의 목록.
 // 선택과 실제 출력을 분리한다(Equipment.md). 입을 수 없는 의상은 선택을 유지한 채 상태만 표시한다.
+// 공개 범위(Disclosure)는 여기서 최종으로 강제한다. 목록·가져오기·자동 복원·실행 취소 어느 경로로 온 상태든
+// 공개 빌드에서는 숨김 데이터·직접 리소스·미공개 의상을 조립 목록에 넣지 않는다(선택 ID·염색은 상태에 그대로 둔다).
+// 필수 외형(머리·헤어·눈·입·피부/헤어/눈 색)은 표시할 수 없으면 공개된 호환 기본값으로 대신 표시하고 원래 선택은 보관한다(Appearance.md).
+// 기본값도 준비하지 못하면 PlanException 을 던진다. 호출자는 이전 장면·상태·이력을 유지한다.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,6 +23,46 @@ public enum CostumeStatus
     UnknownId,
     /// <summary>모델 정의를 설치 폴더에서 찾지 못함</summary>
     MissingResource,
+    /// <summary>숨김·미공개·직접 리소스라 공개 빌드에서 표시하지 않음(에디터 전용)</summary>
+    Restricted,
+}
+
+public enum IssueKind
+{
+    /// <summary>데이터에 없는 ID</summary>
+    UnknownId,
+    /// <summary>공개 빌드에서 제한한 항목(숨김 데이터·미공개 의상·직접 리소스)</summary>
+    Restricted,
+    /// <summary>설치 폴더의 리소스를 읽지 못함(모델 정의·프리팹·메시). 정상적인 착용 불가와 다르다.</summary>
+    MissingResource,
+    /// <summary>현재 성별·나이·체형·얼굴형에 맞지 않음(정상 상태, 복원 안내 대상 아님)</summary>
+    Incompatible,
+    /// <summary>저장된 염색값을 적용할 파트가 없거나 값을 해석하지 못함(값은 보존)</summary>
+    DyeUnresolved,
+}
+
+/// <summary>조립 계획·조립 결과에서 찾은 문제 하나. 상태 값은 지우지 않는다.</summary>
+public sealed class PlanIssue
+{
+    /// <summary>파츠 키(head, hair, costume:Top, skinColor ...)</summary>
+    public string Key;
+    public string Label, Id, Name, Message;
+    public IssueKind Kind;
+    /// <summary>조립기(CharacterAssembler)가 조립 중에 찾은 문제(메시 누락·염색 파트 없음)</summary>
+    public bool FromBuild;
+
+    /// <summary>복원·가져오기에서 부분 복원 승인을 받아야 하는 문제. 정상적인 호환 불가는 제외한다.</summary>
+    public bool NeedsConsent => Kind != IssueKind.Incompatible;
+    /// <summary>리소스 읽기 실패. 일반 편집이 새로 만들면 편집을 확정하지 않는다.</summary>
+    public bool IsFailure => Kind == IssueKind.MissingResource;
+    public string Describe() => $"{Label} {ItemLabel.Of(Id, Name)}: {Message}";
+    public bool Same(PlanIssue o) => o != null && o.Kind == Kind && o.Key == Key && o.Id == Id && o.Message == Message;
+}
+
+/// <summary>필수 외형을 공개 기본값으로도 준비하지 못함. 편집·복원을 확정하지 않는다.</summary>
+public sealed class PlanException : Exception
+{
+    public PlanException(string message) : base(message) { }
 }
 
 public sealed class PartPlan
@@ -29,6 +73,8 @@ public sealed class PartPlan
     public string Model;
     /// <summary>이 파츠만의 슬롯 색(Slot0~5). 시트 기본색 위에 사용자 색을 덮은 결과.</summary>
     public readonly Dictionary<string, Color> SlotColors = new Dictionary<string, Color>(StringComparer.Ordinal);
+    /// <summary>사용자가 지정한 염색 슬롯. 조립 뒤 모델에 그 파트가 있는지 확인한다.</summary>
+    public readonly HashSet<string> UserSlots = new HashSet<string>(StringComparer.Ordinal);
 }
 
 public sealed class CostumeResult
@@ -45,6 +91,34 @@ public sealed class AssemblyPlan
     public readonly Dictionary<string, Color> GlobalColors = new Dictionary<string, Color>(StringComparer.Ordinal);
     public readonly List<CostumeResult> Costumes = new List<CostumeResult>();
     public readonly List<string> Notes = new List<string>();
+    /// <summary>복원 안내·편집 거절·패널 표시에 쓰는 문제 목록(계획 + 조립 결과).</summary>
+    public readonly List<PlanIssue> Issues = new List<PlanIssue>();
+    /// <summary>필수 외형의 대체 표시(원래 선택 → 공개 기본값).</summary>
+    public readonly List<AppearanceSubstitute> Substitutes = new List<AppearanceSubstitute>();
+
+    public AppearanceSubstitute Substitute(string key) => Substitutes.Find(x => x.part == key);
+
+    public void AddIssue(string key, IssueKind kind, string id, string name, string message, bool fromBuild = false)
+    {
+        var i = new PlanIssue { Key = key, Label = PartLabel(key), Kind = kind, Id = id, Name = name, Message = message, FromBuild = fromBuild };
+        if (!Issues.Exists(x => x.Same(i))) Issues.Add(i);
+    }
+
+    static readonly Dictionary<string, string> Labels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        { "body", "몸" }, { "head", "얼굴형" }, { "hair", "헤어스타일" }, { "eyes", "눈 모양" }, { "mouth", "입 모양" },
+        { "skinColor", "피부색" }, { "hairColor", "헤어 색상" }, { "eyeColor", "눈 색상" },
+        { "Hat", "모자" }, { "Top", "상의" }, { "Bottom", "하의" }, { "Robe", "로브" }, { "Gloves", "장갑" },
+        { "Shoes", "신발" }, { "EarDeco", "귀장식" }, { "EyeDeco", "눈장식" }, { "FaceDeco", "얼굴장식" }, { "Weapon", "무기" },
+    };
+
+    /// <summary>파츠 키(costume:Top 포함)·부위 이름 → 화면 이름.</summary>
+    public static string PartLabel(string key)
+    {
+        if (key == null) return "";
+        if (key.StartsWith("costume:", StringComparison.Ordinal)) key = key.Substring("costume:".Length);
+        return Labels.TryGetValue(key, out var l) ? l : key;
+    }
     public bool Male, Infant;
     /// <summary>나이와 키 조절값(-1 작게 ~ 0 보통 ~ 1 크게). 몸 .bdc 의 본 스케일·위치를 고른다.</summary>
     public int Age;
@@ -87,7 +161,8 @@ public static class PlanResolver
     public static Color ToColor(Rgba32 c) => new Color32(c.R, c.G, c.B, 255);
 
     /// <param name="previous">직전 장면의 계획. 주면 같은 무기의 넣음↔꺼냄 변경에 꺼내기·넣기 도입 클립을 붙인다.</param>
-    public static AssemblyPlan Resolve(EditState state, GameData data, InstallFiles files, AssemblyPlan previous = null)
+    public static AssemblyPlan Resolve(EditState state, GameData data, InstallFiles files, AssemblyPlan previous = null,
+        HashSet<string> failedModels = null)
     {
         var plan = new AssemblyPlan();
         var a = state.appearance ?? new AppearanceState();
@@ -96,28 +171,33 @@ public static class PlanResolver
         plan.Age = a.age;
         plan.HeightModifier = a.heightModifier;
         plan.BodyType = string.IsNullOrEmpty(a.bodyType) ? "Default" : a.bodyType;
+        if (!data.BodyTypes.ContainsKey(plan.BodyType)) plan.BodyType = "Default";
         if (data.BodyTypes.TryGetValue(plan.BodyType, out var bt) && bt.UseBlendshape) plan.BlendShape = bt.BlendshapeName;
 
         string gender = plan.Male ? "Male" : "Female";
         string body = plan.Infant ? $"Infant{gender}_Body_00" : $"{gender}_Body_00";
+        if (files.ModelDefPath(body) == null) throw new PlanException("몸 모델 정의를 설치 폴더에서 찾지 못했습니다: " + body);
         Add(plan, files, "body", PartRole.Body, body);
 
-        data.Heads.TryGetValue(a.head ?? "", out var head);
-        if (head == null) plan.Notes.Add($"얼굴 ID를 찾을 수 없습니다: {a.head}");
-        Add(plan, files, "head", PartRole.Head, head?.Model(plan.Male, plan.Infant));
+        // 필수 외형: 표시할 수 없으면 공개된 호환 기본값으로 대신 표시한다. 상태의 원래 선택은 바꾸지 않는다.
+        var preset = StateFactory.DefaultPreset(data, plan.Male);
+        var head = Required(plan, files, a.age, "head", a.head, id => data.Heads.TryGetValue(id ?? "", out var h) ? h : null,
+            data.Heads.Keys, preset?.HeadType, out string headId, failedModels);
+        Add(plan, files, "head", PartRole.Head, head.Model(plan.Male, plan.Infant));
 
-        var hair = GameData.Resolve(data.Hairs, a.hair, plan.BodyType);
-        if (hair == null && !string.IsNullOrEmpty(a.hair)) plan.Notes.Add($"헤어 ID를 찾을 수 없습니다: {a.hair}");
-        Add(plan, files, "hair", PartRole.Hair, hair?.Model(plan.Male, plan.Infant));
+        var hair = Required(plan, files, a.age, "hair", a.hair, id => GameData.Resolve(data.Hairs, id, plan.BodyType),
+            data.Hairs.Keys, preset?.Hair, out _, failedModels);
+        Add(plan, files, "hair", PartRole.Hair, hair.Model(plan.Male, plan.Infant));
 
-        var eyes = GameData.Resolve(data.Eyes, a.eyes, a.head, "Head_00");
-        if (eyes == null && !string.IsNullOrEmpty(a.eyes)) plan.Notes.Add($"눈 ID를 찾을 수 없습니다: {a.eyes}");
-        Add(plan, files, "eyes", PartRole.Eyes, eyes?.Model(plan.Male, plan.Infant));
+        // 눈·입 행은 머리형별이다. 실제로 표시하는 머리(대체값일 수 있음)로 고른다.
+        var eyes = Required(plan, files, a.age, "eyes", a.eyes, id => GameData.Resolve(data.Eyes, id, headId, "Head_00"),
+            data.Eyes.Keys, preset?.Eyes, out _, failedModels);
+        Add(plan, files, "eyes", PartRole.Eyes, eyes.Model(plan.Male, plan.Infant));
 
         // 입은 메시가 아니라 얼굴 머티리얼에 합성하는 텍스처 파츠다(CharacterAssembler.ApplyMouth).
-        var mouth = GameData.Resolve(data.Mouths, a.mouth, a.head, "Head_00");
-        if (mouth == null && !string.IsNullOrEmpty(a.mouth)) plan.Notes.Add($"입 ID를 찾을 수 없습니다: {a.mouth}");
-        Add(plan, files, "mouth", PartRole.Mouth, mouth?.Model(plan.Male, plan.Infant));
+        var mouth = Required(plan, files, a.age, "mouth", a.mouth, id => GameData.Resolve(data.Mouths, id, headId, "Head_00"),
+            data.Mouths.Keys, preset?.Mouth, out _, failedModels);
+        Add(plan, files, "mouth", PartRole.Mouth, mouth.Model(plan.Male, plan.Infant));
 
         // 외형 색: 시트 값 → 사용자 색
         void Global(string slot, Rgba32? sheet)
@@ -125,19 +205,26 @@ public static class PlanResolver
             if (ColorOverrides.TryParse(ColorOverrides.Get(a.colors, slot), out var user)) plan.GlobalColors[slot] = user;
             else if (sheet.HasValue) plan.GlobalColors[slot] = ToColor(sheet.Value);
         }
-        data.SkinColors.TryGetValue(a.skinColor ?? "", out var skin);
-        data.HairColors.TryGetValue(a.hairColor ?? "", out var hairColor);
-        data.EyeColors.TryGetValue(a.eyeColor ?? "", out var eyeColor);
-        data.MouthColors.TryGetValue(a.mouthColor ?? "", out var mouthColor);
+        var skin = SheetColor(plan, "skinColor", data.SkinColors, a.skinColor, preset?.SkinColor);
+        var hairColor = SheetColor(plan, "hairColor", data.HairColors, a.hairColor, preset?.HairColor);
+        var eyeColor = SheetColor(plan, "eyeColor", data.EyeColors, a.eyeColor, preset?.EyeColor);
+        var mouthColor = SheetColor(plan, "mouthColor", data.MouthColors, a.mouthColor, preset?.MouthColor);
+        if (a.colors != null) foreach (var c in a.colors)
+        {
+            if (c == null) continue;
+            if ((c.slot != "Skin" && c.slot != "Hair" && c.slot != "Hair1" && c.slot != "Eye" && c.slot != "Mouth") ||
+                !ColorOverrides.TryParse(c.color, out _))
+                plan.AddIssue("appearanceColors", IssueKind.DyeUnresolved, c.slot, null, "외형 색 값을 해석하지 못해 적용하지 않습니다(값 보존)");
+        }
         Global("Skin", skin?.Color1);
         Global("Hair", hairColor?.Color1);
         // 투톤 헤어의 두 번째 색. 한 가지 색(OneColor) 행의 ColorCode2 는 #000000 이므로 첫 색을 같이 쓴다[추정].
-        Global("Hair1", hair != null && hair.HairType == "TwoColor"
+        Global("Hair1", hair.HairType == "TwoColor"
             ? (hairColor != null && hairColor.Type == "TwoColor" ? hairColor.Color2 : hairColor?.Color1) : null);
         Global("Eye", eyeColor?.Color1);
         Global("Mouth", mouthColor?.Color1);
 
-        ResolveCostumes(plan, state, data, files);
+        ResolveCostumes(plan, state, data, files, failedModels);
 
         string prefix = plan.Infant ? "HC" : plan.Male ? "HM" : "HF";
         string variant = plan.BodyType == "Muscular" ? "Muscle" : plan.BodyType;
@@ -286,11 +373,92 @@ public static class PlanResolver
     static PartPlan Add(AssemblyPlan plan, InstallFiles files, string key, PartRole role, string model)
     {
         if (string.IsNullOrEmpty(model)) return null;
-        if (files.ModelDefPath(model) == null) { plan.Notes.Add($"모델 정의를 찾을 수 없습니다: {model}"); return null; }
+        if (files.ModelDefPath(model) == null)
+        {
+            plan.AddIssue(key, IssueKind.MissingResource, model, null, "모델 정의를 설치 폴더에서 찾지 못했습니다");
+            return null;
+        }
         var p = new PartPlan { Key = key, Role = role, Model = model };
         plan.Parts.Add(p);
         return p;
     }
+
+    /// <summary>
+    /// 외형 파츠를 지금 외형으로 표시할 수 없는 이유. 표시할 수 있으면 null.
+    /// asSelection: 사용자의 선택으로 보는지. 숨김 데이터는 에디터의 선택일 때만 허용하고, 대체값으로는 쓰지 않는다.
+    /// files 가 null 이면 설치 폴더 리소스 존재는 보지 않는다(목록 표시용).
+    /// </summary>
+    public static string PartProblem(AppearancePartData p, string id, bool male, bool infant, int age, InstallFiles files, bool asSelection, out IssueKind kind)
+    {
+        kind = IssueKind.Incompatible;
+        if (string.IsNullOrEmpty(id)) { kind = IssueKind.UnknownId; return "선택이 비어 있습니다"; }
+        if (p == null) { kind = IssueKind.UnknownId; return "데이터에 없는 ID입니다"; }
+        if (p.HideOnCustomize && !(asSelection && Disclosure.AllowRestricted)) { kind = IssueKind.Restricted; return Disclosure.HiddenDataReason; }
+        string model = p.Model(male, infant);
+        if (model == null) return "현재 성별·나이에 맞는 모델이 없습니다";
+        if (age > 0 && p.MinAge > age) return $"{p.MinAge}세 이상 외형입니다";
+        if (files != null && files.ModelDefPath(model) == null) { kind = IssueKind.MissingResource; return "모델 정의를 설치 폴더에서 찾지 못했습니다: " + model; }
+        return null;
+    }
+
+    /// <summary>
+    /// 필수 외형 하나. 선택을 표시할 수 있으면 그대로, 아니면 기본 프리셋 값 → 시트 순서의 첫 공개·호환 후보로 대신 표시하고 기록한다.
+    /// 정상적인 호환 불가는 대체 기록만, 없는 ID·제한·리소스 누락은 문제(Issues)로도 남긴다.
+    /// </summary>
+    static AppearancePartData Required(AssemblyPlan plan, InstallFiles files, int age, string key, string selected,
+        Func<string, AppearancePartData> lookup, IEnumerable<string> candidates, string preferred, out string shownId, HashSet<string> failedModels)
+    {
+        var p = lookup(selected);
+        string why = PartProblem(p, selected, plan.Male, plan.Infant, age, files, true, out var kind);
+        if (why == null && failedModels != null && failedModels.Contains(p.Model(plan.Male, plan.Infant)))
+        {
+            kind = IssueKind.MissingResource;
+            why = "모델의 프리팹·메시·텍스처를 정상적으로 조립하지 못했습니다";
+        }
+        if (why == null) { shownId = selected; return p; }
+        if (kind != IssueKind.Incompatible) plan.AddIssue(key, kind, selected, p?.DisplayName, why);
+        foreach (var id in Prepend(preferred, candidates))
+        {
+            if (id == selected) continue;
+            var c = lookup(id);
+            if (PartProblem(c, id, plan.Male, plan.Infant, age, files, false, out _) != null) continue;
+            if (failedModels != null && failedModels.Contains(c.Model(plan.Male, plan.Infant))) continue;
+            shownId = id;
+            plan.Substitutes.Add(new AppearanceSubstitute { part = key, selected = selected, shown = id, reason = why });
+            return c;
+        }
+        throw new PlanException($"{AssemblyPlan.PartLabel(key)}: 표시할 수 있는 공개 기본값이 없습니다({why}).");
+    }
+
+    static IEnumerable<string> Prepend(string first, IEnumerable<string> rest)
+    {
+        if (!string.IsNullOrEmpty(first)) yield return first;
+        foreach (var r in rest) if (r != first) yield return r;
+    }
+
+    /// <summary>외형 색 시트 행. 비어 있으면 원본 머티리얼 색(null). 없는 ID·제한 색은 기본 프리셋 색(공개)으로 대신 표시한다.</summary>
+    static ColorData SheetColor(AssemblyPlan plan, string key, Dictionary<string, ColorData> map, string selected, string preferred)
+    {
+        if (string.IsNullOrEmpty(selected)) return null;
+        map.TryGetValue(selected, out var c);
+        string why = null;
+        var kind = IssueKind.UnknownId;
+        if (c == null) why = "데이터에 없는 색 ID입니다";
+        else if (c.HideOnCustomize && !Disclosure.AllowRestricted) { why = Disclosure.HiddenDataReason; kind = IssueKind.Restricted; }
+        if (why == null) return c;
+        plan.AddIssue(key, kind, selected, c?.DisplayName, why);
+        foreach (var id in Prepend(preferred, map.Keys))
+        {
+            if (id == selected || !map.TryGetValue(id, out var f) || f.HideOnCustomize) continue;
+            plan.Substitutes.Add(new AppearanceSubstitute { part = key, selected = selected, shown = id, reason = why });
+            return f;
+        }
+        return null;
+    }
+
+    /// <summary>의상 염색 슬롯 이름(Slot0~5)인지. 외형 색 슬롯 이름 등은 의상 파트에 적용하지 않는다.</summary>
+    public static bool IsCostumeDyeSlot(string slot) =>
+        slot != null && slot.Length == 5 && slot.StartsWith("Slot", StringComparison.Ordinal) && slot[4] >= '0' && slot[4] <= '5';
 
     /// <summary>
     /// 패션장비 행이 현재 성별·나이에서 입을 수 있는지(설치 폴더 리소스 존재는 보지 않는다).
@@ -311,31 +479,63 @@ public static class PlanResolver
         return CostumeStatus.Applied;
     }
 
-    static void ResolveCostumes(AssemblyPlan plan, EditState state, GameData data, InstallFiles files)
+    static void ResolveCostumes(AssemblyPlan plan, EditState state, GameData data, InstallFiles files, HashSet<string> failedModels)
     {
         var hidden = new HashSet<string>(StringComparer.Ordinal);
         var applied = new List<(CostumeSlotState slot, CostumeResult res, CostumeData row)>();
 
-        foreach (var slot in state.costumes)
+        foreach (var slot in state.costumes ?? new List<CostumeSlotState>())
         {
             if (slot == null || string.IsNullOrEmpty(slot.part)) continue;
             var res = new CostumeResult { Part = slot.part, CostumeId = slot.costumeId };
             plan.Costumes.Add(res);
+            string key = AssemblyPlan.CostumeKey(slot.part);
             if (slot.kind == CostumeSlotState.KindResource)
             {
                 res.DisplayName = slot.resource;
-                if (string.IsNullOrEmpty(slot.resource) || files.ModelDefPath(slot.resource) == null) { res.Status = CostumeStatus.MissingResource; res.Detail = "리소스를 찾을 수 없습니다."; continue; }
+                // 직접 리소스는 에디터 전용이다. 공개 빌드에서는 참조·염색을 보존하고 출력하지 않는다.
+                if (!Disclosure.AllowRestricted)
+                {
+                    res.Status = CostumeStatus.Restricted; res.Detail = Disclosure.ResourceReason + ".";
+                    plan.AddIssue(key, IssueKind.Restricted, slot.resource, null, Disclosure.ResourceReason);
+                    continue;
+                }
+#if UNITY_EDITOR
+                if (string.IsNullOrEmpty(slot.resource) || files.ModelDefPath(slot.resource) == null || (failedModels?.Contains(slot.resource) ?? false))
+                {
+                    res.Status = CostumeStatus.MissingResource; res.Detail = "리소스를 찾을 수 없습니다.";
+                    plan.AddIssue(key, IssueKind.MissingResource, slot.resource, null, "모델 정의를 설치 폴더에서 찾지 못했습니다");
+                    continue;
+                }
                 res.Models.Add(slot.resource);
                 applied.Add((slot, res, null));
+#endif
                 continue;
             }
             if (string.IsNullOrEmpty(slot.costumeId)) { plan.Costumes.Remove(res); continue; }
-            if (!data.Costumes.TryGetValue(slot.costumeId, out var row)) { res.Status = CostumeStatus.UnknownId; res.Detail = "패션장비 데이터에 없는 ID입니다."; continue; }
+            if (!data.Costumes.TryGetValue(slot.costumeId, out var row))
+            {
+                res.Status = CostumeStatus.UnknownId; res.Detail = "패션장비 데이터에 없는 ID입니다.";
+                plan.AddIssue(key, IssueKind.UnknownId, slot.costumeId, null, "패션장비 데이터에 없는 ID입니다");
+                continue;
+            }
             res.DisplayName = row.DisplayName;
+            string hiddenWhy = Disclosure.CostumeReason(row);
+            if (hiddenWhy != null && !Disclosure.AllowRestricted)
+            {
+                res.Status = CostumeStatus.Restricted; res.Detail = hiddenWhy + ". 공개 빌드에서 표시하지 않습니다.";
+                plan.AddIssue(key, IssueKind.Restricted, row.Id, row.DisplayName, hiddenWhy);
+                continue;
+            }
             var fit = CheckCostume(row, plan.Male, plan.Infant, out var models, out var detail);
             if (fit != CostumeStatus.Applied) { res.Status = fit; res.Detail = detail; continue; }
-            var missing = models.Find(m => files.ModelDefPath(m) == null);
-            if (missing != null) { res.Status = CostumeStatus.MissingResource; res.Detail = "모델을 찾을 수 없습니다: " + missing; continue; }
+            var missing = models.Find(m => files.ModelDefPath(m) == null || (failedModels?.Contains(m) ?? false));
+            if (missing != null)
+            {
+                res.Status = CostumeStatus.MissingResource; res.Detail = "모델을 찾을 수 없습니다: " + missing;
+                plan.AddIssue(key, IssueKind.MissingResource, row.Id, row.DisplayName, "모델 리소스를 정상적으로 준비하지 못했습니다: " + missing);
+                continue;
+            }
             res.Models.AddRange(models);
             applied.Add((slot, res, row));
         }
@@ -348,15 +548,26 @@ public static class PlanResolver
         {
             if (hidden.Contains(slot.part)) { res.Status = CostumeStatus.HiddenByOther; res.Detail = "다른 의상에 가려졌습니다."; continue; }
             res.Status = CostumeStatus.Applied;
+            string key = AssemblyPlan.CostumeKey(slot.part);
+            string id = row?.Id ?? slot.resource;
+            // 염색: 안정적인 슬롯 이름(Slot0~5)으로만 대응한다. 해석하지 못한 값·모르는 슬롯은 보존하되 어느 파트에도 적용하지 않는다.
+            foreach (var d in slot.dyes ?? new List<ColorOverride>())
+            {
+                if (d == null) continue;
+                if (!IsCostumeDyeSlot(d.slot))
+                    plan.AddIssue(key, IssueKind.DyeUnresolved, id, res.DisplayName, $"염색 파트 {d.slot}: 알 수 없는 파트 이름이라 적용하지 않습니다(값 보존)");
+                else if (!ColorOverrides.TryParse(d.color, out _))
+                    plan.AddIssue(key, IssueKind.DyeUnresolved, id, res.DisplayName, $"염색 파트 {d.slot}: 색 값 {d.color}을(를) 해석하지 못해 적용하지 않습니다(값 보존)");
+            }
             for (int i = 0; i < res.Models.Count; i++)
             {
-                var p = Add(plan, files, AssemblyPlan.CostumeKey(slot.part), PartRole.Costume, res.Models[i]);
+                var p = Add(plan, files, key, PartRole.Costume, res.Models[i]);
                 if (p == null) continue;
                 if (row != null)
                     for (int k = 0; k < 6; k++)
                         if (row.DyeColors[k].HasValue) p.SlotColors["Slot" + k] = ToColor(row.DyeColors[k].Value);
-                foreach (var d in slot.dyes)
-                    if (ColorOverrides.TryParse(d.color, out var c)) p.SlotColors[d.slot] = c;
+                foreach (var d in slot.dyes ?? new List<ColorOverride>())
+                    if (d != null && IsCostumeDyeSlot(d.slot) && ColorOverrides.TryParse(d.color, out var c)) { p.SlotColors[d.slot] = c; p.UserSlots.Add(d.slot); }
             }
         }
     }

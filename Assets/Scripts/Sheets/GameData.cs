@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 
 public sealed class CostumeData
 {
@@ -13,6 +14,12 @@ public sealed class CostumeData
     /// <summary>DyeColor0~5. null 은 시트 기본 염색값 미지정(원본 머티리얼 값을 유지).</summary>
     public Rgba32?[] DyeColors = new Rgba32?[6];
     public int Index;
+    /// <summary>도감 공개 시각(MarketCollectionDiscloseTime). 시트 원문은 DiscloseText, 해석한 UTC 는 DiscloseUtc(해석 실패면 null).</summary>
+    public string DiscloseText;
+    public DateTime? DiscloseUtc;
+    /// <summary>판매 시작 시각(SalesStartTime). 판매 정보일 뿐 숨김·공개 판정에 쓰지 않는다.</summary>
+    public string SalesStartText;
+    public DateTime? SalesStartUtc;
 }
 
 public sealed class PresetAppearanceData
@@ -110,6 +117,73 @@ public sealed class ActionTimelineRow
     public string[] Start, Loop;
 }
 
+/// <summary>
+/// 공개 범위 판정(Equipment.md "공개 범위와 에디터 전용 리소스"). 목록·가져오기·자동 복원·실행 취소·최종 조립이 모두 이 판정을 쓴다.
+///   숨김: 외형·색 시트의 HideOnCustomize, 도감 공개 시각이 미래이거나 해석하지 못한 Costume, 시트 없는 직접 리소스.
+///   판매 시작·해금 조건(SalesStartTime, UnlockedBy*)은 숨김 판정에 쓰지 않는다. 공개 항목은 잠그지 않는다.
+/// 숨김 항목의 탐색·선택·출력은 Unity 에디터에서만 허용한다. 일반·Development 빌드에는 켜는 방법이 없다(설정·인자·JSON 모두 무시).
+/// </summary>
+public static class Disclosure
+{
+#if UNITY_EDITOR
+    /// <summary>에디터 시험용: 공개 빌드처럼 숨김 항목을 막는다. 에디터 코드에서만 존재한다.</summary>
+    public static bool SimulatePublic;
+    /// <summary>에디터 시험용 현재 시각(UTC). null 이면 실제 시각.</summary>
+    public static DateTime? NowOverride;
+    public static bool AllowRestricted => !SimulatePublic;
+    public static DateTime UtcNow => NowOverride ?? DateTime.UtcNow;
+#else
+    public static bool AllowRestricted => false;
+    public static DateTime UtcNow => DateTime.UtcNow;
+#endif
+
+    public const string ResourceReason = "시트 없는 직접 리소스는 에디터 전용이라 공개 빌드에서 표시하지 않습니다";
+    public const string HiddenDataReason = "꾸미기 숨김 데이터(에디터 전용)라 공개 빌드에서 표시하지 않습니다";
+
+    /// <summary>시트 시각 구조체(TimeZone, "yyyy-MM-dd HH:mm:ss")를 UTC 로 해석한다. 시간대는 명시된 UTC·KST(UTC+9)만 받는다.</summary>
+    public static bool TryParse(string zone, string time, out DateTime utc)
+    {
+        utc = default;
+        if (string.IsNullOrEmpty(zone) || string.IsNullOrEmpty(time)) return false;
+        TimeSpan offset;
+        switch (zone)
+        {
+            case "UTC": offset = TimeSpan.Zero; break;
+            case "KST": offset = TimeSpan.FromHours(9); break;
+            default: return false;
+        }
+        if (!DateTime.TryParseExact(time, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var local)) return false;
+        if (local.Ticks < offset.Ticks) return false;
+        utc = DateTime.SpecifyKind(local - offset, DateTimeKind.Utc);
+        return true;
+    }
+
+    public static string Describe(string zone, string time) => $"{zone ?? "?"} {time ?? "?"}";
+
+    /// <summary>Costume 이 숨김(에디터 전용)인 이유. 공개 항목이면 null. 공개 시각을 해석하지 못하면 공개 후보에서 뺀다.</summary>
+    public static string CostumeReason(CostumeData c)
+    {
+        if (c == null) return null;
+        if (c.DiscloseUtc == null) return $"도감 공개 시각을 해석하지 못한 항목(에디터 전용)입니다: {c.DiscloseText}";
+        if (c.DiscloseUtc.Value > UtcNow) return $"도감 공개 전 항목(에디터 전용)입니다: 공개 {c.DiscloseText}";
+        return null;
+    }
+
+    public static bool IsHidden(CostumeData c) => CostumeReason(c) != null;
+}
+
+/// <summary>아이템 표기(Equipment.md): `데이터ID - 이름`, 숨김 항목은 `[숨김] 데이터ID - 이름`.</summary>
+public static class ItemLabel
+{
+    public const string HiddenPrefix = "[숨김] ";
+
+    public static string Of(string id, string name, bool hidden = false)
+    {
+        string core = string.IsNullOrEmpty(id) ? (name ?? "") : string.IsNullOrEmpty(name) || name == id ? id : id + " - " + name;
+        return hidden ? HiddenPrefix + core : core;
+    }
+}
+
 public sealed class GameData
 {
     public readonly Dictionary<string, CostumeData> Costumes = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
@@ -167,6 +241,10 @@ public sealed class GameData
                 EquippableCombatJobs = r.Strs("EquippableCombatJobs"),
             };
             for (int i = 0; i < 6; i++) c.DyeColors[i] = r.Color("DyeColor" + i);
+            c.DiscloseText = Disclosure.Describe(r.Str("DiscloseZone"), r.Str("DiscloseTime"));
+            c.DiscloseUtc = Disclosure.TryParse(r.Str("DiscloseZone"), r.Str("DiscloseTime"), out var du) ? du : (DateTime?)null;
+            c.SalesStartText = Disclosure.Describe(r.Str("SalesStartZone"), r.Str("SalesStartTime"));
+            c.SalesStartUtc = Disclosure.TryParse(r.Str("SalesStartZone"), r.Str("SalesStartTime"), out var su) ? su : (DateTime?)null;
             if (c.Id == null) continue;
             g.Costumes[c.Id] = c;
             g.CostumeList.Add(c);
@@ -467,13 +545,12 @@ public sealed class GameData
         }
     }
 
-    /// <summary>그룹 행 중 variant(체형·머리형)에 맞는 행. 없으면 Default, 그것도 없으면 첫 행.</summary>
+    /// <summary>그룹 행 중 현재 체형·머리형 또는 명시된 기본 변형. 관계없는 첫 행을 대신 쓰지 않는다.</summary>
     public static AppearancePartData Resolve(Dictionary<string, Dictionary<string, AppearancePartData>> map, string group, string variant, string fallbackVariant = "Default")
     {
         if (group == null || !map.TryGetValue(group, out var d) || d.Count == 0) return null;
         if (variant != null && d.TryGetValue(variant, out var p)) return p;
         if (fallbackVariant != null && d.TryGetValue(fallbackVariant, out p)) return p;
-        foreach (var v in d.Values) return v;
         return null;
     }
 }

@@ -20,7 +20,7 @@ public static class BuildPlayer
                 scenes = new[] { ProjectSetup.ScenePath },
                 locationPathName = Path.Combine(outDir, "MobiAtelier.exe"),
                 target = BuildTarget.StandaloneWindows64,
-                options = BuildOptions.None,
+                options = CommandLine.Value("-maBuildKind") == "development" ? BuildOptions.Development : BuildOptions.None,
             });
             var s = report.summary;
             Debug.Log($"[MobiAtelier] 빌드 {s.result}, 오류 {s.totalErrors}, 경고 {s.totalWarnings}, {s.totalSize / 1048576.0:F1}MB, {s.totalTime.TotalSeconds:F0}초, {Path.GetFullPath(outDir)}");

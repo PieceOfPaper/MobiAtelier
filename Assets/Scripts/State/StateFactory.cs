@@ -32,16 +32,20 @@ public static class StateFactory
         return s;
     }
 
-    /// <summary>초보자 의상을 입힌다. 시트에 없는 ID 는 건너뛴다(빈 부위로 둔다).</summary>
+    /// <summary>
+    /// 초보자 의상을 입힌다. 시트에 없는 ID 도 그대로 넣는다. 조립 계획이 없는 ID 로 보고하므로
+    /// 새 작업·초기화는 빈 의상을 정상 결과로 확정하지 않고 실패를 안내한다(Startup.md "최초 착용 의상").
+    /// </summary>
     public static EditState WithStarterCostumes(GameData data, EditState s)
     {
         foreach (var (part, id) in StarterCostumes)
-        {
-            if (!data.Costumes.ContainsKey(id)) continue;
             s.costumes.Add(new CostumeSlotState { part = part, kind = CostumeSlotState.KindCostume, costumeId = id });
-        }
         return s;
     }
+
+    /// <summary>현재 성별의 기본 외형 프리셋(필수 외형 대체값의 첫 후보). 없으면 null.</summary>
+    public static PresetAppearanceData DefaultPreset(GameData data, bool male) =>
+        data.Presets.TryGetValue(male ? DefaultPresets[0] : DefaultPresets[1], out var p) ? p : null;
 
     /// <summary>CharacterPresetAppearance 행의 외형·색 조합을 그대로 초기 상태로 쓴다. 의상은 비워 둔다(WithStarterCostumes 로 입힌다).</summary>
     public static EditState FromPreset(GameData data, string presetId)

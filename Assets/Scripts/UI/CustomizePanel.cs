@@ -9,7 +9,10 @@
 //
 // 색(사용자 결정 2026-11-02):
 //   피부·헤어·눈 색은 게임 색 시트(CharacterSkinColor·HairColor·EyeColor)의 행을 검색 드롭다운으로 고른다.
-//   꾸미기 숨김 행은 후보에서 빼고, 현재 선택이면 흐리게 남긴다.
+//   꾸미기 숨김 행은 공개 빌드 후보에서 빼고, 현재 선택이면 흐리게 남긴다. 에디터에서는 [숨김] 표기로 함께 보인다.
+//
+// 표기(Equipment.md): 모든 후보·선택 필드는 `데이터ID - 이름`, 숨김(에디터 전용) 항목은 `[숨김] 데이터ID - 이름`이다. 이름·ID 로 검색된다.
+// 필수 외형을 표시할 수 없으면 조립 계획이 공개 기본값으로 대신 표시한다. 선택 필드에는 원래 선택을 두고 대체·사유를 상태 줄에 쓴다.
 //   의상 염색은 표시 중인 의상의 실제 염색 파트(모델 DyeInfo 에 연결이 있는 Slot0~5)만 견본으로 보이고,
 //   견본을 누르면 컬러피커(ColorPicker)를 연다. 색만 바뀌는 편집은 다시 조립하지 않는다(editColors).
 using System;
@@ -329,28 +332,25 @@ public sealed class CustomizePanel
 
         var look = Section("appearance");
         look.Add(Row("성별", Choice(GenderItems, () => state.appearance.gender, Gender, (s, id) => s.appearance.gender = id), null));
-        look.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, BodyTypeName, (s, id) => s.appearance.bodyType = id), null));
+        look.Add(Row("체형", Choice(BodyTypeItems, () => state.appearance.bodyType, id => ItemLabel.Of(id, BodyTypeName(id)), (s, id) => s.appearance.bodyType = id), null));
         look.Add(Row("나이", Choice(AgeItems, () => state.appearance.age.ToString(), id => id + "세",
             (s, id) => s.appearance.age = int.Parse(id)), null));
         HeightRow(look);
-        ColorRow(look, "피부색", () => data.SkinColors, () => state.appearance.skinColor, new[] { "Skin" }, null,
+        ColorRow(look, "피부색", "skinColor", () => data.SkinColors, () => state.appearance.skinColor, new[] { "Skin" }, null,
             (s, id) => s.appearance.skinColor = id);
 
-        AppearanceRow(look, "얼굴형", HeadItems, () => state.appearance.head, HeadIssue, (s, id) => s.appearance.head = id,
-            id => data.Heads.TryGetValue(id ?? "", out var h) ? h.DisplayName : null);
-        AppearanceRow(look, "헤어스타일", () => GroupItems(data.Hairs, state.appearance.hair, HairVariant, "Default"),
-            () => state.appearance.hair, () => GroupIssue(data.Hairs, state.appearance.hair, HairVariant(), "Default"),
-            (s, id) => s.appearance.hair = id, id => GameData.Resolve(data.Hairs, id, HairVariant())?.DisplayName);
-        ColorRow(look, "헤어 색상", () => data.HairColors, () => state.appearance.hairColor, new[] { "Hair", "Hair1" }, HairColorIssue,
+        AppearanceRow(look, "얼굴형", "head", HeadItems, () => state.appearance.head, (s, id) => s.appearance.head = id,
+            id => data.Heads.TryGetValue(id ?? "", out var h) ? h : null);
+        AppearanceRow(look, "헤어스타일", "hair", () => GroupItems(data.Hairs, state.appearance.hair, HairVariant, "Default"),
+            () => state.appearance.hair, (s, id) => s.appearance.hair = id, id => GameData.Resolve(data.Hairs, id, HairVariant()));
+        ColorRow(look, "헤어 색상", "hairColor", () => data.HairColors, () => state.appearance.hairColor, new[] { "Hair", "Hair1" }, HairColorIssue,
             (s, id) => s.appearance.hairColor = id);
-        AppearanceRow(look, "눈 모양", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
-            () => state.appearance.eyes, () => GroupIssue(data.Eyes, state.appearance.eyes, HeadVariant(), "Head_00"),
-            (s, id) => s.appearance.eyes = id, id => GameData.Resolve(data.Eyes, id, HeadVariant(), "Head_00")?.DisplayName);
-        ColorRow(look, "눈 색상", () => data.EyeColors, () => state.appearance.eyeColor, new[] { "Eye" }, null,
+        AppearanceRow(look, "눈 모양", "eyes", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
+            () => state.appearance.eyes, (s, id) => s.appearance.eyes = id, id => GameData.Resolve(data.Eyes, id, HeadVariant(), "Head_00"));
+        ColorRow(look, "눈 색상", "eyeColor", () => data.EyeColors, () => state.appearance.eyeColor, new[] { "Eye" }, null,
             (s, id) => s.appearance.eyeColor = id);
-        AppearanceRow(look, "입 모양", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
-            () => state.appearance.mouth, () => GroupIssue(data.Mouths, state.appearance.mouth, HeadVariant(), "Head_00"),
-            (s, id) => s.appearance.mouth = id, id => GameData.Resolve(data.Mouths, id, HeadVariant(), "Head_00")?.DisplayName);
+        AppearanceRow(look, "입 모양", "mouth", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
+            () => state.appearance.mouth, (s, id) => s.appearance.mouth = id, id => GameData.Resolve(data.Mouths, id, HeadVariant(), "Head_00"));
 
         var wear = Section("costume");
         foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
@@ -572,19 +572,52 @@ public sealed class CustomizePanel
         parent.Add(Row("키", box, null));
     }
 
-    void AppearanceRow(VisualElement parent, string label, Func<List<DropdownItem>> items, Func<string> current, Func<string> issue,
-        Action<EditState, string> set, Func<string, string> name)
+    /// <summary>
+    /// 필수 외형 줄. 선택 필드에는 사용자의 원래 선택을 보이고, 조립 계획이 공개 기본값으로 대신 표시하면 그 값과 사유를 상태 줄에 쓴다.
+    /// 다른 항목을 직접 고르면 원래 선택 필드가 바뀌므로 보관값은 더 이상 쓰이지 않는다.
+    /// </summary>
+    void AppearanceRow(VisualElement parent, string label, string key, Func<List<DropdownItem>> items, Func<string> current,
+        Action<EditState, string> set, Func<string, AppearancePartData> row)
     {
         var status = StatusLabel();
         var dd = Dropdown(items, it => edit(s => set(s, it.Id)));
         refreshers.Add(() =>
         {
             string id = current();
-            string problem = issue();
-            dd.SetValue(id, name(id) ?? id ?? "(없음)", id, problem != null ? AppUI.ErrorColor : (Color?)null);
-            SetStatus(status, problem, AppUI.ErrorColor);
+            var p = row(id);
+            var (text, error) = PlanStatus(key);
+            string sub = SubstituteSub(key);
+            dd.SetValue(id, string.IsNullOrEmpty(id) ? "(없음)" : PartLabel(id, p), sub,
+                text != null ? (error ? AppUI.ErrorColor : AppUI.WarnColor) : (Color?)null);
+            SetStatus(status, text, error ? AppUI.ErrorColor : AppUI.WarnColor);
         });
         parent.Add(Row(label, dd, status));
+    }
+
+    /// <summary>대체 표시 중이면 선택 필드 보조 표시 "표시: ID - 이름".</summary>
+    string SubstituteSub(string key)
+    {
+        var sub = plan?.Substitute(key);
+        return sub == null ? null : "표시: " + RestoreCheck.ShownLabel(data, sub).Replace("기본값 ", "");
+    }
+
+    /// <summary>조립 계획의 이 파츠 상태 문구. 제한·없는 ID·리소스 누락이면 error=true(빨강), 정상적인 호환 불가 대체는 노랑.</summary>
+    (string text, bool error) PlanStatus(string key)
+    {
+        if (plan == null) return (null, false);
+        var lines = new List<string>();
+        bool error = false;
+        var sub = plan.Substitute(key);
+        if (sub != null)
+            lines.Add($"{sub.reason}. {RestoreCheck.ShownLabel(data, sub)}을(를) 대신 표시합니다. 원래 선택은 보관하며 표시할 수 있는 외형으로 돌아오면 다시 표시합니다.");
+        foreach (var i in plan.Issues)
+        {
+            if (i.Key != key) continue;
+            if (i.Kind != IssueKind.Incompatible) error = true;
+            if (sub != null && i.Message == sub.reason) continue;
+            lines.Add(i.Message + ".");
+        }
+        return (lines.Count == 0 ? null : string.Join("\n", lines), error);
     }
 
     void CostumeRow(VisualElement parent, string part, string label)
@@ -610,22 +643,32 @@ public sealed class CustomizePanel
             }
             bool resource = slot.kind == CostumeSlotState.KindResource;
             string id = resource ? slot.resource : slot.costumeId;
-            string name = resource ? slot.resource : data.Costumes.TryGetValue(slot.costumeId, out var row) ? row.DisplayName : null;
+            data.Costumes.TryGetValue(resource ? "" : slot.costumeId ?? "", out var row);
+            // 직접 리소스·미공개 의상은 에디터 전용이라 [숨김] 을 붙인다. 가림·미적용 표시는 접두사와 따로 상태 줄에 쓴다.
+            string name = ItemLabel.Of(id, row?.DisplayName, resource || Disclosure.IsHidden(row));
             Color? color = null;
-            string text = null;
+            var lines = new List<string>();
             Color statusColor = AppUI.ErrorColor;
             if (res != null && res.Status == CostumeStatus.HiddenByOther)
             {
-                text = "다른 의상에 가려져 표시하지 않습니다. 선택과 염색은 유지합니다.";
+                lines.Add("다른 의상에 가려져 표시하지 않습니다. 선택과 염색은 유지합니다.");
                 statusColor = AppUI.WarnColor;
             }
             else if (res != null && res.Status != CostumeStatus.Applied)
             {
                 color = AppUI.ErrorColor;
-                text = "적용되지 않음: " + res.Detail + " 선택과 염색은 유지합니다.";
+                lines.Add("적용되지 않음: " + res.Detail + " 선택과 염색은 유지합니다.");
             }
-            dd.SetValue(resource ? null : id, name ?? id, resource ? "리소스 " + id : id, color);
-            SetStatus(status, text, statusColor);
+            // 조립 결과의 문제(메시 누락·염색 파트 없음·해석하지 못한 염색값). 미적용이면 미적용 사유만 보인다.
+            if (plan != null && (res == null || res.Status == CostumeStatus.Applied || res.Status == CostumeStatus.HiddenByOther))
+                foreach (var i in plan.Issues)
+                    if (i.Key == AssemblyPlan.CostumeKey(part))
+                    {
+                        lines.Add(i.Message + ".");
+                        if (i.IsFailure) { color = AppUI.ErrorColor; statusColor = AppUI.ErrorColor; }
+                    }
+            dd.SetValue(resource ? null : id, name, resource ? "직접 리소스" : null, color);
+            SetStatus(status, lines.Count == 0 ? null : string.Join("\n", lines), statusColor);
         });
         var box = Row(label, dd, status);
         box.Add(dyes);
@@ -805,7 +848,7 @@ public sealed class CustomizePanel
     /// <summary>
     /// 색 시트 행을 고르는 줄. 고르면 해당 외형 색 슬롯의 사용자 지정 색(예전 JSON 에 있을 수 있음)을 지운다.
     /// </summary>
-    void ColorRow(VisualElement parent, string label, Func<Dictionary<string, ColorData>> map, Func<string> current, string[] slots,
+    void ColorRow(VisualElement parent, string label, string key, Func<Dictionary<string, ColorData>> map, Func<string> current, string[] slots,
         Func<ColorData, string> mismatch, Action<EditState, string> set)
     {
         var status = StatusLabel();
@@ -827,14 +870,16 @@ public sealed class CustomizePanel
                 SetStatus(status, null, AppUI.Sub);
                 return;
             }
-            string problem = c == null ? (string.IsNullOrEmpty(id) ? null : "데이터에 없는 색 ID입니다.") : mismatch?.Invoke(c);
-            dd.SetValue(id, c != null ? ColorName(c) : id ?? "(없음)", c != null ? ColorHex(c) : null, null, c != null ? Swatches(c) : null);
-            SetStatus(status, problem, AppUI.WarnColor);
+            var (planText, error) = PlanStatus(key);
+            string problem = planText ?? (c != null ? mismatch?.Invoke(c) : null);
+            string sub = SubstituteSub(key) ?? (c != null ? ColorHex(c) : null);
+            dd.SetValue(id, c != null ? ColorLabel(c) : id ?? "(없음)", sub, error ? AppUI.ErrorColor : (Color?)null, c != null ? Swatches(c) : null);
+            SetStatus(status, problem, error ? AppUI.ErrorColor : AppUI.WarnColor);
         });
         parent.Add(Row(label, dd, status));
     }
 
-    static string ColorName(ColorData c) => string.IsNullOrEmpty(c.DisplayName) ? c.Id : c.DisplayName;
+    static string ColorLabel(ColorData c) => ItemLabel.Of(c.Id, c.DisplayName, c.HideOnCustomize);
 
     static Color[] Swatches(ColorData c)
     {
@@ -850,18 +895,22 @@ public sealed class CustomizePanel
         return sw.Length == 0 ? c.Id : string.Join(" ", Array.ConvertAll(sw, ColorOverrides.ToHex));
     }
 
-    /// <summary>꾸미기 숨김 행은 빼고, 현재 선택이면 흐리게 남긴다. 보조 표시에 HEX 를 써서 코드로도 검색된다.</summary>
+    /// <summary>
+    /// 꾸미기 숨김 행은 공개 빌드에서 빼고 현재 선택이면 흐리게 남긴다. 에디터에서는 [숨김] 으로 보이고 고를 수 있다.
+    /// 보조 표시에 HEX 를 써서 코드로도 검색된다.
+    /// </summary>
     List<DropdownItem> ColorItems(Dictionary<string, ColorData> map, string current, Func<ColorData, string> mismatch)
     {
         var items = new List<DropdownItem>();
         foreach (var c in map.Values)
         {
-            if (c.HideOnCustomize && c.Id != current) continue;
+            bool blocked = c.HideOnCustomize && !Disclosure.AllowRestricted;
+            if (blocked && c.Id != current) continue;
             string why = mismatch?.Invoke(c);
             items.Add(new DropdownItem
             {
-                Id = c.Id, Name = ColorName(c), Sub = why != null ? why + " " + ColorHex(c) : ColorHex(c),
-                Dim = c.HideOnCustomize || why != null, Swatches = Swatches(c),
+                Id = c.Id, Name = ColorLabel(c), Sub = why != null ? why + " " + ColorHex(c) : ColorHex(c),
+                Dim = blocked || why != null, Swatches = Swatches(c),
             });
         }
         return items;
@@ -963,7 +1012,7 @@ public sealed class CustomizePanel
     List<DropdownItem> BodyTypeItems()
     {
         var items = new List<DropdownItem>();
-        foreach (var b in data.BodyTypes.Values) items.Add(new DropdownItem { Id = b.Id, Name = BodyTypeName(b.Id) });
+        foreach (var b in data.BodyTypes.Values) items.Add(new DropdownItem { Id = b.Id, Name = ItemLabel.Of(b.Id, BodyTypeName(b.Id)) });
         return items;
     }
 
@@ -978,18 +1027,27 @@ public sealed class CustomizePanel
         return items;
     }
 
-    /// <summary>후보로 보일 파츠인지. 꾸미기 숨김 행, 현재 성별·나이에 모델이 없는 행, 최소 나이 미달 행은 뺀다.</summary>
-    bool Usable(AppearancePartData p) =>
-        p != null && !p.HideOnCustomize && p.Model(Male, Infant) != null && (state.appearance.age <= 0 || p.MinAge <= state.appearance.age);
+    /// <summary>
+    /// 후보로 고를 수 있는 파츠인지. 현재 성별·나이에 모델이 없는 행, 최소 나이 미달 행은 흐리게, 꾸미기 숨김 행은 공개 빌드에서 뺀다.
+    /// 판정은 조립 계획과 같은 PlanResolver.PartProblem 이다(리소스 존재는 고를 때 조립에서 확인).
+    /// </summary>
+    bool Usable(AppearancePartData p, string id) =>
+        PlanResolver.PartProblem(p, id, Male, Infant, state.appearance.age, null, true, out _) == null;
 
-    /// <summary>현재 선택은 후보 조건에 맞지 않아도 목록에 남긴다(선택 보존, 흐리게).</summary>
+    static bool Listed(AppearancePartData p, string id, string current) =>
+        p != null && (!p.HideOnCustomize || Disclosure.AllowRestricted || id == current);
+
+    static string PartLabel(string id, AppearancePartData p) => ItemLabel.Of(id, p?.DisplayName, p != null && p.HideOnCustomize);
+
+    /// <summary>현재 선택은 후보 조건에 맞지 않아도 목록에 남긴다(선택 보존, 흐리게). 에디터의 숨김 항목은 [숨김] 으로 남긴다.</summary>
     List<DropdownItem> HeadItems()
     {
         var items = new List<DropdownItem>();
         foreach (var h in data.Heads.Values)
         {
-            bool ok = Usable(h);
-            if (ok || h.Id == state.appearance.head) items.Add(new DropdownItem { Id = h.Id, Name = h.DisplayName ?? h.Id, Sub = h.Id, Dim = !ok });
+            if (!Listed(h, h.Id, state.appearance.head)) continue;
+            bool ok = Usable(h, h.Id);
+            if (ok || h.Id == state.appearance.head || h.HideOnCustomize) items.Add(new DropdownItem { Id = h.Id, Name = PartLabel(h.Id, h), Dim = !ok });
         }
         return items;
     }
@@ -1000,35 +1058,31 @@ public sealed class CustomizePanel
         string v = variant();
         foreach (var kv in map)
         {
+            // 같은 논리 후보의 변형 행은 현재 외형(체형·얼굴형)에 대응하는 행으로 판정한다.
             var p = GameData.Resolve(map, kv.Key, v, fallback);
-            bool ok = Usable(p);
-            if (ok || kv.Key == current) items.Add(new DropdownItem { Id = kv.Key, Name = p?.DisplayName ?? kv.Key, Sub = kv.Key, Dim = !ok });
+            if (!Listed(p, kv.Key, current)) continue;
+            bool ok = Usable(p, kv.Key);
+            if (ok || kv.Key == current || p.HideOnCustomize) items.Add(new DropdownItem { Id = kv.Key, Name = PartLabel(kv.Key, p), Dim = !ok });
         }
         return items;
     }
 
-    /// <summary>선택한 외형 파츠를 지금 외형으로 표시할 수 없는 이유. 문제 없으면 null.</summary>
-    string PartIssue(AppearancePartData p, string id)
-    {
-        if (string.IsNullOrEmpty(id)) return null;
-        if (p == null) return "데이터에 없는 ID입니다.";
-        if (p.Model(Male, Infant) == null) return "현재 성별·나이에 맞는 모델이 없어 표시하지 않습니다. 선택은 유지합니다.";
-        return null;
-    }
-
-    string HeadIssue() => PartIssue(data.Heads.TryGetValue(state.appearance.head ?? "", out var h) ? h : null, state.appearance.head);
-
-    string GroupIssue(Dictionary<string, Dictionary<string, AppearancePartData>> map, string id, string variant, string fallback) =>
-        PartIssue(GameData.Resolve(map, id, variant, fallback), id);
-
+    /// <summary>
+    /// 부위별 의상 후보. 미공개(도감 공개 전·공개 시각 해석 실패) 의상은 공개 빌드에서 빼고(현재 선택이면 흐리게 남김),
+    /// 에디터에서는 [숨김] 으로 보인다. 현재 외형에 맞지 않는 항목은 흐리게 보이며 고를 수 있다(선택 보존 정책).
+    /// </summary>
     List<DropdownItem> CostumeItems(string part)
     {
         var items = new List<DropdownItem> { new DropdownItem { Id = null, Name = "(착용 안 함)" } };
+        string current = state.Costume(part)?.costumeId;
         foreach (var c in data.CostumeList)
         {
             if (c.CostumeType != part) continue;
+            bool hidden = Disclosure.IsHidden(c);
+            bool blocked = hidden && !Disclosure.AllowRestricted;
+            if (blocked && c.Id != current) continue;
             bool fits = PlanResolver.CheckCostume(c, Male, Infant, out _, out _) == CostumeStatus.Applied;
-            items.Add(new DropdownItem { Id = c.Id, Name = string.IsNullOrEmpty(c.DisplayName) ? c.Id : c.DisplayName, Sub = c.Id, Dim = !fits });
+            items.Add(new DropdownItem { Id = c.Id, Name = ItemLabel.Of(c.Id, c.DisplayName, hidden), Dim = !fits || blocked });
         }
         return items;
     }

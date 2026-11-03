@@ -27,9 +27,10 @@
 
 ## 4. 환경
 
-- Windows 11, Unity **6000.3.27f2**, URP 17, Input System 1.12. 에디터 경로: `C:\Program Files\Unity\Hub\Editor\6000.3.27f2\Editor\Unity.exe`.
+- Windows 11, Unity **6000.3.27f2**, URP 17, Input System 1.20.1. 에디터 경로: `C:\Program Files\Unity\Hub\Editor\6000.3.27f2\Editor\Unity.exe`.
 - C# 언어 버전은 Unity가 정한 9.0이다. 그보다 새 문법을 쓰지 않는다.
 - 셸은 PowerShell 5.1 또는 Git Bash. .NET SDK 10, Python 3.13이 있다.
+- PowerShell에서 `codex`가 `codex.ps1` 실행 정책 오류로 막히면 `codex.cmd`를 쓴다. 실행 정책을 바꿀 필요는 없다.
 - 파일 인코딩은 UTF-8이다. 한글이 많으므로 파이썬은 `-X utf8`로 실행한다. 콘솔 한글이 깨져 보여도 파일은 정상일 수 있다.
 
 ## 5. Unity 작업 규칙

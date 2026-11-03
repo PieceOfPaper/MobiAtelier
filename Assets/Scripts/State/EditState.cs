@@ -23,7 +23,7 @@ public class EditState
 
     public CostumeSlotState Costume(string part)
     {
-        foreach (var c in costumes) if (c.part == part) return c;
+        if (costumes != null) foreach (var c in costumes) if (c != null && c.part == part) return c;
         return null;
     }
 
@@ -50,6 +50,24 @@ public class AppearanceState
     public string skinColor, hairColor, eyeColor, mouthColor;
     /// <summary>외형 색 슬롯(Skin, Hair, Hair1, Eye, Mouth)의 사용자 지정 색. 없으면 색상 시트 값을 쓴다.</summary>
     public List<ColorOverride> colors = new List<ColorOverride>();
+    /// <summary>
+    /// 필수 외형의 대체 표시 기록(Appearance.md "연동 처리"). 위의 head·hair·eyes·mouth·색 필드는 항상 사용자의 원래 논리 선택이다.
+    /// 현재 외형과 호환되지 않거나 공개 빌드에서 제한된 선택은 그 값을 보관한 채 공개된 호환 기본값으로 표시하며, 그 결과를 여기에 적는다.
+    /// 조립할 때마다 현재 데이터·실행 환경으로 다시 계산해 덮어쓴다. 파일의 값으로 제한을 풀거나 표시를 정하지 않는다(참고용).
+    /// </summary>
+    public List<AppearanceSubstitute> substitutes = new List<AppearanceSubstitute>();
+}
+
+[Serializable]
+public class AppearanceSubstitute
+{
+    /// <summary>head, hair, eyes, mouth, skinColor, hairColor, eyeColor</summary>
+    public string part;
+    /// <summary>보관 중인 원래 선택 ID(비어 있을 수 있음)</summary>
+    public string selected;
+    /// <summary>대신 표시하는 공개 기본값 ID</summary>
+    public string shown;
+    public string reason;
 }
 
 [Serializable]
@@ -115,14 +133,14 @@ public static class ColorOverrides
     public static string Get(List<ColorOverride> list, string slot)
     {
         if (list == null) return null;
-        foreach (var c in list) if (c.slot == slot) return c.color;
+        foreach (var c in list) if (c != null && c.slot == slot) return c.color;
         return null;
     }
 
     public static void Set(List<ColorOverride> list, string slot, string color)
     {
         for (int i = 0; i < list.Count; i++)
-            if (list[i].slot == slot)
+            if (list[i] != null && list[i].slot == slot)
             {
                 if (color == null) list.RemoveAt(i); else list[i].color = color;
                 return;

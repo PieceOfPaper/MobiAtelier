@@ -37,11 +37,7 @@ public sealed class StudioBackground
     public static bool Selectable(StudioBackgroundData b)
     {
         if (b == null || b.UseWebCam || !string.IsNullOrEmpty(b.Url)) return false;
-#if UNITY_EDITOR
-        return true;
-#else
-        return !b.DevOnly;
-#endif
+        return !b.DevOnly || Disclosure.AllowRestricted;
     }
 
     /// <summary>저장된 ID 를 실제로 쓸 배경으로 푼다. 없거나 고를 수 없으면 기본 배경, 그것도 없으면 첫 후보.</summary>
@@ -60,51 +56,92 @@ public sealed class StudioBackground
 
     /// <summary>
     /// 배경을 바꾼다. 새 배경을 먼저 준비한 뒤 성공하면 이전 배경과 교체한다(Background.md 7장 1).
-    /// 3D 프리팹을 하나도 열지 못하면: keepOnFailure 면 이전 배경·CurrentId 를 그대로 두고 LastFailed 를 켠다(편집 중 새 선택),
+    /// 3D 프리팹 중 하나라도 열지 못하면: keepOnFailure 면 이전 배경·CurrentId 를 그대로 두고 LastFailed 를 켠다(편집 중 새 선택),
     /// 아니면 색 배경으로 대체해 그린다(시작 복원·가져오기의 대체 표시). 어느 쪽이든 사유를 돌려준다.
     /// </summary>
     public string Apply(StudioBackgroundData b, bool keepOnFailure = false)
     {
-        LastFailed = false;
-        string error = null;
-        if (b != null && b.Is3D)
+        using (var prepared = Prepare(b, keepOnFailure))
         {
-            var fresh = new List<GameObject>();
-            foreach (var rel in b.Prefabs)
-            {
-                var go = Spawn(rel);
-                if (go) fresh.Add(go);
-                else error = "배경 리소스를 열지 못했습니다: " + rel;
-            }
-            if (fresh.Count > 0)
-            {
-                Clear();
-                spawned.AddRange(fresh);
-                CurrentId = b.Id;
-                foreach (var go in spawned) occluders.AddRange(go.GetComponentsInChildren<Renderer>(true));
-                // 3D 배경 뒤에도 시트의 네 모서리 색을 깐다(3D 행은 모두 흰색).
-                // '공간의 틈: 빛'의 구름 하늘(SkyLit)은 아직 그려지지 않아 이 색이 하늘로 보인다 [미확인: 원인].
-                SetGradient(b);
-                cam.farClipPlane = FarFar;
-                return error;
-            }
-            if (keepOnFailure)
-            {
-                LastFailed = true;
-                return error ?? "배경 리소스가 없습니다.";
-            }
+            LastFailed = prepared.Failed;
+            if (!prepared.Failed) Commit(prepared);
+            return prepared.Error;
         }
-        var floor = Spawn(ShadowReceiverPath);
+    }
+
+    /// <summary>승인 전에는 렌더링·카메라·현재 배경을 바꾸지 않는 준비본.</summary>
+    public sealed class Prepared : IDisposable
+    {
+        internal readonly List<GameObject> Objects = new List<GameObject>();
+        internal StudioBackgroundData Data;
+        internal bool Is3D;
+        public string Error;
+        public bool Failed;
+        public void Dispose()
+        {
+            foreach (var go in Objects) if (go)
+            {
+                go.SetActive(false);
+                if (Application.isPlaying) UnityEngine.Object.Destroy(go);
+                else UnityEngine.Object.DestroyImmediate(go);
+            }
+            Objects.Clear();
+        }
+    }
+
+    public Prepared Prepare(StudioBackgroundData b, bool keepOnFailure = false)
+    {
+        var result = new Prepared { Data = b };
+        try
+        {
+            string error = null;
+            if (b != null && b.Is3D)
+            {
+                foreach (var rel in b.Prefabs)
+                {
+                    var go = Spawn(rel);
+                    if (go) { go.SetActive(false); result.Objects.Add(go); }
+                    else error = "배경 리소스를 열지 못했습니다: " + rel;
+                }
+                if (result.Objects.Count > 0 && error == null)
+                {
+                    result.Is3D = true;
+                    return result;
+                }
+                result.Dispose();
+                result.Error = error ?? "배경 리소스가 없습니다.";
+                if (keepOnFailure)
+                {
+                    result.Failed = true;
+                    return result;
+                }
+            }
+            var floor = Spawn(ShadowReceiverPath);
+            if (floor)
+            {
+                floor.transform.position = Vector3.zero;       // 원본 프리팹은 y = -100 에 숨겨 두고 게임이 옮긴다.
+                floor.SetActive(false);
+                result.Objects.Add(floor);
+            }
+            return result;
+        }
+        catch { result.Dispose(); throw; }
+    }
+
+    public void Commit(Prepared prepared)
+    {
+        if (prepared == null || prepared.Failed) throw new InvalidOperationException("배경 준비가 완료되지 않았습니다.");
         Clear();
-        if (floor)
+        spawned.AddRange(prepared.Objects);
+        prepared.Objects.Clear();
+        foreach (var go in spawned)
         {
-            floor.transform.position = Vector3.zero;       // 원본 프리팹은 y = -100 에 숨겨 두고 게임이 옮긴다.
-            spawned.Add(floor);
+            go.SetActive(true);
+            if (prepared.Is3D) occluders.AddRange(go.GetComponentsInChildren<Renderer>(true));
         }
-        CurrentId = b?.Id;
-        SetGradient(b);
-        cam.farClipPlane = NearFar;
-        return error;
+        CurrentId = prepared.Data?.Id;
+        SetGradient(prepared.Data);
+        cam.farClipPlane = prepared.Is3D ? FarFar : NearFar;
     }
 
     /// <summary>
@@ -180,6 +217,7 @@ public sealed class StudioBackground
         foreach (var go in spawned)
             if (go)
             {
+                go.SetActive(false);
                 if (Application.isPlaying && !immediate) UnityEngine.Object.Destroy(go);
                 else UnityEngine.Object.DestroyImmediate(go);     // 종료·에디터 배치 시험
             }

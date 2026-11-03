@@ -64,10 +64,14 @@ public sealed class SheetSchema
 
 public static class SheetSchemas
 {
+    /// <summary>
+    /// 패션장비. SalesStartTime·MarketCollectionDiscloseTime 은 (TimeZone 열거형, "yyyy-MM-dd HH:mm:ss") 구조체다.
+    /// 도감 공개 시각(Disclose*)은 공개 판정에, 판매 시작(SalesStart*)은 참고 정보로만 쓴다(Equipment.md).
+    /// </summary>
     public static readonly SheetSchema Costume = new SheetSchema("Costume",
         "Id:K(CostumeSheet)",
         @"DisplayName:S FlavorText:S _:K(CostumeSetInfoSheet) CostumeType:E DyePolicy:E HidingParts:[E]
-          _:U _:U _:U _:I _:E _:S _:U _:K(CurrencyInfoSheet) _:I _:E _:S _:E
+          _:U _:U _:U _:I SalesStartZone:E SalesStartTime:S _:U _:K(CurrencyInfoSheet) _:I DiscloseZone:E DiscloseTime:S _:E
           EquippableCombatJobs:[K(CombatJobSheet)] EquippableGender:E EquippableAgeType:E _:[K(MagicEffectSheet)] _:E
           GenderChange:K(CostumeSheet) _:S _:K(CostumeSheet)
           DyeColor0:C DyeColor1:C DyeColor2:C DyeColor3:C DyeColor4:C DyeColor5:C
