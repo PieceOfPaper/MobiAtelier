@@ -60,6 +60,7 @@ public sealed class SearchDropdown : VisualElement
         field.style.height = 26;
         field.style.paddingLeft = 8; field.style.paddingRight = 6;
         field.style.backgroundColor = AppUI.FieldBg;
+        UIAnim.SmoothColor(field);
         SetBorder(field, AppUI.Border, 1, 3);
         fieldSwatches = new VisualElement();
         fieldSwatches.style.flexDirection = FlexDirection.Row;
@@ -104,6 +105,8 @@ public sealed class SearchDropdown : VisualElement
     public bool IsOpen => catcher != null;
 
     public static void CloseAny() => openOne?.Close();
+
+    public static bool AnyOpen => openOne != null;
 
     // ------------------------------------------------------------ 목록
 
@@ -181,6 +184,7 @@ public sealed class SearchDropdown : VisualElement
         box.style.top = down ? p.y + f.height + 2 : Mathf.Max(4, p.y - h - 2);
         catcher.Add(box);
         host.Add(catcher);
+        UIAnim.FadeIn(box, UIAnim.Fast, new Vector2(0, down ? -6 : 6));
 
         Filter("");
         int cur = shown.FindIndex(i => i.Id == currentId);
@@ -231,7 +235,7 @@ public sealed class SearchDropdown : VisualElement
                 if (list.selectedIndex >= 0) Choose(list.selectedIndex);
                 else if (shown.Count == 1) Choose(0);
                 break;
-            case KeyCode.Escape: Close(); break;
+            case KeyCode.Escape: Close(); UIEscape.Consume(); break;
             default: return;
         }
         e.StopPropagation();

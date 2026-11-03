@@ -185,10 +185,12 @@ public sealed class ColorPicker
         {
             if (e.keyCode != KeyCode.Escape) return;
             Finish(false);
+            UIEscape.Consume();
             e.StopPropagation();
         }, TrickleDown.TrickleDown);
 
         host.Add(window);
+        UIAnim.FadeIn(window, UIAnim.Normal, new Vector2(0, 8), 0.97f);
         window.RegisterCallback<GeometryChangedEvent>(Place);
         placeAnchor = anchor;
 
@@ -355,7 +357,7 @@ public sealed class ColorPicker
     {
         if (active != this) return;
         active = null;
-        window.RemoveFromHierarchy();
+        UIAnim.FadeOutAndRemove(window, UIAnim.Fast, new Vector2(0, 6));
         bool changed = ColorOverrides.ToHex(current) != ColorOverrides.ToHex(initial);
         if (ok && changed) apply?.Invoke(current);
         else cancel?.Invoke();

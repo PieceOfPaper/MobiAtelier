@@ -51,6 +51,22 @@ public static class JsonStore
         else File.Move(tmp, path);
     }
 
+    /// <summary>사용자가 고른 파일(내보내기)에 쓴다. 임시 파일 후 교체하며, 사용자 폴더에 .bak 을 남기지 않는다.</summary>
+    public static void WriteUserFile(string path, string json)
+    {
+        string tmp = path + ".tmp";
+        File.WriteAllText(tmp, json, Utf8);
+        try
+        {
+            if (File.Exists(path)) File.Replace(tmp, path, null, true);
+            else File.Move(tmp, path);
+        }
+        finally
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+        }
+    }
+
     public static LoadResult<T> Read<T>(string path, Func<T, bool> versionOk = null) where T : class
     {
         if (!File.Exists(path)) return new LoadResult<T>(LoadStatus.Missing, null, null);
@@ -83,10 +99,8 @@ public class AppSettings
     public string installPath;
     /// <summary>마지막으로 JSON 저장에 성공한 폴더</summary>
     public string recentJsonFolder;
-    /// <summary>가로로 넓은 앱 창에서 꾸미기 창의 마지막 위치·크기(UI 패널 좌표). 화면에 맞춘 보정 전의 값이다.</summary>
-    public PanelLayout customizePanel = new PanelLayout();
-    /// <summary>세로로 긴 앱 창에서의 꾸미기 창 배치.</summary>
-    public PanelLayout customizePanelTall = new PanelLayout();
+    /// <summary>자세한 조작 안내에서 '확인했어요'를 누른 적이 있는지(ControlsHelp.md 2장).</summary>
+    public bool helpAcknowledged;
     /// <summary>true 면 openSections 가 사용자가 정한 폴드아웃 펼침 상태다. false 면 기본값을 쓴다.</summary>
     public bool sectionsSaved;
     public List<string> openSections = new List<string>();
@@ -98,11 +112,4 @@ public class AppSettings
     }
 
     public void Save() => JsonStore.WriteAtomic(JsonStore.SettingsPath, JsonUtility.ToJson(this, true));
-}
-
-[Serializable]
-public class PanelLayout
-{
-    public bool valid;
-    public float x, y, width, height;
 }

@@ -1,4 +1,4 @@
-// Windows 기본 대화상자 (폴더 선택, 파일 열기). P/Invoke 만 쓰고 별도 STA 스레드에서 연다.
+// Windows 기본 대화상자 (폴더 선택, 파일 열기·저장). P/Invoke 만 쓰고 별도 STA 스레드에서 연다.
 // 취소하면 null 을 돌려준다. Windows 가 아니면 항상 null.
 using System;
 using System.Runtime.InteropServices;
@@ -75,9 +75,28 @@ public static class WindowsDialogs
         return GetOpenFileNameW(ref ofn) ? file.ToString() : null;
     });
 
+    /// <summary>파일 저장(내보내기) 대화상자. 같은 이름의 파일이 있으면 Windows 가 덮어쓰기를 묻는다.</summary>
+    public static Task<string> SaveFile(string title, string filter, string initialDir, string defaultName) => RunSta(owner =>
+    {
+        var file = new StringBuilder(defaultName ?? "", 2048);
+        var ofn = new OPENFILENAME
+        {
+            lStructSize = Marshal.SizeOf(typeof(OPENFILENAME)),
+            hwndOwner = owner,
+            lpstrFilter = filter + "\0",
+            lpstrFile = file,
+            nMaxFile = file.Capacity,
+            lpstrInitialDir = initialDir,
+            lpstrTitle = title,
+            Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER,
+            lpstrDefExt = "json",
+        };
+        return GetSaveFileNameW(ref ofn) ? file.ToString() : null;
+    });
+
     const uint BIF_RETURNONLYFSDIRS = 0x1, BIF_NEWDIALOGSTYLE = 0x40;
     const uint BFFM_INITIALIZED = 1, BFFM_SETSELECTIONW = 0x467;
-    const int OFN_FILEMUSTEXIST = 0x1000, OFN_PATHMUSTEXIST = 0x800, OFN_NOCHANGEDIR = 0x8, OFN_EXPLORER = 0x80000;
+    const int OFN_FILEMUSTEXIST = 0x1000, OFN_PATHMUSTEXIST = 0x800, OFN_NOCHANGEDIR = 0x8, OFN_EXPLORER = 0x80000, OFN_OVERWRITEPROMPT = 0x2;
 
     delegate int BrowseCallback(IntPtr hwnd, uint msg, IntPtr lParam, IntPtr data);
 
@@ -127,6 +146,7 @@ public static class WindowsDialogs
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SHBrowseForFolderW(ref BROWSEINFO bi);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern bool SHGetPathFromIDListW(IntPtr pidl, StringBuilder path);
     [DllImport("comdlg32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool GetOpenFileNameW(ref OPENFILENAME ofn);
+    [DllImport("comdlg32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool GetSaveFileNameW(ref OPENFILENAME ofn);
     [DllImport("ole32.dll")] static extern int OleInitialize(IntPtr reserved);
     [DllImport("ole32.dll")] static extern void OleUninitialize();
     [DllImport("ole32.dll")] static extern void CoTaskMemFree(IntPtr ptr);

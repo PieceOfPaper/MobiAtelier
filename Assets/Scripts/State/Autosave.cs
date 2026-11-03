@@ -13,6 +13,8 @@ public sealed class Autosave
     Func<EditState> source;
     public string LastError { get; private set; }
     public event Action<string> Failed;
+    /// <summary>자동 저장 파일을 썼다.</summary>
+    public event Action Saved;
 
     public Autosave(Func<EditState> source) { this.source = source; }
 
@@ -38,6 +40,7 @@ public sealed class Autosave
             s.appVersion = Application.version;
             JsonStore.WriteAtomic(JsonStore.AutosavePath, JsonUtility.ToJson(s, true));
             LastError = null;
+            Saved?.Invoke();
             return true;
         }
         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)

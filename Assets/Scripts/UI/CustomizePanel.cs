@@ -1,6 +1,9 @@
-// 꾸미기 창 (WindowAndCustomizationUI.md, Appearance.md, Equipment.md)
-//   앱 안의 UI 패널. 제목 영역을 끌어 옮기고 오른쪽 아래 핸들로 크기를 바꾼다.
-//   위치·크기는 앱 설정에 저장해 다음 실행에 복원하고, 앱 화면 밖으로 나가지 않게 보정한다.
+// 꾸미기 패널 (WindowAndCustomizationUI.md, Appearance.md, Equipment.md)
+//   고정 접이식 패널(2026-11-03 사용자 결정). 가로로 넓은 앱 창에서는 오른쪽, 세로로 긴 창에서는 아래쪽에 붙는다.
+//   시작할 때는 닫혀 있다. 가장자리 탭(E)으로 여닫는다. 임의 위치 이동·크기 조절은 하지 않는다(2026-11-03 사용자 결정).
+//   폭·높이는 앱 창 크기에서 계산한다(가로 창 폭 360, 세로 창 높이 45%, 카메라 영역이 최소한 남도록 보정).
+//   여닫기는 카메라 출력 영역만 바꾼다(CameraAreaChanged). 카메라 구도·꾸미기 이력에는 영향이 없다. 열림 상태는 저장하지 않는다.
+//   최상단은 '꾸미기' 제목과 실행 취소·다시 실행 아이콘(F), 아래는 외형·의상·배경 폴드아웃(G·H·I), 맨 아래는 자동 저장 상태 줄(J)이다.
 //   큰 카테고리는 폴드아웃, 세부 항목은 검색 가능한 드롭다운이다. 고르면 바로 모델에 반영한다(적용 버튼 없음).
 //   선택 상태와 실제 출력을 분리한다. 입을 수 없는 의상은 선택을 유지하고 빨간색과 사유를 표시한다.
 //
@@ -9,13 +12,6 @@
 //   꾸미기 숨김 행은 후보에서 빼고, 현재 선택이면 흐리게 남긴다.
 //   의상 염색은 표시 중인 의상의 실제 염색 파트(모델 DyeInfo 에 연결이 있는 Slot0~5)만 견본으로 보이고,
 //   견본을 누르면 컬러피커(ColorPicker)를 연다. 색만 바뀌는 편집은 다시 조립하지 않는다(editColors).
-//
-// 배치(사용자 결정 2026-11-02): 앱 창이 가로로 넓으면 오른쪽 세로 패널, 세로로 길면 아래쪽 가로 패널이 기본이다.
-//   가로·세로 배치를 따로 저장하므로 앱 창 비율이 바뀌면 그 비율의 마지막 배치로 바뀐다.
-// 보정 정책(구현 선택): 저장하는 값은 사용자가 마지막으로 옮기거나 크기를 바꾼 배치다.
-//   앱 창이 작아져서 보정한 배치는 저장하지 않으므로, 앱 창을 다시 키우면 원래 배치로 돌아간다.
-// 크기 조절 손잡이는 스크롤 영역 아래의 하단 줄에 둔다(Windows 상태 표시줄의 크기 조절 손잡이와 같은 방식).
-//   스크롤바가 손잡이 위에서 끝나므로 서로 가리지 않는다.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -23,7 +19,10 @@ using UnityEngine.UIElements;
 
 public sealed class CustomizePanel
 {
-    const float DefaultWidth = 340, Margin = 12, MinWidth = 240, MinHeight = 160, FooterHeight = 16;
+    /// <summary>가로 창에서 패널 위쪽에 비워 두는 높이. 앱 상단의 눈·메뉴 아이콘(A·B)이 이 자리에 온다.</summary>
+    public const float TopBar = 54;
+    const float DefaultWidth = 360, DefaultTallRatio = 0.45f, FooterHeight = 24, Edge = 1, TabLong = 64, TabShort = 22;
+    static readonly Color DockBg = new Color(AppUI.PanelBg.r, AppUI.PanelBg.g, AppUI.PanelBg.b, 1f);
 
     /// <summary>폴드아웃 키 → 제목, 처음 펼침 여부(설정에 저장된 값이 없을 때). 카테고리는 사용자 결정(2026-11-02).</summary>
     static readonly (string key, string title, bool open)[] Sections =
@@ -48,9 +47,10 @@ public sealed class CustomizePanel
         ("Weapon", "무기"),
     };
 
-    readonly VisualElement host, window, title, popupLayer;
+    readonly VisualElement host, dock, window, edgeLine, popupLayer;
+    readonly Button tab, undoButton, redoButton;
     readonly ScrollView scroll;
-    readonly Label error;
+    readonly Label error, saveStatus;
     readonly AppSettings settings;
     readonly Action saveSettings;
     readonly Action<Action<EditState>> edit, editColors;
@@ -63,10 +63,17 @@ public sealed class CustomizePanel
     GameData data;
     EditState state;
     AssemblyPlan plan;
-    /// <summary>가로로 넓은 창·세로로 긴 창의 마지막 배치. 너비 0 이면 기본 배치.</summary>
-    Rect desiredWide, desiredTall;
-    bool tall;
-    Rect shown;
+    bool open, tall;
+    /// <summary>지금 화면에 적용한 패널 폭(가로 창)·높이(세로 창).</summary>
+    float shownSize;
+    Rect cameraArea;
+
+    /// <summary>카메라 출력 영역(host UI 좌표, 왼쪽 위 원점)이 바뀌었다. 패널 여닫기·크기 변경·앱 창 크기 변경.</summary>
+    public event Action<Rect> CameraAreaChanged;
+    public Rect CameraArea => cameraArea;
+    /// <summary>카메라 영역 아래쪽에서 보기 도구가 비켜야 할 높이(세로 창의 패널 탭이 카메라 영역 아래 가운데에 걸친다).</summary>
+    public float BottomToolInset => tall ? TabShort + 6 : 0;
+    public bool IsOpen => open;
 
     /// <param name="host">화면 전체 크기의 층(AppUI.WindowLayer)</param>
     /// <param name="edit">장면 상태를 바꾸는 요청. 복사본을 바꿔 조립에 성공하면 반영한다(AppController.Edit).</param>
@@ -74,8 +81,11 @@ public sealed class CustomizePanel
     /// <param name="view">지금 조립된 캐릭터(염색 파트 조회·미리보기)</param>
     /// <param name="backgroundId">지금 배경 ID</param>
     /// <param name="setBackground">배경 선택(장면 상태. 캐릭터를 다시 조립하지 않는다)</param>
+    /// <param name="undo">꾸미기 실행 취소(UndoRedo.md)</param>
+    /// <param name="redo">꾸미기 다시 실행</param>
     public CustomizePanel(VisualElement host, AppSettings settings, Action saveSettings, Action<Action<EditState>> edit,
-        Action<Action<EditState>> editColors, Func<CharacterView> view, Func<string> backgroundId, Action<string> setBackground)
+        Action<Action<EditState>> editColors, Func<CharacterView> view, Func<string> backgroundId, Action<string> setBackground,
+        Action undo, Action redo)
     {
         this.backgroundId = backgroundId;
         this.setBackground = setBackground;
@@ -87,27 +97,38 @@ public sealed class CustomizePanel
         this.editColors = change => { ColorPicker.ApplyAny(); editColors(change); };
         this.view = view;
 
+        dock = new VisualElement { name = "customize-dock" };
+        dock.style.position = Position.Absolute;
+        dock.style.backgroundColor = DockBg;
+        dock.style.display = DisplayStyle.None;
+
         window = new VisualElement { name = "customize-window" };
         window.style.position = Position.Absolute;
-        window.style.backgroundColor = AppUI.PanelBg;
+        window.style.left = 0; window.style.right = 0; window.style.bottom = 0; window.style.top = 0;
         window.style.overflow = Overflow.Hidden;
-        SearchDropdown.SetBorder(window, AppUI.Border, 1, 6);
+        dock.Add(window);
 
-        title = new VisualElement { name = "customize-title" };
+        var title = new VisualElement { name = "customize-title" };
         title.style.flexDirection = FlexDirection.Row;
         title.style.alignItems = Align.Center;
-        title.style.height = 32;
+        title.style.height = 40;
         title.style.flexShrink = 0;
-        title.style.paddingLeft = 12; title.style.paddingRight = 8;
+        title.style.paddingLeft = 14; title.style.paddingRight = 8;
         title.style.backgroundColor = AppUI.HeaderBg;
         var t = new Label("꾸미기");
         t.style.color = AppUI.Text;
-        t.style.fontSize = 14;
+        t.style.fontSize = 15;
         t.style.unityFontStyleAndWeight = FontStyle.Bold;
         t.style.flexGrow = 1;
         t.pickingMode = PickingMode.Ignore;
         title.Add(t);
+        undoButton = IconButtons.Make(IconKind.Undo, undo, () => "꾸미기 실행 취소 (Ctrl+Z)", 30, 18);
+        redoButton = IconButtons.Make(IconKind.Redo, redo, () => "꾸미기 다시 실행 (Ctrl+Y)", 30, 18);
+        redoButton.style.marginLeft = 4;
+        title.Add(undoButton);
+        title.Add(redoButton);
         window.Add(title);
+        SetHistory(false, false);
 
         error = new Label { name = "customize-error" };
         error.style.color = AppUI.ErrorColor;
@@ -125,121 +146,175 @@ public sealed class CustomizePanel
         scroll.contentContainer.style.paddingBottom = 18;
         window.Add(scroll);
 
-        // 하단 줄: 스크롤 영역이 여기서 끝나므로 세로 스크롤바가 손잡이를 덮지 않는다.
+        // 하단 상태 줄(J): 일반 자동 저장 상태. 필수 오류는 AppUI 가 패널 밖에도 표시한다.
         var footer = new VisualElement { name = "customize-footer" };
         footer.style.flexDirection = FlexDirection.Row;
-        footer.style.justifyContent = Justify.FlexEnd;
+        footer.style.alignItems = Align.Center;
         footer.style.height = FooterHeight;
         footer.style.flexShrink = 0;
+        footer.style.paddingLeft = 12; footer.style.paddingRight = 12;
         footer.style.backgroundColor = AppUI.HeaderBg;
-        var grip = new Label("◢") { name = "customize-resize" };
-        grip.style.width = 18; grip.style.height = FooterHeight;
-        grip.style.fontSize = 12;
-        grip.style.color = AppUI.Sub;
-        grip.style.unityTextAlign = TextAnchor.LowerRight;
-        grip.style.paddingRight = 2;
-        grip.RegisterCallback<PointerEnterEvent>(e => grip.style.color = AppUI.Text);
-        grip.RegisterCallback<PointerLeaveEvent>(e => grip.style.color = AppUI.Sub);
-        footer.Add(grip);
+        saveStatus = new Label { name = "customize-save-status", pickingMode = PickingMode.Ignore };
+        saveStatus.style.fontSize = 11;
+        saveStatus.style.color = AppUI.Sub;
+        saveStatus.style.flexGrow = 1;
+        saveStatus.style.height = FooterHeight;
+        saveStatus.style.marginTop = saveStatus.style.marginBottom = 0;
+        saveStatus.style.paddingTop = saveStatus.style.paddingBottom = 0;
+        saveStatus.style.unityTextAlign = TextAnchor.MiddleLeft;
+        saveStatus.style.textOverflow = TextOverflow.Ellipsis;
+        saveStatus.style.whiteSpace = WhiteSpace.NoWrap;
+        footer.Add(saveStatus);
         window.Add(footer);
 
-        host.Add(window);
+        // 카메라 영역과의 경계선(가로 창: 왼쪽 세로 줄, 세로 창: 위쪽 가로 줄)
+        edgeLine = new VisualElement { name = "customize-edge", pickingMode = PickingMode.Ignore };
+        edgeLine.style.position = Position.Absolute;
+        edgeLine.style.backgroundColor = AppUI.Border;
+        dock.Add(edgeLine);
 
-        // 드롭다운 목록은 꾸미기 창 밖으로 나갈 수 있도록 화면 전체 층에 띄운다.
+        host.Add(dock);
+
+        tab = IconButtons.Make(IconKind.ChevronLeft, Toggle, () => open ? "꾸미기 패널 닫기" : "꾸미기 패널 열기", 30, 18);
+        tab.name = "customize-tab";
+        tab.style.position = Position.Absolute;
+        tab.style.backgroundColor = IconButtons.Bg;
+        host.Add(tab);
+
+        // 드롭다운 목록·컬러피커는 패널 밖으로 나갈 수 있도록 화면 전체 층에 띄운다.
         popupLayer = new VisualElement { name = "popup-layer", pickingMode = PickingMode.Ignore };
         popupLayer.style.position = Position.Absolute;
         popupLayer.style.left = 0; popupLayer.style.top = 0; popupLayer.style.right = 0; popupLayer.style.bottom = 0;
         host.Add(popupLayer);
 
-        DragHandler(title, (r, d) => new Rect(r.x + d.x, r.y + d.y, r.width, r.height));
-        DragHandler(grip, (r, d) => new Rect(r.x, r.y, r.width + d.x, r.height + d.y));
         host.RegisterCallback<GeometryChangedEvent>(e => Layout());
-
-        desiredWide = ToRect(settings.customizePanel);
-        desiredTall = ToRect(settings.customizePanelTall);
         Layout();
     }
 
     // ------------------------------------------------------------ 배치
 
-    static Rect ToRect(PanelLayout l) =>
-        l != null && l.valid && l.width > 0 && l.height > 0 ? new Rect(l.x, l.y, l.width, l.height) : Rect.zero;
+    public void Toggle() => SetOpen(!open);
+
+    /// <summary>패널만 여닫는다. 열린 드롭다운은 닫고, 미확정 염색(컬러피커)은 적용·취소하지 않고 그대로 둔다.</summary>
+    public void SetOpen(bool value)
+    {
+        if (open == value) return;
+        SearchDropdown.CloseAny();
+        Tips.Hide();
+        open = value;
+        // 패널을 밀어 넣고 빼는 연출. 카메라 출력 영역도 같은 진행도로 함께 바뀐다(구도는 유지).
+        animFrom = amount;
+        animStart = Time.unscaledTime;
+        if (slide == null) slide = host.schedule.Execute(StepSlide).Every(1);
+        else slide.Resume();
+        StepSlide();
+    }
+
+    const float SlideSeconds = 0.22f;
+    /// <summary>패널이 나온 정도(0 닫힘 ~ 1 열림).</summary>
+    float amount, animFrom, animStart;
+    IVisualElementScheduledItem slide;
+
+    void StepSlide()
+    {
+        float target = open ? 1 : 0;
+        float t = (Time.unscaledTime - animStart) / SlideSeconds;
+        amount = t >= 1 ? target : Mathf.Lerp(animFrom, target, UIAnim.EaseOutCubic(t));
+        Layout();
+        if (t >= 1) slide?.Pause();
+    }
+
+    /// <summary>실행 취소·다시 실행 아이콘의 활성 상태.</summary>
+    public void SetHistory(bool canUndo, bool canRedo)
+    {
+        undoButton.SetEnabled(canUndo);
+        redoButton.SetEnabled(canRedo);
+        IconButtons.IconOf(undoButton).Color = canUndo ? AppUI.Text : new Color(0.45f, 0.46f, 0.5f);
+        IconButtons.IconOf(redoButton).Color = canRedo ? AppUI.Text : new Color(0.45f, 0.46f, 0.5f);
+        if (!canUndo) undoButton.style.backgroundColor = IconButtons.Bg;
+        if (!canRedo) redoButton.style.backgroundColor = IconButtons.Bg;
+    }
+
+    /// <summary>하단 상태 줄의 자동 저장 상태.</summary>
+    public void SetSaveStatus(string text, bool isError)
+    {
+        saveStatus.text = text ?? "";
+        saveStatus.style.color = isError ? AppUI.ErrorColor : AppUI.Sub;
+    }
 
     void Layout()
     {
         float w = host.layout.width, h = host.layout.height;
         if (float.IsNaN(w) || float.IsNaN(h) || w <= 0 || h <= 0) return;
         tall = h > w;
-        var desired = tall ? desiredTall : desiredWide;
-        if (desired.width <= 0) desired = DefaultRect(w, h, tall);
-        Show(Clamp(desired, w, h));
-    }
+        shownSize = tall ? ClampHeight(h * DefaultTallRatio, h) : ClampWidth(DefaultWidth, w);
 
-    /// <summary>가로로 넓은 창: 오른쪽, 폭 340, 높이 전체. 세로로 긴 창: 아래쪽, 폭 전체, 높이 화면의 42%.</summary>
-    static Rect DefaultRect(float w, float h, bool tall)
-    {
+        dock.style.display = amount > 0.001f ? DisplayStyle.Flex : DisplayStyle.None;
+        float shownPart = shownSize * amount;
+        var icon = IconButtons.IconOf(tab);
         if (tall)
         {
-            float dh = Mathf.Clamp(h * 0.42f, Mathf.Min(220, h - Margin * 2), h - Margin * 2);
-            return new Rect(Margin, h - dh - Margin, w - Margin * 2, dh);
+            dock.style.left = 0; dock.style.right = 0; dock.style.bottom = 0;
+            dock.style.top = StyleKeyword.Auto; dock.style.width = StyleKeyword.Auto;
+            dock.style.height = shownSize;
+            dock.style.translate = new Translate(0, shownSize - shownPart);
+            window.style.top = Edge;
+            edgeLine.style.left = 0; edgeLine.style.right = 0; edgeLine.style.top = 0;
+            edgeLine.style.bottom = StyleKeyword.Auto; edgeLine.style.width = StyleKeyword.Auto; edgeLine.style.height = Edge;
+
+            tab.style.width = TabLong; tab.style.height = TabShort;
+            tab.style.left = (w - TabLong) * 0.5f; tab.style.top = StyleKeyword.Auto; tab.style.right = StyleKeyword.Auto;
+            tab.style.bottom = shownPart;
+            SetTabCorners(true);
+            icon.Kind = open ? IconKind.ChevronDown : IconKind.ChevronUp;
+            cameraArea = new Rect(0, 0, w, h - shownPart);
         }
-        float dw = Mathf.Min(DefaultWidth, w - Margin * 2);
-        return new Rect(w - dw - Margin, Margin, dw, h - Margin * 2);
-    }
-
-    /// <summary>창이 앱 화면보다 크면 먼저 줄이고, 그다음 전체가 화면 안에 들어오게 옮긴다.</summary>
-    static Rect Clamp(Rect r, float w, float h)
-    {
-        float rw = Mathf.Clamp(r.width, Mathf.Min(MinWidth, w), w);
-        float rh = Mathf.Clamp(r.height, Mathf.Min(MinHeight, h), h);
-        float x = Mathf.Clamp(r.x, 0, w - rw);
-        float y = Mathf.Clamp(r.y, 0, h - rh);
-        return new Rect(x, y, rw, rh);
-    }
-
-    void Show(Rect r)
-    {
-        shown = r;
-        window.style.left = r.x; window.style.top = r.y;
-        window.style.width = r.width; window.style.height = r.height;
-    }
-
-    /// <summary>요소를 끌면 창 배치를 바꾸고, 놓으면 그 배치를 저장한다.</summary>
-    void DragHandler(VisualElement handle, Func<Rect, Vector2, Rect> apply)
-    {
-        Vector2 start = default;
-        Rect from = default;
-        int pointer = -1;
-        handle.RegisterCallback<PointerDownEvent>(e =>
+        else
         {
-            if (e.button != 0) return;
-            SearchDropdown.CloseAny();
-            ColorPicker.ApplyAny();
-            pointer = e.pointerId;
-            start = e.position;
-            from = shown;
-            handle.CapturePointer(pointer);
-            e.StopPropagation();
-        });
-        handle.RegisterCallback<PointerMoveEvent>(e =>
-        {
-            if (e.pointerId != pointer || !handle.HasPointerCapture(pointer)) return;
-            Vector2 d = (Vector2)e.position - start;
-            Show(Clamp(apply(from, d), host.layout.width, host.layout.height));
-        });
-        void End(int id)
-        {
-            if (pointer < 0 || id != pointer) return;
-            int p = pointer;
-            pointer = -1;
-            if (handle.HasPointerCapture(p)) handle.ReleasePointer(p);
-            var saved = new PanelLayout { valid = true, x = shown.x, y = shown.y, width = shown.width, height = shown.height };
-            if (tall) { desiredTall = shown; settings.customizePanelTall = saved; }
-            else { desiredWide = shown; settings.customizePanel = saved; }
-            saveSettings?.Invoke();
+            dock.style.top = 0; dock.style.bottom = 0; dock.style.right = 0;
+            dock.style.left = StyleKeyword.Auto; dock.style.height = StyleKeyword.Auto;
+            dock.style.width = shownSize;
+            dock.style.translate = new Translate(shownSize - shownPart, 0);
+            window.style.top = TopBar;
+            edgeLine.style.left = 0; edgeLine.style.top = 0; edgeLine.style.bottom = 0;
+            edgeLine.style.right = StyleKeyword.Auto; edgeLine.style.height = StyleKeyword.Auto; edgeLine.style.width = Edge;
+            window.style.left = Edge;
+
+            tab.style.width = TabShort; tab.style.height = TabLong;
+            tab.style.top = (h - TabLong) * 0.5f; tab.style.left = StyleKeyword.Auto; tab.style.bottom = StyleKeyword.Auto;
+            tab.style.right = shownPart;
+            SetTabCorners(false);
+            icon.Kind = open ? IconKind.ChevronRight : IconKind.ChevronLeft;
+            cameraArea = new Rect(0, 0, w - shownPart, h);
         }
-        handle.RegisterCallback<PointerUpEvent>(e => End(e.pointerId));
-        handle.RegisterCallback<PointerCaptureOutEvent>(e => End(pointer));
+        if (tall) window.style.left = 0;
+        CameraAreaChanged?.Invoke(cameraArea);
+    }
+
+    /// <summary>탭은 패널(또는 앱 가장자리)에 붙은 쪽 모서리를 각지게 한다.</summary>
+    void SetTabCorners(bool bottomEdge)
+    {
+        const float r = 8;
+        tab.style.borderTopLeftRadius = r;
+        tab.style.borderTopRightRadius = bottomEdge ? r : 0;
+        tab.style.borderBottomLeftRadius = bottomEdge ? 0 : r;
+        tab.style.borderBottomRightRadius = 0;
+    }
+
+    /// <summary>가로 창의 패널 폭. 카메라 영역이 최소 160px(또는 창의 30%)은 남게 한다.</summary>
+    static float ClampWidth(float v, float w)
+    {
+        float max = Mathf.Max(120, w - Mathf.Max(160, w * 0.3f));
+        float min = Mathf.Min(260, max);
+        return Mathf.Clamp(v, min, max);
+    }
+
+    /// <summary>세로 창의 패널 높이. 카메라 영역이 최소 160px(또는 창의 30%)은 남게 한다.</summary>
+    static float ClampHeight(float v, float h)
+    {
+        float max = Mathf.Max(120, h - Mathf.Max(160, h * 0.3f));
+        float min = Mathf.Min(200, max);
+        return Mathf.Clamp(v, min, max);
     }
 
     // ------------------------------------------------------------ 구성
@@ -328,6 +403,7 @@ public sealed class CustomizePanel
         f.RegisterValueChangedCallback(e =>
         {
             if (e.target != f) return;
+            if (e.newValue) UIAnim.FadeIn(f.contentContainer, UIAnim.Normal, new Vector2(0, -6));
             SaveSections();
         });
         foldouts[key] = f;
@@ -633,7 +709,13 @@ public sealed class CustomizePanel
             var b = data.Background(backgroundId());
             if (b == null) dd.SetValue(null, "(기본 배경)", null);
             else dd.SetValue(b.Id, BackgroundName(b), BackgroundSub(b), null, BackgroundSwatches(b));
-            SetStatus(status, data.BackgroundError != null ? "배경 시트를 읽지 못해 기본 색만 씁니다." : null, AppUI.WarnColor);
+            // 저장된 배경을 표시할 수 없으면 요청 ID·사유·실제 대체 배경을 구분해 알린다. 저장 ID 는 지우지 않는다.
+            string requested = state.background;
+            string reason = StudioBackground.UnavailableReason(data, requested);
+            string text = data.BackgroundError != null ? "배경 시트를 읽지 못해 기본 색만 씁니다."
+                : reason != null ? $"저장된 배경 {requested}: {reason}. 대신 {(b != null ? BackgroundName(b) : "기본 색")}을 표시합니다. 다른 배경을 고르기 전까지 저장 ID는 보존합니다."
+                : null;
+            SetStatus(status, text, AppUI.WarnColor);
         });
         parent.Add(Row("배경", dd, status));
     }
@@ -647,10 +729,11 @@ public sealed class CustomizePanel
         return items;
     }
 
+    /// <summary>공통 표기 `ID - 이름`, 에디터 전용은 `[숨김] ID - 이름`(Background.md 7장 3).</summary>
     static string BackgroundName(StudioBackgroundData b) =>
-        (b.DevOnly ? "[숨김] " : "") + (string.IsNullOrEmpty(b.DisplayName) ? b.Id : b.DisplayName);
+        (b.DevOnly ? "[숨김] " : "") + b.Id + (string.IsNullOrEmpty(b.DisplayName) ? "" : " - " + b.DisplayName);
 
-    static string BackgroundSub(StudioBackgroundData b) => b.Is3D ? b.Id + " · 3D" : b.Id;
+    static string BackgroundSub(StudioBackgroundData b) => b.Is3D ? "3D" : null;
 
     static Color[] BackgroundSwatches(StudioBackgroundData b)
     {

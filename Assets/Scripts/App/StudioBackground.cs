@@ -55,21 +55,32 @@ public sealed class StudioBackground
         return null;
     }
 
-    /// <summary>배경을 바꾼다. 3D 프리팹을 하나도 열지 못하면 색 배경으로 그리고 사유를 돌려준다.</summary>
-    public string Apply(StudioBackgroundData b)
+    /// <summary>직전 Apply 가 새 배경을 준비하지 못해 이전 배경을 그대로 두었는지(keepOnFailure 일 때만).</summary>
+    public bool LastFailed { get; private set; }
+
+    /// <summary>
+    /// 배경을 바꾼다. 새 배경을 먼저 준비한 뒤 성공하면 이전 배경과 교체한다(Background.md 7장 1).
+    /// 3D 프리팹을 하나도 열지 못하면: keepOnFailure 면 이전 배경·CurrentId 를 그대로 두고 LastFailed 를 켠다(편집 중 새 선택),
+    /// 아니면 색 배경으로 대체해 그린다(시작 복원·가져오기의 대체 표시). 어느 쪽이든 사유를 돌려준다.
+    /// </summary>
+    public string Apply(StudioBackgroundData b, bool keepOnFailure = false)
     {
-        Clear();
-        CurrentId = b?.Id;
+        LastFailed = false;
         string error = null;
         if (b != null && b.Is3D)
         {
+            var fresh = new List<GameObject>();
             foreach (var rel in b.Prefabs)
             {
                 var go = Spawn(rel);
-                if (!go) error = "배경 리소스를 열지 못했습니다: " + rel;
+                if (go) fresh.Add(go);
+                else error = "배경 리소스를 열지 못했습니다: " + rel;
             }
-            if (spawned.Count > 0)
+            if (fresh.Count > 0)
             {
+                Clear();
+                spawned.AddRange(fresh);
+                CurrentId = b.Id;
                 foreach (var go in spawned) occluders.AddRange(go.GetComponentsInChildren<Renderer>(true));
                 // 3D 배경 뒤에도 시트의 네 모서리 색을 깐다(3D 행은 모두 흰색).
                 // '공간의 틈: 빛'의 구름 하늘(SkyLit)은 아직 그려지지 않아 이 색이 하늘로 보인다 [미확인: 원인].
@@ -77,12 +88,37 @@ public sealed class StudioBackground
                 cam.farClipPlane = FarFar;
                 return error;
             }
+            if (keepOnFailure)
+            {
+                LastFailed = true;
+                return error ?? "배경 리소스가 없습니다.";
+            }
         }
-        SetGradient(b);
         var floor = Spawn(ShadowReceiverPath);
-        if (floor) floor.transform.position = Vector3.zero;       // 원본 프리팹은 y = -100 에 숨겨 두고 게임이 옮긴다.
+        Clear();
+        if (floor)
+        {
+            floor.transform.position = Vector3.zero;       // 원본 프리팹은 y = -100 에 숨겨 두고 게임이 옮긴다.
+            spawned.Add(floor);
+        }
+        CurrentId = b?.Id;
+        SetGradient(b);
         cam.farClipPlane = NearFar;
         return error;
+    }
+
+    /// <summary>
+    /// 저장된 배경 ID 를 그대로 표시할 수 없는 사유. 표시할 수 있거나 비어 있으면(구버전 파일의 기본값) null.
+    /// 저장 ID 는 지우지 않고 기본 배경으로 대체 표시한다(Background.md 7장 2).
+    /// </summary>
+    public static string UnavailableReason(GameData data, string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        var b = data.Background(id);
+        if (b == null) return "데이터에 없는 배경입니다";
+        if (b.UseWebCam || !string.IsNullOrEmpty(b.Url)) return "이 앱에서 지원하지 않는 배경입니다";
+        if (!Selectable(b)) return "에디터 전용 배경이라 공개 빌드에서 표시하지 않습니다";
+        return null;
     }
 
     void SetGradient(StudioBackgroundData b)
@@ -114,7 +150,6 @@ public sealed class StudioBackground
         go.name = "Background:" + prefab.name;
         // 배경의 화면 보정(Volume)은 게임이 VolumeKey 로 따로 관리한다. 이 앱은 아직 적용하지 않으므로 끈다(Background.md 미정).
         foreach (var v in go.GetComponentsInChildren<UnityEngine.Rendering.Volume>(true)) v.enabled = false;
-        spawned.Add(go);
         return go;
     }
 
