@@ -115,6 +115,12 @@ public sealed class SheetSet
     /// <summary>스키마로 시트 전체 행을 읽는다.</summary>
     public List<SheetRow> Read(SheetSchema schema)
     {
+        try { return ReadExact(schema); }
+        catch (SheetFormatException) when (schema.Previous != null) { return ReadExact(schema.Previous); }
+    }
+
+    List<SheetRow> ReadExact(SheetSchema schema)
+    {
         if (!sheets.TryGetValue(schema.Sheet, out var s)) throw new SheetFormatException($"시트를 찾을 수 없습니다: {schema.Sheet}");
         var rows = new List<SheetRow>(s.Rows);
         var pr = new SheetDecoder(meta, s.PreloadOffset);

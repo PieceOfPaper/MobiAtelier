@@ -25,12 +25,14 @@ public sealed class SheetSchema
 {
     public readonly string Sheet;
     public readonly SheetField[] Preload, Row;
+    public readonly SheetSchema Previous;
 
-    public SheetSchema(string sheet, string preload, string row)
+    public SheetSchema(string sheet, string preload, string row, string previousRow = null)
     {
         Sheet = sheet;
         Preload = Parse(preload);
         Row = Parse(row);
+        Previous = previousRow == null ? null : new SheetSchema(sheet, preload, previousRow);
     }
 
     static SheetField[] Parse(string spec)
@@ -93,17 +95,23 @@ public static class SheetSchemas
         "Id:K(CharacterHeadSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
         "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U IconPath:S");
 
+    // 세 시트의 최신 행 끝에 HideForNonOwnerTime(시간대, 시각 문자열)이 추가됐다.
+    // 꾸미기 공개 판정과의 관계는 확인되지 않아 판정에 사용하지 않는다.
     public static readonly SheetSchema CharacterHair = new SheetSchema("CharacterHair",
         "GroupId:K(CharacterHairSheetGroup) BodyType:K(CharacterBodyTypesSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        @"DisplayName:S MinAge:I _:U _:U HideOnCustomize:U HairType:E CapFrontHairDyeSlot:E MaleIconPath:S FemaleIconPath:S
+          CanChangeColor:U _:K(CustomizeRestrictionSheet) CustomizeFixedDyeColor:C _:E _:S",
         @"DisplayName:S MinAge:I _:U _:U HideOnCustomize:U HairType:E CapFrontHairDyeSlot:E MaleIconPath:S FemaleIconPath:S
           CanChangeColor:U _:K(CustomizeRestrictionSheet) CustomizeFixedDyeColor:C");
 
     public static readonly SheetSchema CharacterEyes = new SheetSchema("CharacterEyes",
         "GroupId:K(CharacterEyesSheetGroup) HeadType:K(CharacterHeadSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S CanChangeColor:U _:K(CustomizeRestrictionSheet) _:E _:S",
         "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S CanChangeColor:U _:K(CustomizeRestrictionSheet)");
 
     public static readonly SheetSchema CharacterMouth = new SheetSchema("CharacterMouth",
         "GroupId:K(CharacterMouthSheetGroup) HeadType:K(CharacterHeadSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S _:E _:S",
         "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S");
 
     public static readonly SheetSchema CharacterBodyTypes = new SheetSchema("CharacterBodyTypes",
