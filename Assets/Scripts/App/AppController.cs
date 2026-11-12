@@ -844,6 +844,7 @@ public sealed class AppController : MonoBehaviour
         {
             ("내보내기(Export)", "현재 외형·의상·염색·배경·카메라를 JSON 파일로 보관합니다", Export, false),
             ("가져오기(Import)", "JSON 파일을 검사하고 작업을 교체합니다. 성공하면 꾸미기 이력이 초기화됩니다", Import, false),
+            ("마지막으로 접속한 캐릭터 불러오기", "게임에서 마지막으로 접속한 캐릭터의 외형·의상·염색으로 작업을 교체합니다", ConfirmLastCharacter, false),
             ("초기화", "현재 성별 기본 코디·기본 카메라로 돌아갑니다. 배경은 유지합니다", ConfirmReset, true),
             ("옵션", "게임 설치 경로를 바꾸고 적용 후 다시 시작합니다", OpenOptions, false),
             ("종료", "대기 중 작업을 저장한 뒤 종료합니다", QuitFromMenu, true),
@@ -928,6 +929,61 @@ public sealed class AppController : MonoBehaviour
         ui.CloseModal();
         if (!ReplaceWork(p, false)) return;
         ui.ShowNotice((partial ? "일부 항목을 제외하고 가져왔습니다: " : "가져왔습니다: ") + Path.GetFileName(file), false);
+    }
+
+    // ------------------------------------------------------------ 마지막으로 접속한 캐릭터 불러오기 (LastCharacterImport.md)
+
+    /// <summary>작업을 바꾸고 이력을 비우므로 먼저 확인한다. 취소·X·바깥 클릭·ESC 는 메뉴로 돌아간다.</summary>
+    void ConfirmLastCharacter()
+    {
+        ui.ShowChoice("마지막으로 접속한 캐릭터 불러오기",
+            "게임에서 마지막으로 접속한 캐릭터의 외형·의상·염색으로 현재 작업을 바꿉니다. 꾸미기 이력이 초기화되며 실행 취소할 수 없습니다.",
+            "게임이 타이틀 화면용으로 저장해 둔 외형 캐시만 읽습니다. 배경은 유지합니다.",
+            new List<(string, Action)> { ("취소", OpenMenu), ("불러오기", LoadLastCharacter) }, OpenMenu);
+    }
+
+    void LoadLastCharacter()
+    {
+        ui.CloseModal();
+        EditState next;
+        LastCharacterImport.Report report;
+        try { next = LastCharacterImport.Load(LastCharacterImport.CachePath(), data, state, out report); }
+        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidDataException)
+        {
+            ui.ShowChoice("불러오기 실패", e.Message + " 현재 작업을 유지합니다.", null,
+                new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
+            return;
+        }
+        ui.ShowLoading("캐릭터를 조립하는 중...");
+        Prepared p;
+        try { p = Stage(next); }
+        catch (Exception e)
+        {
+            Debug.LogException(e);
+            ui.HideLoading();
+            ui.ShowChoice("불러오기 실패", "캐릭터를 조립하지 못해 현재 작업을 유지합니다.", e.Message,
+                new List<(string, Action)> { ("돌아가기", OpenMenu) }, OpenMenu);
+            return;
+        }
+        ui.HideLoading();
+        // 불러오지 못한 부위는 이미 장착하지 않은 상태다. 조립 검사에서 나온 문제도 같은 안내에 붙인다(승인 없이 진행, 사용자 결정).
+        var issues = InspectPrepared(p);
+        if (!ReplaceWork(p, true)) return;
+        var lines = new List<string>();
+        foreach (var (part, reason) in report.Failed) lines.Add($"{part}: {reason}");
+        foreach (var i in issues) lines.Add(i);
+        var notes = new List<string>();
+        if (report.Unsupported.Count > 0) notes.Add("아직 지원하지 않아 불러오지 않은 항목: " + string.Join(", ", report.Unsupported));
+        if (report.Approximated.Count > 0) notes.Add("가장 가까운 색으로 고른 항목: " + string.Join(", ", report.Approximated));
+        if (lines.Count == 0)
+        {
+            ui.ShowNotice("마지막으로 접속한 캐릭터를 불러왔습니다." + (notes.Count > 0 ? " " + string.Join(" ", notes) : ""), false);
+            return;
+        }
+        ui.ShowChoice("일부 부위를 불러오지 못했습니다",
+            "아래 부위는 장착하지 않았습니다. 나머지는 불러왔습니다.",
+            RestoreCheck.Describe(lines, 12) + (notes.Count > 0 ? "\n\n" + string.Join("\n", notes) : ""),
+            new List<(string, Action)> { ("확인", ui.CloseModal) }, ui.CloseModal);
     }
 
     /// <summary>코디 초기화 확인(Reset.md). 취소·X·바깥 클릭·ESC 는 메뉴로 돌아간다.</summary>
@@ -1097,6 +1153,14 @@ public sealed class AppController : MonoBehaviour
                 PrepareImport(imported.Value, shotImport);
                 if (pending != null && ShotOption("partial")) FinishImport(pending, shotImport, true);
             }
+        }
+        // -maShotLastCharacter: 확인 없이 마지막 접속 캐릭터 불러오기 경로를 실행한다(-maDataDir 시험 실행 전용, 캐시 경로는 -maTitleDisplay 로 바꿀 수 있다).
+        if (CommandLine.Value("-maDataDir") != null && Array.IndexOf(Environment.GetCommandLineArgs(), "-maShotLastCharacter") >= 0 && state != null)
+        {
+            LoadLastCharacter();
+            // -maShotUI 에 dismiss 가 있으면 결과 안내를 닫고 캐릭터만 찍는다.
+            if (ShotOption("dismiss")) ui.CloseModal();
+            yield return new WaitForSecondsRealtime(uiWait);
         }
         if (shotUI != null && state != null && panel != null)
         {

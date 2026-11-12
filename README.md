@@ -35,5 +35,6 @@
 - [스튜디오 기능 검토](Docs/StudioFeatureReview.md): 카메라 쳐다보기·행동의 언팩 데이터 근거와 현재 로더의 한계, 실제 도입 전 검증 조건.
 - [레퍼런스 대비 차이·보강안](Docs/ReferenceGapReview.md): 현재 확정 기획과의 차이, 의상 재탐색·시점·결과 공유·부분 가져오기·A/B 비교 제안.
 - [레퍼런스 조사](Docs/ReferenceResearch.md): 기존 꾸미기 도구의 기능 비교와 초기 기획 제안.
+- [마지막으로 접속한 캐릭터 불러오기](Docs/LastCharacterImport.md): 게임 타이틀 외형 캐시를 읽어 작업으로 바꾸는 흐름, 역방향 조회·색 근사 규칙, 지원하지 않는 항목.
 - [미구현·생략 목록](Docs/ImplementationGaps.md): 구현하지 않았거나 생략·보류한 항목과 이유, 근거 기획서 링크.
 - [구현 가능성 검토](Docs/FeasibilityReview.md): 언팩 시트·리소스·로더 코드에 근거한 기능별 가능성과 선행 작업.

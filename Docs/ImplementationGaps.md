@@ -23,6 +23,7 @@
 | 어두운 피부의 문신 밝기 | 미확인 | 원본 식대로 피부색을 곱해 매우 흐리다. 게임 화면과 비교하지 않았다 | 게임 화면 비교 | [Appearance.md](Appearance.md) |
 | 환생 눈장식 색 프리셋 | 미구현 | 눈장식 6개 후보의 보상 프리셋 색 슬롯 대응을 검증하지 않았다. 안경 모델은 의상 › 눈장식으로 고를 수 있다 | 색 필드 순서 검증 | [Appearance.md](Appearance.md) |
 | 손바닥 색(ColorCode_Palm) | 미확인 | 연결을 확인하지 못해 원본 값을 유지한다 | 연결 확인 | [Appearance.md](Appearance.md) |
+| 헤어 장식 색(DyeSlot HairAccessory) | 미구현 | 헤어의 장식(브릿지 등) 색 칸을 편집·적용하지 않는다. 불러오기는 "지원하지 않는 항목"으로 안내한다 | — | [LastCharacterImport.md](LastCharacterImport.md) |
 | 입 색 | 보류 | 사용자 결정(2026-11-01) | — | [Appearance.md](Appearance.md) |
 | 나이 범위·키 직접 입력 | 결정 대기 | 나이는 프리셋에 나오는 값만 후보다 | 사용자 결정 | [Appearance.md](Appearance.md) |
 | 눈·얼굴 셰이더의 게임 조명 재현 | 미구현 | 앱은 단순 툰 조명 근사다 | — | [PROGRESS.md](PROGRESS.md) 3장 |
@@ -31,12 +32,12 @@
 
 | 항목 | 구분 | 이유·현재 상태 | 다시 볼 조건 | 문서 |
 |---|---|---|---|---|
-| 도구(악기·생활 도구) | 미구현 | 의상 › 무기 칸에서 택일하기로 했다(2026-11-12) | 꾸밈 확인 후 다음 순서 | [PROGRESS.md](PROGRESS.md) 1장 |
+| 도구(악기·생활 도구) | 미구현 | 의상 › 무기 칸에서 택일하기로 했다(2026-11-12). 불러오기는 안내만 한다 | 다음 작업 순서 | [PROGRESS.md](PROGRESS.md) 1장 |
 | 무기 오라 | 미구현 | 등급 직접 선택으로 정했다. 이펙트 연결 방식은 [미확인] | 도구 다음 | [PROGRESS.md](PROGRESS.md) 1장 |
 | 의상 세트 효과 | 미구현 | 착용 의상으로 자동 판정하기로 했다(CostumeSetEffect) | 무기 오라 다음 | [PROGRESS.md](PROGRESS.md) 1장 |
 | 의상 자체 이펙트(전설 의상 FX 등) | 미확인 | 의상 FX 프리팹이 있으나 앱은 붙이지 않는다. 연결 방식을 조사하지 않았다 | 세트 효과 조사 때 함께 | — |
 | 모자 착용 시 헤어 처리 | 미구현 | 모자를 쓰면 헤어가 모두 사라진다. 헬멧 덮개 메시(`Mesh_HelmetCover_On/Off`)·`…ByHelmetCover` 숨김 규칙·모자 접힘(IsCapClosed)을 쓰지 않는다 [확인: 코드 검색] | — | [PROGRESS.md](PROGRESS.md) 3장 |
-| 후드·로브 상태 | 미구현 | 게임의 후드 씀/벗음·로브 착용 상태를 다루지 않는다 | 불러오기 기능에서 필요 | — |
+| 후드·로브 상태 | 미구현 | 게임의 후드 씀/벗음·로브 착용 상태를 다루지 않는다. 불러오기는 후드 씀·모자 접힘을 "지원하지 않는 항목"으로 안내한다 | — | [LastCharacterImport.md](LastCharacterImport.md) |
 | 무기 표시 전용 옵션 | 보류 | 무기를 미장착하면 숨길 수 있다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 무기 장착점 보정값 | 생략 | 모델 정의 `MeshVisibleStateOverrides`(22개)·`TransformOverrides`(1개)를 적용하지 않았다 | 손·무기 위치 문제 발견 시 | [WeaponPose.md](WeaponPose.md) 4장 |
 | 몸·옷 접합(관통 제거) | 생략(근사) | 원본 맞춤 데이터(`.ClothingUnit.bytes`) 대신 몸 절단 근사(BodyCut)를 쓴다 | 관통이 심한 조합 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) |
@@ -68,7 +69,6 @@
 
 | 항목 | 구분 | 이유·현재 상태 | 다시 볼 조건 | 문서 |
 |---|---|---|---|---|
-| 마지막으로 접속한 캐릭터 불러오기 | 미구현 | 1~4장의 지원 항목을 먼저 구현한다 | 세트 효과 다음 | [PROGRESS.md](PROGRESS.md) 1장 |
 | 카메라 감도·반전·제한, 시점 초기화 버튼 | 결정 대기 | — | — | [Camera.md](Camera.md) |
 | 내보내기 단축키·덮어쓰기 구분 | 결정 대기 | Ctrl+S·Ctrl+O 미배정 | — | [SaveLoad.md](SaveLoad.md) |
 | 경로 외 옵션(감도·UI 크기 등) | 보류(후속 후보) | 필수 범위가 아니다 | — | [Options.md](Options.md) |
