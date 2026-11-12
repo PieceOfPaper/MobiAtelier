@@ -6,7 +6,8 @@
 //   색: 볼륨 CharacterLight.LightColor 의 알파가 0 보다 크면 그 색, 아니면 주광 색 × 세기.
 //     원본 얼굴 셰이더(Skin_Face)가 이 규칙으로 움직인다 [확인: 2026-11-12 공간의 틈: 어둠 촬영. 캐릭터 조명·주광 중 하나만 빼면
 //     얼굴이 다른 쪽 색으로 물들고, 둘 다 빼야 기본색. 피팅룸 주광 세기 0.4 는 얼굴 밝기에 영향 없음]. 몸·의상도 같은 색을 쓰게 맞춘다.
-//   방향: 장면 처음의 방향광 방향을 유지한다. 원본 캐릭터 셰이더가 쓰는 방향은 [미확인]이고, 볼륨 주광은 위에서 거의 수직으로 비춘다.
+//   방향: 주광(볼륨이 있으면 볼륨 방향, 없으면 장면 처음 방향)을 따른다. 원본 캐릭터 셰이더가 주광 방향을 쓴다
+//     [확인: 2026-11-12 몸·의상에 원본 셰이더를 임시로 쓰고 볼륨 회전 유무로 촬영하면 명암이 바뀌었다].
 // 볼륨이 없으면(색 배경·키 없음·읽기 실패) 장면 처음 조명으로 되돌리고 전역 값을 0, 안개를 끈다(이 기능 전과 같은 상태).
 // 볼륨의 앰비언트 그라데이션(PostProcessing 섹션)·SSAO·바람·하늘 Unlit 색은 적용하지 않는다(ImplementationGaps.md).
 using UnityEngine;
@@ -125,7 +126,7 @@ public static class EnvironmentVolume
     /// <summary>앱 캐릭터 셰이더가 쓸 빛. URP 주광과 같은 형식(빛 쪽 방향, 선형 색)이다. 규칙은 파일 머리 주석.</summary>
     static void SetCharacterLight(EnvironmentVolumeData volume, Light light)
     {
-        var toLight = baseRotation * Vector3.back;
+        var toLight = light.transform.rotation * Vector3.back;
         Shader.SetGlobalVector(CharLightDirId, new Vector4(toLight.x, toLight.y, toLight.z, 1f));
         var c = Has(volume, "CharacterLight.LightColor", StudioTime, out var cl) && cl.Length >= 4 && cl[3] > 0f
             ? ToColor(cl).linear

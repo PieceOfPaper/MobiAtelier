@@ -3,6 +3,7 @@
 //   3D 배경: 시트의 배경 프리팹을 설치 폴더 번들에서 열어 원점에 둔다. 원본 셰이더의 전용 패스는 StudioBackgroundPass 가 그린다.
 //   환경 볼륨: 시트의 VolumeKey·VolumeGroupName 볼륨을 읽어 주광·전역 셰이더 값·안개에 넣는다(EnvironmentVolume, Background.md 8장).
 //     볼륨을 읽지 못해도 배경은 바꾼다. 볼륨 없이(장면 처음 조명으로) 그리고 경고를 남긴다.
+//   전역 텍스처: 배경 프리팹의 EnvironmentConfig(게임 스크립트라 앱에서 돌지 않는다)가 넣는 전역 텍스처를 대신 넣는다(Background.md 8장).
 // 배경 선택은 장면 상태(EditState.background)다. 자동 저장·코디 JSON 에 들어간다(SaveLoad.md 확정 원칙).
 using System;
 using System.Collections.Generic;
@@ -14,6 +15,20 @@ public sealed class StudioBackground
     const string ShadowReceiverPath = "Environment/StudioPhotoMode/Prefab/StudioPhotoMode_ShadowReceiver.prefab";
     /// <summary>색 배경일 때 카메라 먼 평면. 3D 배경은 하늘 돔(반지름 수백 m)이 잘리지 않게 늘린다.</summary>
     const float NearFar = 100f, FarFar = 3000f;
+
+    /// <summary>
+    /// EnvironmentConfig 의 전역 텍스처(셰이더 전역 이름, Assets/PatchableAssets/ 아래 경로).
+    /// [확인: 벨벳 의상실·클래식 피팅룸 프리팹의 EnvironmentConfig 값이 같다. 공간의 틈 프리팹에는 EnvironmentConfig 가 없다.]
+    /// _Global_Texture 는 배경 원본 셰이더(SimpleLit·풀·지형 등)가 쓴다. 나머지는 비·무기 효과용이거나 쓰는 셰이더를 찾지 못했다.
+    /// </summary>
+    static readonly (string global, string path)[] GlobalTextures =
+    {
+        ("_Global_LightRampTexture", "Shaders/Texture/RampTexture.tga"),
+        ("_Global_Texture", "Shaders/Texture/GlobalTexture.tga"),
+        ("_Global_Weapon_Texture", "Shaders/Texture/GlobalTexture2.tga"),
+        ("_Global_Wet_Texture", "Shaders/Materials/WetCloths/WetCloths/WetPattern.tga"),
+    };
+    bool globalTexturesSet;
 
     readonly Camera cam;
     readonly BundleCache bundles;
@@ -144,6 +159,7 @@ public sealed class StudioBackground
             if (prepared.Is3D) occluders.AddRange(go.GetComponentsInChildren<Renderer>(true));
         }
         CurrentId = prepared.Data?.Id;
+        if (prepared.Is3D) SetGlobalTextures();
         SetGradient(prepared.Data);
         EnvironmentVolume.Apply(prepared.Volume, StageBuilder.MainLight);
         cam.farClipPlane = prepared.Is3D ? FarFar : NearFar;
@@ -177,6 +193,21 @@ public sealed class StudioBackground
         gradient.SetColor("_RightUpper", Hex(b?.RightUpper));
         RenderSettings.skybox = gradient;
         cam.clearFlags = CameraClearFlags.Skybox;
+    }
+
+    /// <summary>전역 텍스처를 한 번 넣는다. 읽지 못한 텍스처는 경고만 남기고 건너뛴다.</summary>
+    void SetGlobalTextures()
+    {
+        if (globalTexturesSet) return;
+        globalTexturesSet = true;
+        foreach (var (global, rel) in GlobalTextures)
+        {
+            Texture2D tex = null;
+            try { tex = bundles.LoadAsset<Texture2D>(BundleCache.AssetRoot + rel); }
+            catch (Exception e) { Debug.LogWarning($"[MobiAtelier] 전역 텍스처 읽기 실패 {rel}: {e.Message}"); }
+            if (tex) Shader.SetGlobalTexture(global, tex);
+            else Debug.LogWarning($"[MobiAtelier] 전역 텍스처 없음 {rel}");
+        }
     }
 
     /// <summary>배경의 환경 볼륨. 키가 없으면 null. 읽기 실패도 null(경고만 남기고 배경은 그대로 바꾼다).</summary>
