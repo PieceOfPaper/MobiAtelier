@@ -1,6 +1,6 @@
 # 미구현·생략 목록
 
-> 정리일: 2026-11-12
+> 정리일: 2026-11-13
 > 구현하지 않았거나 일부러 빼거나 보류한 항목을 한곳에 모은 목록이다. 세부 근거와 확정·제안·미정 상태는 링크한 기획서가 기준이다. 이 문서는 목록과 링크만 가진다.
 > 구현 중에 원본 기능을 옮기지 않거나 생략하면 여기에 한 줄을 추가한다(`AGENTS.md` 7장). 구현하면 줄을 지우고 해당 기획서에 기록한다.
 
@@ -40,7 +40,8 @@
 | 후드·로브 상태 | 미구현 | 게임의 후드 씀/벗음·로브 착용 상태를 다루지 않는다. 불러오기는 후드 씀·모자 접힘을 "지원하지 않는 항목"으로 안내한다 | — | [LastCharacterImport.md](LastCharacterImport.md) |
 | 무기 표시 전용 옵션 | 보류 | 무기를 미장착하면 숨길 수 있다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 무기 장착점 보정값 | 생략 | 모델 정의 `MeshVisibleStateOverrides`(22개)·`TransformOverrides`(1개)를 적용하지 않았다 | 손·무기 위치 문제 발견 시 | [WeaponPose.md](WeaponPose.md) 4장 |
-| 몸·옷 접합(관통 제거) | 생략(근사) | 원본 맞춤 데이터(`.ClothingUnit.bytes`) 대신 몸 절단 근사(BodyCut)를 쓴다 | 관통이 심한 조합 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) |
+| 옷끼리 자르기 | 생략 | 몸 자르기만 게임 규칙(`.ClothingUnit.bytes`)으로 한다. 상의를 하의로 자르기(CutTopWithBottom) 등 의상→의상 자르기, 의상 피부 조각 자르기, 자르기 제외 규칙(IsFitIgnoringCase·HasVeryHighestOnCommonJunction)을 옮기지 않았다 | 옷끼리 관통·겹침 문제 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
+| 옷 밀어내기(Pusher) | 생략 | 분리면의 경계 돌출 좌표·밀기 곡선으로 옷 정점을 바깥으로 미는 처리를 하지 않는다 | 이음매 틈·관통 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
 | 모델 보정 정보 | 생략 | `SkirtBoneCorrectionInfos`·`CageMorphInfo`·`BoneLocalScaleDiffInfos`·`BodytoolBoneDisplacements`·`JunctionPointInfo`를 읽지 않는다 [확인: 코드 검색] | 치마·체형별 모양 문제 발견 시 | — |
 | 머리·옷 물리 | 생략 | 원본 물리 구성 요소를 재현하지 않는다 | — | [FeasibilityReview.md](FeasibilityReview.md) |
 | 게임 전체 공개 판정 | 미확인 | 도감 공개 시각만 쓴다. 다른 공개 참조가 있는지 모른다 | — | [Equipment.md](Equipment.md) |

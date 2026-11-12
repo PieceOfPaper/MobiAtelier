@@ -1,9 +1,11 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-12
+> 최종 갱신: 2026-11-13
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
+
+- 몸 자르기 게임 규칙화(2026-11-13, Claude Code): 사용자 제보(스트리트 고스 캣 웨어에서 허벅지가 사라짐)의 원인은 기존 근사가 "의상 정점이 많은 쪽"을 덮인 쪽으로 골라, 치마처럼 허벅지 본에 묶여 분리면 아래로 늘어진 의상에서 방향이 뒤집힌 것이었다. 사용자 결정으로 `.ClothingUnit.bytes`를 해석해 게임 규칙으로 바꿨다(`Character/ClothingCut.cs`, FeasibilityReview.md 4.5). 같은 문제의 의상(블룸 코스트 비치웨어·브리즈 트래블 원피스·에델 그레이스 예복·러닝 반바지·몽마 힐 등)과 남성·10세 조합을 배치 촬영으로 확인했다. 앱 실조작은 [미확인]이다.
 
 - 배경 환경 볼륨 2차(2026-11-12, Claude Code): 사용자 결정으로 게임 데이터에 맞춰 캐릭터 빛 방향도 볼륨 주광을 따르게 했다(원본 셰이더 시험으로 확인). 3D 배경 확정 시 EnvironmentConfig 전역 텍스처 4개를 넣는다. 접촉 그림자는 값이 데이터에 없어 게임 스크린샷 비교 뒤 도입한다. 색 배경은 볼륨이 없어 그대로다.
 
@@ -48,6 +50,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-13 | 몸 자르기: `ClothingCut.cs`(ClothingUnit 읽기, 게임 FittingCutPolicy·자르기 규칙, 걸친 삼각형 잘라 새 정점 보간), `SmmReader` 삼각형 파일 순서 반환, 기존 근사(`BodyCut.LimbCuts`·면 근접) 삭제. 설치본 ClothingUnit 3,512개 읽기 [확인: 덤프 전수], 전후 11벌·회귀 4조합 촬영 |
 | 2026-11-12 | 배경 환경 볼륨 2차: 캐릭터 빛 방향을 주광(볼륨) 방향으로, `StudioBackground` 에 EnvironmentConfig 전역 텍스처 4개. 원본 셰이더 임시 시험으로 캐릭터가 주광 방향을 쓰는 것 확인, 접촉 그림자 값 임시 시험(도입 보류). `PhotoStudio` 볼륨은 별도 가상 방 맵 것이라 색 배경에 쓰지 않음. Unity 배치 컴파일 오류 0, 3D 4종 촬영 비교. Background.md 8장·ImplementationGaps 갱신 |
 | 2026-11-12 | 배경 환경 볼륨: `Sheets/EnvironmentVolumeData.cs`(VolumeData SJON 읽기, 그룹 덮어쓰기, 시각 보간), `App/EnvironmentVolume.cs`(주광·안개·전역 셰이더 값·캐릭터 빛), `StudioBackground` 준비 시 볼륨 읽기·확정 시 적용·해제 시 복원, `StageBuilder.MainLight`, `BundleCache.Files`, `MobiCharacter.shader` 의 `_MobiCharLightDir/Color`. 스모크 테스트 `-maNoVolume`·`-maVolumeSkip` 과 볼륨 로그. Unity 배치 컴파일 오류 0, 런타임 dotnet 빌드 오류 0. 공개 3D 4종 전후 촬영 비교. Background.md 8장·ImplementationGaps 갱신 |
 | 2026-11-12 | 마지막으로 접속한 캐릭터 불러오기: `State/LastCharacterImport.cs`(캐시 → 장면 상태, 역방향 조회·가장 가까운 시트 색·후보 결정 규칙), 시스템 메뉴 항목·확인·결과 안내/실패 팝업, 시험 옵션 `-maShotLastCharacter`·`-maTitleDisplay`·`-maShotUI dismiss`. Unity 배치 컴파일·Windows 빌드 오류 0·경고 0, 빌드 실행으로 실제 캐시 불러오기와 변조 사본의 실패 팝업 촬영 확인. 기획서 LastCharacterImport.md, SystemMenu·AGENTS·README·ImplementationGaps 갱신 |
@@ -153,6 +156,8 @@
 12. 마지막으로 접속한 캐릭터 불러오기는 구현했다. 남은 순서: 도구 → 무기 오라 → 세트 효과(불러오기 연결 포함). 남성·어린·로브 캐릭터 불러오기는 [미확인].
 
 ## 4. 인계 메모
+
+- 몸 자르기(2026-11-13): 분리면 평면은 의상 자기 바인드 공간 값이라 의상마다 자세가 다르다(T자세 장갑 등). `Mesh_SP_<Id>` 메시의 주 본 × 바인드포즈로 기본 자세 월드로 옮겨 몸(기본 자세 BakeMesh)과 비교한다 [추정: 게임이 공간을 맞추는 방식은 미해석]. 몸 삼각형 번호는 SMM 파일 순서다(서브메시로 묶기 전). 일부 장갑(예: Female_Newbiecombat_Gloves_00)은 분리면 이름 L/R과 실제 위치가 반대라 손을 자르지 않는다 — 게임 데이터 그대로다. 디버그: `InstallSmokeTest -maOutfit` 로그의 "몸 자르기 …" 줄에 의상별 평면·부위·제외 수가 나온다.
 
 - 배경 환경 볼륨(2026-11-12): 원본 얼굴 셰이더(Skin_Face)는 빛 색을 `_Global_Character_Light_Color`(알파 > 0)에서, 아니면 주광 색에서 가져온다(실험으로 확인). 주광 세기는 얼굴 밝기에 영향이 없었다. 볼륨을 바꿀 때 얼굴과 몸 색이 어긋나면 이 규칙(`EnvironmentVolume.SetCharacterLight`)부터 본다. `_Global_DimFog_*` 를 0 으로 두고 안개를 켜면 얼굴이 안개색으로 덮인다. 게임 실행 파일의 전역 이름 문자열은 il2cpp 이름 캐시가 패치와 맞지 않아 디스어셈블로 읽지 못했다. 전역 이름은 셰이더 속성 표의 이름과 볼륨 필드 이름의 대응이다.
 
@@ -302,7 +307,7 @@
     - 함정: `_COM` 데이터 위치는 (0,0,0)이다. 게임은 COM을 따로 맞춘다(comFollowTransforms) [추정]. 데이터 위치를 쓰지 않고, 적용 전후 발바닥 본(`_L/_R Sole`) 높이 차이만큼 `_COM`을 올리거나 내린다 [구현 선택].
     - 촬영 확인 [확인]: 10·13·14세, 17세 작게·보통·크게, 남성 17세 보통·크게, 의상 입은 10·12·14·17세. 17세 보통은 스케일 1·보정 0이라 이전과 같다. 키 참고값(HeightHint) 예: 여성 17세 159.6/167.8/180.5, 14세 보통 138.0, 10세 보통 100.4.
     - 키 조절 UI: 2026-11-03 외형 "키" 슬라이더(-1~+1)로 추가했다(아래 최근 작업). 얼굴 `Adolescent` 블렌드셰이프(나이 표현 [추정])는 적용하지 않았다. 편집으로 나이가 바뀌어도 카메라 거리·기준점은 그대로다.
-  - 몸 가리기는 근사다(팔다리 절단면 + 면 근접). 의상 조합에 따라 피부가 비치거나 과하게 잘릴 수 있다. 정확히 하려면 `.ClothingUnit.bytes`(몸 삼각형 부위, 절단면 부위 마스크) 해석이 필요하다.
+  - (2026-11-13 갱신) 몸 자르기는 `.ClothingUnit.bytes` 규칙으로 바꿨다. 옷끼리 자르기·옷 밀어내기는 생략이다(ImplementationGaps.md).
   - UI Toolkit 기본 글꼴에 한글이 없어 Windows의 맑은 고딕을 런타임에 불러온다(`AppUI.ApplySystemFont`). 글꼴 파일은 포함하지 않는다.
   - 폴더·네임스페이스 규칙은 사용자 결정이다: 프로젝트 이름 폴더 없이 `Assets\` 바로 아래, 네임스페이스 없음(`AGENTS.md` 5장).
   - Unity가 패키지 재임포트·빌드 때 `Assets/Settings/`의 URP 설정 에셋 4개와 `ProjectSettings/UnityConnectSettings.asset`을 스스로 다시 썼다. 커밋 포함 여부는 사용자가 정한다.

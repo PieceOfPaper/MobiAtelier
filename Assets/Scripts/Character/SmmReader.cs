@@ -14,7 +14,10 @@ public static class SmmReader
     const int FNormal = 1, FTangent = 2, FUv0 = 4, FUv1 = 8, FUv3 = 32, FColor = 64, FBlend = 128;
 
     /// <summary>boneNames 는 바인드포즈 순서(= 메시 본 인덱스 순서)다.</summary>
-    public static Mesh Read(byte[] data, out string[] boneNames)
+    public static Mesh Read(byte[] data, out string[] boneNames) => Read(data, out boneNames, out _);
+
+    /// <summary>triSource[s][k] 는 서브메시 s 의 k 번째 삼각형이 파일에서 몇 번째 삼각형인지다(.ClothingUnit 의 삼각형 번호).</summary>
+    public static Mesh Read(byte[] data, out string[] boneNames, out int[][] triSource)
     {
         using (var r = new BinaryReader(new MemoryStream(data), Encoding.UTF8))
         {
@@ -51,11 +54,13 @@ public static class SmmReader
             }
             int nt = r.ReadInt32();
             var subs = new SortedDictionary<int, List<int>>();
+            var srcs = new Dictionary<int, List<int>>();
             for (int i = 0; i < nt; i++)
             {
                 int sm = r.ReadInt32();
-                if (!subs.TryGetValue(sm, out var l)) subs[sm] = l = new List<int>();
+                if (!subs.TryGetValue(sm, out var l)) { subs[sm] = l = new List<int>(); srcs[sm] = new List<int>(); }
                 l.Add(r.ReadInt32()); l.Add(r.ReadInt32()); l.Add(r.ReadInt32());
+                srcs[sm].Add(i);
             }
             int np = r.ReadInt32();
             boneNames = new string[np];
@@ -79,6 +84,8 @@ public static class SmmReader
             foreach (var k in subs.Keys) nsub = Math.Max(nsub, k + 1);
             mesh.subMeshCount = nsub;
             foreach (var kv in subs) mesh.SetTriangles(kv.Value, kv.Key, false);
+            triSource = new int[nsub][];
+            for (int k = 0; k < nsub; k++) triSource[k] = srcs.TryGetValue(k, out var sl) ? sl.ToArray() : Array.Empty<int>();
             mesh.bindposes = bp;
             var weights = new BoneWeight[nv];
             for (int i = 0; i < nv; i++)

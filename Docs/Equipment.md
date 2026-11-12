@@ -1,6 +1,6 @@
 # 의상 선택·표시·숨겨진 리소스 기획
 
-> 정리일: 2026-11-03
+> 정리일: 2026-11-13
 > 확정 사항·제안·미정 표기를 유지한다. 구현 완료를 의미하지 않는다.
 > 화면·상태 전환은 [프로그램 플로우](ProgramFlow.md)를 참고한다.
 
@@ -54,7 +54,7 @@ Costume 시트는 `align=exact`, 1,679행이다.
 | 모자에 따른 숨김 | HideHair·HideHead·HideAccessory0~2, 눈·눈썹 숨김과 HelmetCover 조건 필드 | 오브젝트 머리 모델에서 활성 플래그를 직접 확인했다. 구형 HideEye와 좌우 분리 필드가 혼재하므로 모델 스키마를 따른다 |
 | 모자·헤어 단계 | 모자의 C 접미사, 헤어의 H0~H5와 헤어 단계 처리 메서드 | 데이터·선언은 확인했다. 단순히 같은 번호 하나만 남기는 규칙 전체가 검증된 것은 아니다 |
 | 슬롯 충돌 | AppearanceSlotConflictResolver의 IsConflicted·AddOccupyingSlots·HasConflict | 덤프에 선언이 있다. 메서드 본문은 비어 있어 복합 슬롯의 충돌 순서·우선순위는 추가 해석해야 한다 |
-| 관통·접합 | ClothingUnit, JunctionPointInfo, 치마 본 보정 등 | 데이터·기존 분석 근거가 있다. 부위 숨김과 별도이며 전체 조합의 맞춤 알고리즘은 검증되지 않았다 |
+| 관통·접합 | ClothingUnit, JunctionPointInfo, 치마 본 보정 등 | 몸 자르기는 ClothingUnit 규칙으로 구현했다(2026-11-13, [FeasibilityReview.md](FeasibilityReview.md) 4.5). 옷끼리 자르기·밀어내기는 생략했다 |
 
 - 현재 시험 조립기는 기본 hairLevel=H0로 헤어를 선택한다. 완전한 모자·후드 표시 규칙을 구현한 상태가 아니다.
 - 표시할 의상 집합을 결정한 후 그 집합으로 피부 관통 제거·접합을 계산해야 한다. 미적용 의상의 숨김 효과나 가려진 의상의 몸 자르기를 무조건 적용하지 않는다. 세부 평가 순서는 구현에서 검증한다.
