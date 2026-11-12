@@ -114,6 +114,23 @@ public static class SheetSchemas
         "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S _:E _:S",
         "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S");
 
+    // 꾸밈(Appearance.md "꾸밈"). 시작에 필요하지 않다. 읽지 못하면 꾸밈 목록만 비운다.
+    // 수염 시트에는 촬영용 액세서리(안경·안대 등, 모두 HideOnCustomize) 행도 있다.
+    public static readonly SheetSchema CharacterBeard = new SheetSchema("CharacterBeard",
+        "Id:K(CharacterBeardSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S");
+
+    /// <summary>얼굴꾸밈(홍조·주근깨·점·흉터·문신·주름). 최신 행 끝에 HideForNonOwnerTime(시간대, 시각 문자열)이 있다.</summary>
+    public static readonly SheetSchema CharacterFaceTattoo = new SheetSchema("CharacterFaceTattoo",
+        "Id:K(CharacterFaceTattooSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S _:E _:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S");
+
+    /// <summary>몸꾸밈(흉터·문신·블러셔).</summary>
+    public static readonly SheetSchema CharacterBodyTattoo = new SheetSchema("CharacterBodyTattoo",
+        "Id:K(CharacterBodyTattooSheet) MaleModel:S FemaleModel:S InfantMaleModel:S InfantFemaleModel:S",
+        "DisplayName:S MinAge:I _:U _:U HideOnCustomize:U MaleIconPath:S FemaleIconPath:S");
+
     public static readonly SheetSchema CharacterBodyTypes = new SheetSchema("CharacterBodyTypes",
         "Id:K(CharacterBodyTypesSheet) BlendshapeName:S",
         "DisplayName:S DescriptionText:S UseBlendshape:U IconPath:S");

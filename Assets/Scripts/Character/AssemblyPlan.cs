@@ -8,7 +8,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum PartRole { Body, Head, Hair, Eyes, Mouth, Costume }
+/// <summary>Beard 는 메시 파츠, FaceDeco·BodyDeco 는 얼굴·몸 머티리얼에 합성하는 텍스처 파츠다(입과 같은 방식).</summary>
+public enum PartRole { Body, Head, Hair, Eyes, Mouth, Costume, Beard, FaceDeco, BodyDeco }
 
 public enum CostumeStatus
 {
@@ -108,6 +109,7 @@ public sealed class AssemblyPlan
     {
         { "body", "몸" }, { "head", "얼굴형" }, { "hair", "헤어스타일" }, { "eyes", "눈 모양" }, { "mouth", "입 모양" },
         { "skinColor", "피부색" }, { "hairColor", "헤어 색상" }, { "eyeColor", "눈 색상" },
+        { "beard", "수염" }, { "faceDeco", "얼굴꾸밈" }, { "bodyDeco", "몸꾸밈" },
         { "Hat", "모자" }, { "Top", "상의" }, { "Bottom", "하의" }, { "Robe", "로브" }, { "Gloves", "장갑" },
         { "Shoes", "신발" }, { "EarDeco", "귀장식" }, { "EyeDeco", "눈장식" }, { "FaceDeco", "얼굴장식" }, { "Weapon", "무기" },
     };
@@ -223,6 +225,11 @@ public static class PlanResolver
             ? (hairColor != null && hairColor.Type == "TwoColor" ? hairColor.Color2 : hairColor?.Color1) : null);
         Global("Eye", eyeColor?.Color1);
         Global("Mouth", mouthColor?.Color1);
+
+        // 꾸밈: 필수가 아니므로 표시할 수 없으면 대체하지 않고 출력만 하지 않는다(선택은 보관, Appearance.md).
+        Optional(plan, files, a.age, "beard", PartRole.Beard, a.beard, data.Beards, failedModels);
+        Optional(plan, files, a.age, "faceDeco", PartRole.FaceDeco, a.faceDeco, data.FaceDecos, failedModels);
+        Optional(plan, files, a.age, "bodyDeco", PartRole.BodyDeco, a.bodyDeco, data.BodyDecos, failedModels);
 
         ResolveCostumes(plan, state, data, files, failedModels);
 
@@ -428,6 +435,26 @@ public static class PlanResolver
             return c;
         }
         throw new PlanException($"{AssemblyPlan.PartLabel(key)}: 표시할 수 있는 공개 기본값이 없습니다({why}).");
+    }
+
+    /// <summary>
+    /// 꾸밈 하나. 비어 있으면 없음. 표시할 수 없으면(없는 ID·제한·성별/나이 불일치·리소스 누락) 대체하지 않고 출력하지 않는다.
+    /// 정상적인 호환 불가(예: 여성의 수염)는 Incompatible 로만 남겨 복원 안내 대상에서 뺀다.
+    /// </summary>
+    static void Optional(AssemblyPlan plan, InstallFiles files, int age, string key, PartRole role, string selected,
+        Dictionary<string, AppearancePartData> map, HashSet<string> failedModels)
+    {
+        if (string.IsNullOrEmpty(selected)) return;
+        map.TryGetValue(selected, out var p);
+        string why = PartProblem(p, selected, plan.Male, plan.Infant, age, files, true, out var kind);
+        string model = p?.Model(plan.Male, plan.Infant);
+        if (why == null && failedModels != null && failedModels.Contains(model))
+        {
+            kind = IssueKind.MissingResource;
+            why = "모델의 프리팹·메시·텍스처를 정상적으로 조립하지 못했습니다";
+        }
+        if (why != null) { plan.AddIssue(key, kind, selected, p?.DisplayName, why + ". 표시하지 않습니다(선택 보관)"); return; }
+        Add(plan, files, key, role, model);
     }
 
     static IEnumerable<string> Prepend(string first, IEnumerable<string> rest)

@@ -48,6 +48,8 @@ public class AppearanceState
     /// <summary>CharacterMouth.GroupId</summary>
     public string mouth;
     public string skinColor, hairColor, eyeColor, mouthColor;
+    /// <summary>꾸밈 하나씩(CharacterBeard·CharacterFaceTattoo·CharacterBodyTattoo.Id). 비어 있으면 없음. 표시할 수 없어도 선택은 보관한다.</summary>
+    public string beard, faceDeco, bodyDeco;
     /// <summary>외형 색 슬롯(Skin, Hair, Hair1, Eye, Mouth)의 사용자 지정 색. 없으면 색상 시트 값을 쓴다.</summary>
     public List<ColorOverride> colors = new List<ColorOverride>();
     /// <summary>

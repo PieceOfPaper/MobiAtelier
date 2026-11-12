@@ -223,6 +223,7 @@ public sealed class AppController : MonoBehaviour
         bundles = new BundleCache(files);
         background = new StudioBackground(cameraCtl.Cam, bundles, gradientShader);
         if (data.BackgroundError != null) Debug.LogWarning("[MobiAtelier] 배경 시트를 읽지 못했습니다: " + data.BackgroundError);
+        if (data.DecorationError != null) Debug.LogWarning("[MobiAtelier] 꾸밈 시트를 읽지 못했습니다: " + data.DecorationError);
         if (settings.installPath != path)
         {
             settings.installPath = path;

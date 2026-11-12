@@ -66,6 +66,13 @@ public static class StateFactory
         a.hairColor = p.HairColor;
         a.eyeColor = p.EyeColor;
         a.mouthColor = p.MouthColor;
+        a.beard = PresetDeco(p.Beard);
+        a.faceDeco = PresetDeco(p.FaceTattoo);
+        a.bodyDeco = PresetDeco(p.BodyTattoo);
         return s;
     }
+
+    /// <summary>프리셋의 빈 꾸밈 칸은 심볼 없음(null·빈 문자열·Invalid·None)으로 기록된다.</summary>
+    static string PresetDeco(string id) =>
+        string.IsNullOrEmpty(id) || id == "Invalid" || id == "None" ? null : id;
 }

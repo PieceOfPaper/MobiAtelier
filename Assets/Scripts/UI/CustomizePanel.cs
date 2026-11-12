@@ -354,6 +354,13 @@ public sealed class CustomizePanel
             (s, id) => s.appearance.eyeColor = id);
         AppearanceRow(look, "입 모양", "mouth", () => GroupItems(data.Mouths, state.appearance.mouth, HeadVariant, "Head_00"),
             () => state.appearance.mouth, (s, id) => s.appearance.mouth = id, id => GameData.Resolve(data.Mouths, id, HeadVariant(), "Head_00"));
+        // 꾸밈: 하나씩 고르고 없음도 고를 수 있다. 수염 색은 헤어 색을 따른다(모델 염색 슬롯 Hair).
+        AppearanceRow(look, "수염", "beard", () => DecoItems(data.Beards, state.appearance.beard),
+            () => state.appearance.beard, (s, id) => s.appearance.beard = id, id => Deco(data.Beards, id));
+        AppearanceRow(look, "얼굴꾸밈", "faceDeco", () => DecoItems(data.FaceDecos, state.appearance.faceDeco),
+            () => state.appearance.faceDeco, (s, id) => s.appearance.faceDeco = id, id => Deco(data.FaceDecos, id));
+        AppearanceRow(look, "몸꾸밈", "bodyDeco", () => DecoItems(data.BodyDecos, state.appearance.bodyDeco),
+            () => state.appearance.bodyDeco, (s, id) => s.appearance.bodyDeco = id, id => Deco(data.BodyDecos, id));
 
         var wear = Section("costume");
         foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
@@ -1052,6 +1059,22 @@ public sealed class CustomizePanel
             if (!Listed(h, h.Id, state.appearance.head)) continue;
             bool ok = Usable(h, h.Id);
             if (ok || h.Id == state.appearance.head || h.HideOnCustomize) items.Add(new DropdownItem { Id = h.Id, Name = PartLabel(h.Id, h), Dim = !ok });
+        }
+        return items;
+    }
+
+    static AppearancePartData Deco(Dictionary<string, AppearancePartData> map, string id) =>
+        map.TryGetValue(id ?? "", out var p) ? p : null;
+
+    /// <summary>꾸밈 후보. 맨 앞은 "(없음)". 현재 외형에 맞지 않는 행(예: 여성의 수염)은 흐리게 보이며 고를 수 있다.</summary>
+    List<DropdownItem> DecoItems(Dictionary<string, AppearancePartData> map, string current)
+    {
+        var items = new List<DropdownItem> { new DropdownItem { Id = null, Name = "(없음)" } };
+        foreach (var p in map.Values)
+        {
+            if (!Listed(p, p.Id, current)) continue;
+            bool ok = Usable(p, p.Id);
+            items.Add(new DropdownItem { Id = p.Id, Name = PartLabel(p.Id, p), Dim = !ok });
         }
         return items;
     }

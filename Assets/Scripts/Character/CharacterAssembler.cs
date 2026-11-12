@@ -98,7 +98,7 @@ public static class CharacterAssembler
             try { defs.Add(new Def { Part = p, Path = path, Dir = path.Substring(0, path.LastIndexOf('/') + 1), Root = files.ReadSjon(path) }); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(p, "모델 정의 읽기 실패: " + e.Message); }
         }
-        bool hideHair = false, hideHead = false, hideEye = false;
+        bool hideHair = false, hideHead = false, hideEye = false, hideBeard = false;
         int hairLevel = 0;
         foreach (var d in defs)
         {
@@ -107,6 +107,7 @@ public static class CharacterAssembler
             hideHair |= info.Get("HideHair").B();
             hideHead |= info.Get("HideHead").B();
             hideEye |= info.Get("HideEye").B();
+            hideBeard |= info.Get("HideBeard").B();
             // 치마 등 옷 모양 조건(Action·AnimationStateSet 의 Clothing:ShortSkirt 등). 앉기 같은 모션이 옷에 맞는 클립을 고른다.
             string clothing = info.Get("ClothingCondition").Str();
             if (!string.IsNullOrEmpty(clothing) && clothing != "None") plan.Clothing = clothing;
@@ -190,7 +191,9 @@ public static class CharacterAssembler
             var part = d.Part;
             var partGo = new GameObject(part.Key + ":" + part.Model);
             partGo.transform.SetParent(root.transform, false);
-            if ((part.Role == PartRole.Hair && hideHair) || (part.Role == PartRole.Head && hideHead) || (part.Role == PartRole.Eyes && hideEye))
+            // 수염은 머리에 붙으므로 머리를 가리는 의상에서도 숨긴다.
+            if ((part.Role == PartRole.Hair && hideHair) || (part.Role == PartRole.Head && hideHead) || (part.Role == PartRole.Eyes && hideEye) ||
+                (part.Role == PartRole.Beard && (hideBeard || hideHead)))
                 partGo.SetActive(false);
 
             string prefabPath = BundleCache.AssetRoot + d.Root.Get("AssetPathToLoad").Str();
@@ -310,7 +313,7 @@ public static class CharacterAssembler
         foreach (var d in defs)
             try { AddBones(d); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "본 읽기 실패: " + e.Message); }
-        foreach (var d in defs) if (d.Part.Role != PartRole.Mouth)
+        foreach (var d in defs) if (!IsTexturePart(d.Part.Role))
             try { AddModel(d); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "모델 조립 실패: " + e.Message); }
         Transform BoneFor(Def d, string name)
@@ -446,6 +449,13 @@ public static class CharacterAssembler
         foreach (var d in defs) if (d.Part.Role == PartRole.Mouth && !plan.Issues.Exists(i => i.Key == "head" && i.FromBuild && i.IsFailure))
             try { if (!ApplyMouth(bundles, d.Root, view, L)) Fail(d.Part, "입 텍스처를 얼굴에 적용하지 못했습니다"); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "입 텍스처 읽기 실패: " + e.Message); }
+        foreach (var d in defs) if (d.Part.Role == PartRole.FaceDeco || d.Part.Role == PartRole.BodyDeco)
+        {
+            string host = d.Part.Role == PartRole.FaceDeco ? "head" : "body";
+            if (plan.Issues.Exists(i => i.Key == host && i.FromBuild && i.IsFailure)) continue;
+            try { if (!ApplyTattoo(bundles, d.Root, view, host, L)) Fail(d.Part, (host == "head" ? "얼굴" : "몸") + " 꾸밈 텍스처를 적용하지 못했습니다"); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "꾸밈 텍스처 읽기 실패: " + e.Message); }
+        }
         // 실패한 임시 조립본으로 몸 절단·애니메이션을 확정하지 않는다. 호출자가 제외·대체 후 다시 조립한다.
         if (plan.Issues.Exists(i => i.FromBuild && i.IsFailure)) return view;
         ApplyFacialAnimation(files, plan, view, L);
@@ -717,6 +727,46 @@ public static class CharacterAssembler
             }
         }
         log?.Invoke($"입: {tex.name}, 크기·위치 {scalePos}, 얼굴 머티리얼 {applied}개" + (applied == 0 ? " (머리 셰이더에 _MouthMap 없음)" : ""));
+        return applied > 0;
+    }
+
+    static bool IsTexturePart(PartRole role) => role == PartRole.Mouth || role == PartRole.FaceDeco || role == PartRole.BodyDeco;
+
+    /// <summary>
+    /// 얼굴꾸밈·몸꾸밈(텍스처 모델)을 얼굴·몸 머티리얼의 문신 칸에 건다. 입과 같은 대응:
+    ///   _TattooMap = AssetPathToLoad 텍스처, _TattooMapScalePosition = TextureInfo.BaseTexcoord,
+    ///   _TattooMapRotation = TextureInfo.Rotation(도), _TattooPushStrength = TextureInfo.PushStrength(얼굴만)
+    ///   _IsScarMode = AppearanceSlot 이 FaceScar·BodyScar(홍조·점·흉터)면 1, FaceTattoo·BodyTattoo 면 0
+    /// 얼굴은 게임 원본 셰이더(Skin_Face)가, 몸은 앱 셰이더(MobiAtelier/Character)가 합성한다.
+    /// 몸 합성식은 원본 Skin_Body 픽셀 셰이더를 따라 옮겼다(MobiCharacter.shader 주석).
+    /// </summary>
+    static bool ApplyTattoo(BundleCache bundles, object def, CharacterView view, string host, Action<string> log)
+    {
+        string path = BundleCache.AssetRoot + def.Get("AssetPathToLoad").Str();
+        var tex = bundles.LoadAsset<Texture2D>(path);
+        if (!tex) { log?.Invoke("꾸밈 텍스처 없음: " + path); return false; }
+        var info = def.Get("TextureInfo");
+        var st = info.Get("BaseTexcoord").Arr();
+        var scalePos = st.Count >= 4 ? new Vector4(st[0].F(), st[1].F(), st[2].F(), st[3].F()) : new Vector4(1, 1, 0, 0);
+        string slot = def.Get("ModelPartInfo").Get("AppearanceSlot").Str();
+        bool scar = slot == "FaceScar" || slot == "BodyScar";
+        int applied = 0;
+        foreach (var (key, r) in view.Renderers)
+        {
+            if (key != host || !r) continue;
+            foreach (var m in r.sharedMaterials)
+            {
+                if (!m || !m.HasProperty("_TattooMap")) continue;
+                m.SetTexture("_TattooMap", tex);
+                m.SetVector("_TattooMapScalePosition", scalePos);
+                m.SetFloat("_TattooMapRotation", info.Get("Rotation").F());
+                if (m.HasProperty("_TattooPushStrength")) m.SetFloat("_TattooPushStrength", info.Get("PushStrength").F());
+                if (m.HasProperty("_IsScarMode")) m.SetFloat("_IsScarMode", scar ? 1 : 0);
+                if (m.HasProperty("_TattooOn")) m.SetFloat("_TattooOn", 1);
+                applied++;
+            }
+        }
+        log?.Invoke($"꾸밈({host}): {tex.name} {slot}, 크기·위치 {scalePos}, 머티리얼 {applied}개" + (applied == 0 ? " (_TattooMap 없음)" : ""));
         return applied > 0;
     }
 

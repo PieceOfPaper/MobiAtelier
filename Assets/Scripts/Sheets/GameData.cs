@@ -25,6 +25,8 @@ public sealed class CostumeData
 public sealed class PresetAppearanceData
 {
     public string Id, Gender, SkinColor, HairColor, Hair, HeadType, EyeColor, Eyes, MouthColor, Mouth, BodyType, ActorModelName;
+    /// <summary>꾸밈(수염·얼굴꾸밈·몸꾸밈) ID. 없으면 null 또는 "Invalid".</summary>
+    public string Beard, FaceTattoo, BodyTattoo;
     public int Age;
     public float HeightModifier;
 }
@@ -194,6 +196,11 @@ public sealed class GameData
     public readonly Dictionary<string, Dictionary<string, AppearancePartData>> Hairs = new Dictionary<string, Dictionary<string, AppearancePartData>>(StringComparer.Ordinal);
     public readonly Dictionary<string, Dictionary<string, AppearancePartData>> Eyes = new Dictionary<string, Dictionary<string, AppearancePartData>>(StringComparer.Ordinal);
     public readonly Dictionary<string, Dictionary<string, AppearancePartData>> Mouths = new Dictionary<string, Dictionary<string, AppearancePartData>>(StringComparer.Ordinal);
+    /// <summary>꾸밈(시트 순서). 읽지 못하면 비어 있고 DecorationError 에 사유가 있다.</summary>
+    public readonly Dictionary<string, AppearancePartData> Beards = new Dictionary<string, AppearancePartData>(StringComparer.Ordinal);
+    public readonly Dictionary<string, AppearancePartData> FaceDecos = new Dictionary<string, AppearancePartData>(StringComparer.Ordinal);
+    public readonly Dictionary<string, AppearancePartData> BodyDecos = new Dictionary<string, AppearancePartData>(StringComparer.Ordinal);
+    public string DecorationError;
     public readonly Dictionary<string, BodyTypeData> BodyTypes = new Dictionary<string, BodyTypeData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> SkinColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> HairColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
@@ -260,6 +267,7 @@ public sealed class GameData
                 HairColor = r.Str("HairColor"), Hair = r.Str("Hair"), HeadType = r.Str("HeadType"), EyeColor = r.Str("EyeColor"),
                 Eyes = r.Str("Eyes"), MouthColor = r.Str("MouthColor"), Mouth = r.Str("Mouth"), BodyType = r.Str("BodyType"),
                 HeightModifier = (float)r.Num("HeightModifier"), ActorModelName = r.Str("ActorModelName"),
+                Beard = r.Str("Beard"), FaceTattoo = r.Str("FaceTattoo"), BodyTattoo = r.Str("BodyTattoo"),
             };
             if (p.Id != null) g.Presets[p.Id] = p;
         }
@@ -296,6 +304,7 @@ public sealed class GameData
         Colors(set.Read(SheetSchemas.CharacterHairColor), g.HairColors, "ColorCode1", "ColorCode2", "HairColorType");
         Colors(set.Read(SheetSchemas.CharacterEyeColor), g.EyeColors, "ColorCode", null, null);
         Colors(set.Read(SheetSchemas.CharacterMouthColor), g.MouthColors, "ColorCode", null, null);
+        LoadDecorations(set, g);
         LoadBackgrounds(set, g);
         LoadMotion(set, g);
         g.LoadMs = sw.ElapsedMilliseconds;
@@ -303,6 +312,28 @@ public sealed class GameData
     }
 
     /// <summary>배경은 시작에 꼭 필요하지 않으므로 읽기 실패를 앱 시작 실패로 만들지 않는다.</summary>
+    /// <summary>수염·얼굴꾸밈·몸꾸밈. 없어도 앱은 시작하고 해당 꾸밈만 고를 수 없다.</summary>
+    static void LoadDecorations(SheetSet set, GameData g)
+    {
+        var errors = new List<string>();
+        void Load(SheetSchema schema, Dictionary<string, AppearancePartData> map)
+        {
+            try
+            {
+                foreach (var r in set.Read(schema))
+                {
+                    var p = Part(r, r.Str("Id"), null);
+                    if (p.Id != null) map[p.Id] = p;
+                }
+            }
+            catch (Exception e) { map.Clear(); errors.Add(schema.Sheet + ": " + e.Message); }
+        }
+        Load(SheetSchemas.CharacterBeard, g.Beards);
+        Load(SheetSchemas.CharacterFaceTattoo, g.FaceDecos);
+        Load(SheetSchemas.CharacterBodyTattoo, g.BodyDecos);
+        g.DecorationError = errors.Count == 0 ? null : string.Join("\n", errors);
+    }
+
     static void LoadBackgrounds(SheetSet set, GameData g)
     {
         try
