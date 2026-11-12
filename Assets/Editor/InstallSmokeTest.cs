@@ -88,6 +88,9 @@ public static class InstallSmokeTest
                     s.costumes.Add(new CostumeSlotState { part = "Shoes", costumeId = "Fashion_NewbieSword_Shoes" });
                     var view = CharacterAssembler.Build(files, bundles, PlanResolver.Resolve(s, data, files), shader, log);
                     var studio = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"));
+                    // -maVolumeSkip 값1;값2 : 해당 환경 볼륨 값(예: CharacterLight.SilhouetteColor)을 빼고 적용한다(원인 찾기용).
+                    string skip = Arg("-maVolumeSkip");
+                    if (skip != null) foreach (var f in skip.Split(';')) EnvironmentVolume.Skip.Add(f);
                     var ids = new System.Collections.Generic.List<string>();
                     if (bgs == "all") { foreach (var b in data.Backgrounds) if (StudioBackground.Selectable(b) && !b.DevOnly) ids.Add(b.Id); }
                     else ids.AddRange(bgs.Split(';'));
@@ -95,7 +98,11 @@ public static class InstallSmokeTest
                     {
                         var sw = System.Diagnostics.Stopwatch.StartNew();
                         string err = studio.Apply(StudioBackground.Resolve(data, id));
-                        log.AppendLine($"[{id}] 적용 {studio.CurrentId} {sw.ElapsedMilliseconds}ms {err}");
+                        // -maNoVolume: 환경 볼륨 없이(장면 처음 조명) 촬영해 볼륨 적용 전과 비교한다.
+                        if (Array.IndexOf(Environment.GetCommandLineArgs(), "-maNoVolume") >= 0) EnvironmentVolume.Apply(null, StageBuilder.MainLight);
+                        var ml = StageBuilder.MainLight;
+                        log.AppendLine($"[{id}] 적용 {studio.CurrentId} {sw.ElapsedMilliseconds}ms {err} 볼륨 {EnvironmentVolume.CurrentKey ?? "-"}"
+                            + (ml ? $" 주광 {ml.transform.eulerAngles} {ml.color} x{ml.intensity:F2} 그림자 {ml.shadowStrength:F2}" : "") + $" 안개 {RenderSettings.fog}");
                         Capture(cam, view, Path.Combine(outDir, $"bg_{id}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
                         Capture(cam, view, Path.Combine(outDir, $"bg_{id}_34.png"), 145, 10, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
                     }

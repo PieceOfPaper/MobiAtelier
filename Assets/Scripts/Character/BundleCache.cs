@@ -16,6 +16,7 @@ public sealed class BundleCache : IDisposable
     public BundleCache(InstallFiles files) { this.files = files; }
 
     public int Count => bundles.Count;
+    public InstallFiles Files => files;
 
     public AssetBundle BundleOf(string assetPath) =>
         assetPath != null && files.Assets.PathToLoc.TryGetValue(assetPath, out var loc) ? Load(loc) : null;

@@ -60,8 +60,10 @@
 | 항목 | 구분 | 이유·현재 상태 | 다시 볼 조건 | 문서 |
 |---|---|---|---|---|
 | 벽 조명 데칼 | 생략 | D3D12에서 종료 시 충돌해 그리지 않는다. 원인 미정 | 원인 확인 | [Background.md](Background.md) |
-| 배경별 화면 보정(Volume) | 생략 | 적용하지 않아 색감이 다를 수 있다 | — | [Background.md](Background.md) |
-| '공간의 틈: 빛' 구름 하늘 | 미확인 | 그려지지 않는다. 전역 셰이더 값 부족을 의심한다 [추정] | — | [Background.md](Background.md) |
+| 배경 화면 후처리(Beautify 블룸·채도·대비) | 보류 | 유료 에셋이라 그대로 쓸 수 없다. 값만 읽어 URP 기본 효과로 근사할 수 있다 | 게임 스크린샷 비교에서 차이가 클 때 | [Background.md](Background.md) 8장 |
+| 환경 볼륨 일부(앰비언트 그라데이션·SSAO·바람·하늘 Unlit·구름 색 2~4) | 생략 | 켜는 조건·변환식 미확인 | 원본 식 확인 | [Background.md](Background.md) 8장 |
+| 볼륨 적용 시 캐릭터 빛 방향 | 미확인 | 원본 캐릭터 셰이더의 빛 방향을 몰라 앱 기본 방향을 유지한다 | 원본 식 확인·게임 비교 | [Background.md](Background.md) 8장 |
+| '공간의 틈: 빛' 구름 하늘 | 미확인 | 그려지지 않는다. 볼륨의 하늘·구름 전역 값을 넣어도 그대로였다 | — | [Background.md](Background.md) |
 | 조명 방향 | 결정 대기 | 게임과 그림자 방향이 반대다 | 사용자 확인 | [Background.md](Background.md) |
 | 독립 촬영모드·이미지 비율·촬영 버튼 | 보류 | — | — | [PhotoMode.md](PhotoMode.md) |
 

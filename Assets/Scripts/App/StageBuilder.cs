@@ -5,6 +5,9 @@ public static class StageBuilder
 {
     public static readonly Color Background = new Color(0.30f, 0.32f, 0.36f);
 
+    /// <summary>장면 방향광. 배경의 환경 볼륨(EnvironmentVolume)이 방향·색·세기를 바꾼다.</summary>
+    public static Light MainLight { get; private set; }
+
     public static Camera CreateStage()
     {
         var cam = Camera.main;
@@ -20,7 +23,9 @@ public static class StageBuilder
         cam.backgroundColor = Background;
         cam.transform.SetPositionAndRotation(new Vector3(0, 0.9f, 3.6f), Quaternion.Euler(5, 180, 0));
 
-        if (!Object.FindAnyObjectByType<Light>())
+        var existing = Object.FindAnyObjectByType<Light>();
+        if (existing && existing.type == LightType.Directional) MainLight = existing;
+        if (!existing)
         {
             var lightGo = new GameObject("Directional Light");
             var light = lightGo.AddComponent<Light>();
@@ -30,6 +35,7 @@ public static class StageBuilder
             // 캐릭터는 그림자를 받지 않으므로 이 그림자는 바닥(배경)에만 보인다. 게임 스튜디오처럼 옅게 둔다 [근사].
             light.shadowStrength = 0.45f;
             lightGo.transform.rotation = Quaternion.Euler(35, 155, 0);
+            MainLight = light;
         }
         return cam;
     }

@@ -1,6 +1,8 @@
 // 꾸미기 장면의 스튜디오 배경(Background.md).
 //   색 배경: 배경 시트의 네 모서리 색을 화면 고정 그라데이션(스카이박스)으로 그리고, 발밑에 그림자만 받는 바닥을 둔다.
 //   3D 배경: 시트의 배경 프리팹을 설치 폴더 번들에서 열어 원점에 둔다. 원본 셰이더의 전용 패스는 StudioBackgroundPass 가 그린다.
+//   환경 볼륨: 시트의 VolumeKey·VolumeGroupName 볼륨을 읽어 주광·전역 셰이더 값·안개에 넣는다(EnvironmentVolume, Background.md 8장).
+//     볼륨을 읽지 못해도 배경은 바꾼다. 볼륨 없이(장면 처음 조명으로) 그리고 경고를 남긴다.
 // 배경 선택은 장면 상태(EditState.background)다. 자동 저장·코디 JSON 에 들어간다(SaveLoad.md 확정 원칙).
 using System;
 using System.Collections.Generic;
@@ -74,6 +76,7 @@ public sealed class StudioBackground
     {
         internal readonly List<GameObject> Objects = new List<GameObject>();
         internal StudioBackgroundData Data;
+        internal EnvironmentVolumeData Volume;
         internal bool Is3D;
         public string Error;
         public bool Failed;
@@ -106,6 +109,7 @@ public sealed class StudioBackground
                 if (result.Objects.Count > 0 && error == null)
                 {
                     result.Is3D = true;
+                    result.Volume = LoadVolume(b);
                     return result;
                 }
                 result.Dispose();
@@ -141,6 +145,7 @@ public sealed class StudioBackground
         }
         CurrentId = prepared.Data?.Id;
         SetGradient(prepared.Data);
+        EnvironmentVolume.Apply(prepared.Volume, StageBuilder.MainLight);
         cam.farClipPlane = prepared.Is3D ? FarFar : NearFar;
     }
 
@@ -174,6 +179,18 @@ public sealed class StudioBackground
         cam.clearFlags = CameraClearFlags.Skybox;
     }
 
+    /// <summary>배경의 환경 볼륨. 키가 없으면 null. 읽기 실패도 null(경고만 남기고 배경은 그대로 바꾼다).</summary>
+    EnvironmentVolumeData LoadVolume(StudioBackgroundData b)
+    {
+        if (b == null || string.IsNullOrEmpty(b.VolumeKey)) return null;
+        try { return EnvironmentVolumeData.Load(bundles.Files, b.VolumeKey, b.VolumeGroupName); }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[MobiAtelier] 환경 볼륨 읽기 실패 {b.VolumeKey}: {e.Message}");
+            return null;
+        }
+    }
+
     static Color Hex(string hex) =>
         hex != null && ColorUtility.TryParseHtmlString(hex.Trim(), out var c) ? c : StageBuilder.Background;
 
@@ -185,7 +202,8 @@ public sealed class StudioBackground
         if (!prefab) return null;
         var go = UnityEngine.Object.Instantiate(prefab);
         go.name = "Background:" + prefab.name;
-        // 배경의 화면 보정(Volume)은 게임이 VolumeKey 로 따로 관리한다. 이 앱은 아직 적용하지 않으므로 끈다(Background.md 미정).
+        // 프리팹 안의 URP Volume(게임 후처리 Beautify 프로파일)은 이 앱에서 쓰지 않으므로 끈다(Background.md 8장).
+        // 환경 볼륨(VolumeKey)은 이것과 별개로 EnvironmentVolume 이 적용한다.
         foreach (var v in go.GetComponentsInChildren<UnityEngine.Rendering.Volume>(true)) v.enabled = false;
         return go;
     }
@@ -228,6 +246,7 @@ public sealed class StudioBackground
     public void Dispose()
     {
         Clear(true);
+        EnvironmentVolume.Apply(null, StageBuilder.MainLight);
         if (RenderSettings.skybox == gradient) RenderSettings.skybox = null;
         if (gradient) UnityEngine.Object.Destroy(gradient);
     }

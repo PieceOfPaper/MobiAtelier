@@ -5,6 +5,8 @@
 //   w  = 1 - min(g * 2, 1), w *= (w >= 1/128)    0.5 아래: 채널별 염색 가중치
 //   albedo = saturate((_DyeColor1*w.r + _DyeColor2*w.g + _DyeColor3*w.b) * 1.347368 + hi)
 // 조명은 원본이 아니라 단순 툰 근사다. _AlbedoOnly = 1 이면 조명 없이 알베도만 출력한다.
+// 빛은 전역 _MobiCharLightDir(xyz 빛 쪽 방향, w = 1 이면 사용)·_MobiCharLightColor 를 쓰고, 없으면 URP 주광을 쓴다.
+//   배경 환경 볼륨이 주광을 바꿔도 캐릭터는 앱 기본 조명을 유지한다(EnvironmentVolume.cs).
 // 캐릭터 몸의 그늘은 이 셰이더의 툰 명암과 헤어 그림자 메시(Hair_Shadow)로만 그린다.
 // Unity 실시간 그림자(그림자 맵)는 받지 않는다(이중 그림자 방지, 2026-11-02). 드리우기(ShadowCaster)는 바닥 그림자용으로 남긴다.
 // _UseTexAlpha = 1 이면 텍스처 알파를 투명도로 쓴다(눈 하이라이트·그림자 등 반투명 재질).
@@ -68,6 +70,7 @@ Shader "MobiAtelier/Character"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            float4 _MobiCharLightDir, _MobiCharLightColor;
 
             struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; };
             struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; float3 normalWS : TEXCOORD1; float3 positionWS : TEXCOORD2; };
@@ -138,6 +141,7 @@ Shader "MobiAtelier/Character"
 
                 float3 n = normalize(i.normalWS) * (front ? 1.0 : -1.0);
                 Light L = GetMainLight();
+                if (_MobiCharLightDir.w > 0.5) { L.direction = normalize(_MobiCharLightDir.xyz); L.color = _MobiCharLightColor.rgb; }
                 float ndl = dot(n, L.direction) * 0.5 + 0.5;
                 float lit = smoothstep(0.42, 0.58, ndl);
                 float3 shade = lerp(_ShadeColor.rgb, 1.0, lit);
