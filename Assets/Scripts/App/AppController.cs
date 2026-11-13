@@ -1197,6 +1197,8 @@ public sealed class AppController : MonoBehaviour
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
             // motion:ID : 소셜 모션을 재생한다(모션 버튼 확인용, -maShotUIWait 로 재생 시점을 정한다)
             foreach (var o in opts) if (o.StartsWith("motion:", StringComparison.Ordinal)) PlayMotion(o.Substring("motion:".Length));
+            // bg:ID : 배경을 바꾼다(3D 배경 하늘·반사 확인용)
+            foreach (var o in opts) if (o.StartsWith("bg:", StringComparison.Ordinal)) SetBackground(o.Substring("bg:".Length));
             if (opts.Contains("undo")) Undo();
             if (opts.Contains("open")) panel.SetOpen(true);
             if (opts.Contains("weapon") || opts.Contains("draw")) panel.ScrollToEnd();

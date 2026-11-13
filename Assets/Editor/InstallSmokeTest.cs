@@ -100,11 +100,121 @@ public static class InstallSmokeTest
                         string err = studio.Apply(StudioBackground.Resolve(data, id));
                         // -maNoVolume: 환경 볼륨 없이(장면 처음 조명) 촬영해 볼륨 적용 전과 비교한다.
                         if (Array.IndexOf(Environment.GetCommandLineArgs(), "-maNoVolume") >= 0) EnvironmentVolume.Apply(null, StageBuilder.MainLight);
+                        // -maLightProbes 경로 : 설치 폴더 라이트 프로브(Assets/PatchableAssets/ 아래)를 장면에 넣는다(앰비언트 원인 찾기용).
+                        string lp = Arg("-maLightProbes");
+                        if (lp != null)
+                        {
+                            var probes = bundles.LoadAsset<LightProbes>(BundleCache.AssetRoot + lp);
+                            log.AppendLine($"  라이트 프로브 {(probes ? probes.count + "개" : "없음")}");
+                            if (probes) { LightmapSettings.lightProbes = probes; LightProbes.Tetrahedralize(); }
+                        }
+                        // -maSetGlobal 이름=값;… : 볼륨 적용 뒤 전역 실수 값을 덮어쓴다(원인 찾기용).
+                        string sg = Arg("-maSetGlobal");
+                        if (sg != null)
+                            foreach (var kv in sg.Split(';'))
+                            {
+                                var parts = kv.Split('=');
+                                if (parts.Length == 2 && float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float gv))
+                                    Shader.SetGlobalFloat(parts[0], gv);
+                            }
                         var ml = StageBuilder.MainLight;
-                        log.AppendLine($"[{id}] 적용 {studio.CurrentId} {sw.ElapsedMilliseconds}ms {err} 볼륨 {EnvironmentVolume.CurrentKey ?? "-"}"
+                        log.AppendLine($"[{id}] 적용 {studio.CurrentId} {sw.ElapsedMilliseconds}ms {err} 볼륨 {EnvironmentVolume.CurrentKey ?? "-"} 노출 {EnvironmentVolume.CurrentExposure:F2}"
                             + (ml ? $" 주광 {ml.transform.eulerAngles} {ml.color} x{ml.intensity:F2} 그림자 {ml.shadowStrength:F2}" : "") + $" 안개 {RenderSettings.fog}");
                         Capture(cam, view, Path.Combine(outDir, $"bg_{id}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
                         Capture(cam, view, Path.Combine(outDir, $"bg_{id}_34.png"), 145, 10, 3.6f, new Vector3(0, 0.88f, 0), 576, 1024);
+                        // -maAmbient 이름;이름 : 조명 조건을 바꿔 넓은 구도로 촬영한다(색감 원인 찾기용). cur=그대로, black=앰비언트 검정, probe=앰비언트 값(-maAmbientSH R,G,B L0),
+                        //   noshadow=주광 그림자 끔, giX=GI 값 X, expX=주광·GI X배, ag/agmat=앰비언트 그라데이션 덮기. -maLogMaterials 는 배경 재질 값을 로그에 쓴다.
+                        string amb = Arg("-maAmbient");
+                        if (amb != null)
+                        {
+                            var origMode = RenderSettings.ambientMode; var origProbe = RenderSettings.ambientProbe;
+                            if (Array.IndexOf(Environment.GetCommandLineArgs(), "-maLogMaterials") >= 0) LogSceneMaterials(view, log);
+                            foreach (var ak in amb.Split(';'))
+                            {
+                                var sh = new UnityEngine.Rendering.SphericalHarmonicsL2();
+                                var ml0 = StageBuilder.MainLight; var origShadows = ml0 ? ml0.shadows : LightShadows.None;
+                                if (ak == "noshadow" && ml0) ml0.shadows = LightShadows.None;
+                                if (ak == "cur" || ak == "noshadow" || ak.StartsWith("gi") || ak.StartsWith("ag") || ak.StartsWith("exp") || ak.StartsWith("sky=") || ak == "skygi") sh = origProbe;
+                                // sky=경로 : 설치 폴더 재질(Assets/PatchableAssets/ 아래)을 스카이박스로 쓴다(게임 씬 스카이박스 시험).
+                                var origSky = RenderSettings.skybox;
+                                if (ak.StartsWith("sky="))
+                                {
+                                    var skyMat = bundles.LoadAsset<Material>(BundleCache.AssetRoot + ak.Substring(4));
+                                    log.AppendLine($"    스카이박스 {(skyMat ? skyMat.shader.name + " 지원 " + skyMat.shader.isSupported : "없음")}");
+                                    if (skyMat) { RenderSettings.skybox = skyMat; cam.clearFlags = CameraClearFlags.Skybox; }
+                                    // -maSkyFromVolume : 볼륨이 넣은 전역 하늘 값(_Global_X)을 스카이박스 재질 속성(_X)으로 옮긴다(게임이 재질에 넣는지 시험).
+                                    if (skyMat && Array.IndexOf(Environment.GetCommandLineArgs(), "-maSkyFromVolume") >= 0)
+                                    {
+                                        skyMat = new Material(skyMat); RenderSettings.skybox = skyMat;
+                                        foreach (var pn in new[] { "_SkyColorTop", "_SkyColorMiddle", "_SkyColorBottom", "_SunGlowColor" })
+                                            skyMat.SetColor(pn, Shader.GetGlobalColor("_Global" + pn));
+                                        foreach (var pn in new[] { "_SkyPosition1", "_SkyPosition2", "_SkyPosition3", "_SkyPosition4", "_SunDisk", "_SunGlowDisk" })
+                                            skyMat.SetFloat(pn, Shader.GetGlobalFloat("_Global" + pn));
+                                        log.AppendLine($"    하늘 재질 ← 볼륨: 위 {skyMat.GetColor("_SkyColorTop")} 가운데 {skyMat.GetColor("_SkyColorMiddle")} 아래 {skyMat.GetColor("_SkyColorBottom")}");
+                                    }
+                                }
+                                var origGI = Shader.GetGlobalVector("_Global_GILightMulti");
+                                // expX : 배경 조명(주광 세기·GI)을 X 배 한다(게임 Beautify 노출 근사 시험).
+                                float origIntensity = ml0 ? ml0.intensity : 1f;
+                                if (ak.StartsWith("exp") && float.TryParse(ak.Substring(3), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float ex))
+                                {
+                                    if (ml0) ml0.intensity = origIntensity * ex;
+                                    Shader.SetGlobalVector("_Global_GILightMulti", Shader.GetGlobalVector("_Global_GILightMulti") * ex);
+                                }
+                                // ag : 원본 앰비언트 그라데이션(MMN_PP_AmbientGradient)을 촬영 결과에 덮는다. agmat 은 재질 기본 색, ag 는 볼륨 색.
+                                if (ak.StartsWith("ag"))
+                                {
+                                    var src = bundles.LoadAsset<Material>(BundleCache.AssetRoot + "Shaders/Materials/MMN_PP_AmbientGradient.mat");
+                                    if (src)
+                                    {
+                                        PostMaterial = new Material(src);
+                                        if (ak == "ag")
+                                        {
+                                            PostMaterial.SetColor("_DayLightSideColor", new Color(1f, 0.691087842f, 0.462264061f, 0.99f));
+                                            PostMaterial.SetColor("_DayDarkSideColor", new Color(0.162828729f, 0.1499347f, 0.3584906f, 1f));
+                                        }
+                                        log.AppendLine($"    AG 셰이더 {PostMaterial.shader.name} 지원 {PostMaterial.shader.isSupported} 패스 {PostMaterial.passCount} 밝은 {PostMaterial.GetColor("_DayLightSideColor")} 어두운 {PostMaterial.GetColor("_DayDarkSideColor")}");
+                                    }
+                                    else log.AppendLine("    AG 재질 없음");
+                                }
+                                // giX : _Global_GILightMulti 를 변환 없이 X 로 넣는다(색 공간 확인용).
+                                if (ak.StartsWith("gi") && float.TryParse(ak.Substring(2), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float gi))
+                                    Shader.SetGlobalVector("_Global_GILightMulti", new Vector4(gi, gi, gi, 1));
+                                else if (ak.StartsWith("probe"))
+                                {
+                                    var v = (Arg("-maAmbientSH") ?? "0.294,0.516,0.833").Split(',');
+                                    // 값 3개면 L0 만, 27개면 씬 직렬화 순서(R 0~8, G 9~17, B 18~26) 전체.
+                                    if (v.Length >= 27) { for (int c = 0; c < 3; c++) for (int k = 0; k < 9; k++) sh[c, k] = float.Parse(v[c * 9 + k], System.Globalization.CultureInfo.InvariantCulture); }
+                                    else for (int c = 0; c < 3; c++) sh[c, 0] = float.Parse(v[c], System.Globalization.CultureInfo.InvariantCulture);
+                                }
+                                if (ak == "skygi")
+                                {
+                                    // skygi : 현재 스카이박스에서 앰비언트를 계산한다(DynamicGI.UpdateEnvironment).
+                                    RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Skybox;
+                                    DynamicGI.UpdateEnvironment();
+                                    sh = RenderSettings.ambientProbe;
+                                }
+                                else
+                                {
+                                    RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Custom;
+                                    RenderSettings.ambientProbe = sh;
+                                }
+                                log.AppendLine($"  앰비언트 {ak}: L0 ({sh[0, 0]:F3},{sh[1, 0]:F3},{sh[2, 0]:F3})");
+                                // -maWideCam 피치,거리,기준높이 : 넓은 구도 카메라(게임 스크린샷 구도 맞추기용).
+                                var wc = (Arg("-maWideCam") ?? "3,5.5,1.1").Split(',');
+                                float F(int i) => float.Parse(wc[i], System.Globalization.CultureInfo.InvariantCulture);
+                                float fov0 = cam.fieldOfView;
+                                if (wc.Length > 3) cam.fieldOfView = F(3);
+                                Capture(cam, view, Path.Combine(outDir, $"bg_{id}_amb_{(ak.StartsWith("sky=") ? "sky" : ak)}.png"), 180, F(0), F(1), new Vector3(0, F(2), 0), 1280, 720);
+                                cam.fieldOfView = fov0;
+                                if (ml0) { ml0.shadows = origShadows; ml0.intensity = origIntensity; }
+                                RenderSettings.skybox = origSky;
+                                PostMaterial = null;
+                                log.AppendLine($"    GI {Shader.GetGlobalVector("_Global_GILightMulti")}");
+                                Shader.SetGlobalVector("_Global_GILightMulti", origGI);
+                            }
+                            RenderSettings.ambientMode = origMode; RenderSettings.ambientProbe = origProbe;
+                        }
                     }
                     studio.Apply(null);
                     UnityEngine.Object.DestroyImmediate(view.gameObject);
@@ -679,6 +789,34 @@ public static class InstallSmokeTest
         }
     }
 
+    /// <summary>캐릭터 밖 렌더러의 재질별 셰이더와 발광·조명 관련 값을 로그에 쓴다(원인 찾기용).</summary>
+    static void LogSceneMaterials(CharacterView view, StringBuilder log)
+    {
+        var seen = new System.Collections.Generic.HashSet<Material>();
+        foreach (var r in UnityEngine.Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+        {
+            if (view && r.transform.IsChildOf(view.transform)) continue;
+            foreach (var m in r.sharedMaterials)
+            {
+                if (!m || !m.shader || !seen.Add(m)) continue;
+                var sb = new StringBuilder($"  재질 {r.name}/{m.name} [{m.shader.name}] 키워드 {string.Join(" ", m.shaderKeywords)}");
+                for (int p = 0; p < m.shader.GetPropertyCount(); p++)
+                {
+                    string n = m.shader.GetPropertyName(p);
+                    if (n.IndexOf("Emi", StringComparison.OrdinalIgnoreCase) < 0 && n.IndexOf("Light", StringComparison.OrdinalIgnoreCase) < 0
+                        && n.IndexOf("Ambient", StringComparison.OrdinalIgnoreCase) < 0 && n.IndexOf("GI", StringComparison.Ordinal) < 0) continue;
+                    var t = m.shader.GetPropertyType(p);
+                    string val = t == UnityEngine.Rendering.ShaderPropertyType.Color ? m.GetColor(n).ToString()
+                        : t == UnityEngine.Rendering.ShaderPropertyType.Vector ? m.GetVector(n).ToString()
+                        : t == UnityEngine.Rendering.ShaderPropertyType.Texture ? (m.GetTexture(n) ? m.GetTexture(n).name : "-")
+                        : m.GetFloat(n).ToString("F3");
+                    sb.Append($" {n}={val}");
+                }
+                log.AppendLine(sb.ToString());
+            }
+        }
+    }
+
     static void DescribePrefab(GameObject go, StringBuilder log)
     {
         var t = go.transform;
@@ -740,6 +878,9 @@ public static class InstallSmokeTest
         }
     }
 
+    /// <summary>시험용: 촬영 결과에 덮을 화면 효과 재질(-maAmbient ag).</summary>
+    static Material PostMaterial;
+
     static void Capture(Camera cam, CharacterView ch, string file, float yaw, float pitch, float dist, Vector3 target, int w = 768, int h = 1024)
     {
         var rot = Quaternion.Euler(pitch, yaw, 0);
@@ -749,6 +890,12 @@ public static class InstallSmokeTest
         // 블렌드셰이프 갱신. 원래 꺼진 렌더러(무기 Mesh_MainBuff 등)는 켜지 않는다.
         foreach (var (_, r) in ch.Renderers) if (r && r.enabled && r.gameObject.activeInHierarchy) { r.enabled = false; r.enabled = true; }
         cam.Render();
+        if (PostMaterial)
+        {
+            var rt2 = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            Graphics.Blit(rt, rt2, PostMaterial);
+            UnityEngine.Object.DestroyImmediate(rt); rt = rt2;
+        }
         RenderTexture.active = rt;
         var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
         tex.ReadPixels(new Rect(0, 0, w, h), 0, 0); tex.Apply();

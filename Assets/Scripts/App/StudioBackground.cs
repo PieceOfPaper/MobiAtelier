@@ -3,6 +3,15 @@
 //   3D 배경: 시트의 배경 프리팹을 설치 폴더 번들에서 열어 원점에 둔다. 원본 셰이더의 전용 패스는 StudioBackgroundPass 가 그린다.
 //   환경 볼륨: 시트의 VolumeKey·VolumeGroupName 볼륨을 읽어 주광·전역 셰이더 값·안개에 넣는다(EnvironmentVolume, Background.md 8장).
 //     볼륨을 읽지 못해도 배경은 바꾼다. 볼륨 없이(장면 처음 조명으로) 그리고 경고를 남긴다.
+//   하늘: 볼륨에 하늘 색이 있으면 하늘 셰이더(MMN/BG/Sky_Re) 재질을 스카이박스로 쓰고 볼륨 하늘 값을 넣는다(Background.md 4장).
+//     셰이더는 NaoZone 씬의 스카이박스 재질에서 가져온다(설치 폴더 씬 번들 RenderSettings 가 이 재질을 가리킨다 [확인]).
+//     시트에 씬 필드가 없어 배경과 씬을 잇지 않는다. 재질을 열지 못하면 시트 색 그라데이션을 그대로 쓴다.
+//   노출: 프리팹의 Beautify 프로파일 노출(BeautifyProfile, 번들 직접 읽기)을 배경 조명에 곱한다(EnvironmentVolume).
+//   라이트 프로브: 볼륨 키와 이름이 같은 GeoData(GeoData/<키>/GeoData)가 그 키를 기본 볼륨으로 쓰면 그 LightProbeAssetPath 를 넣는다.
+//     배경 원본 셰이더는 앰비언트(SH)를 정점에서 읽는다 [확인: SimpleLit 정점 셰이더 디스어셈블, unity_SH* → 밝기 = 바탕색×(SH×GI 배수 + 주광)].
+//     공간의 틈: 빛 벽이 149 → 167 로 게임 180 에 가까워졌다 [확인: 배치 촬영]. GeoData 를 전부 훑지 않는다(1,140개, 큰 것 20MB).
+//   바닥 반사: 반사 셰이더(MMN/Special/PlanarReflection) 바닥이 있으면 반사 패스를 켜고 그 렌더러의 저옵션(큐브맵 반사)을 끈다.
+//     게임 스크립트 PlanarReflections 의 대신이다(StudioBackgroundPass.cs).
 //   전역 텍스처: 배경 프리팹의 EnvironmentConfig(게임 스크립트라 앱에서 돌지 않는다)가 넣는 전역 텍스처를 대신 넣는다(Background.md 8장).
 // 배경 선택은 장면 상태(EditState.background)다. 자동 저장·코디 JSON 에 들어간다(SaveLoad.md 확정 원칙).
 using System;
@@ -13,6 +22,7 @@ public sealed class StudioBackground
 {
     public const string DefaultId = "BG_Gradation1";
     const string ShadowReceiverPath = "Environment/StudioPhotoMode/Prefab/StudioPhotoMode_ShadowReceiver.prefab";
+    const string SkyMaterialPath = "Environment/Skybox/NaoZone/NaoZone_Skybox_Sunny_RE.mat";
     /// <summary>색 배경일 때 카메라 먼 평면. 3D 배경은 하늘 돔(반지름 수백 m)이 잘리지 않게 늘린다.</summary>
     const float NearFar = 100f, FarFar = 3000f;
 
@@ -35,6 +45,9 @@ public sealed class StudioBackground
     readonly Material gradient;
     /// <summary>그림자 바닥 재질(MobiAtelier/ShadowReceiver). 없으면 프리팹의 원본 재질을 그대로 쓴다.</summary>
     readonly Material shadowFloor;
+    /// <summary>볼륨 하늘용 스카이박스 재질(설치 폴더 재질의 복제본). 처음 필요할 때 만든다.</summary>
+    Material sky;
+    bool skyTried;
     readonly List<GameObject> spawned = new List<GameObject>();
     /// <summary>3D 배경의 렌더러. 카메라와 캐릭터 사이를 가리면 숨긴다(UpdateOccluders).</summary>
     readonly List<Renderer> occluders = new List<Renderer>();
@@ -95,6 +108,8 @@ public sealed class StudioBackground
         internal readonly List<GameObject> Objects = new List<GameObject>();
         internal StudioBackgroundData Data;
         internal EnvironmentVolumeData Volume;
+        internal LightProbes Probes;
+        internal float Exposure = 1f;
         internal bool Is3D;
         public string Error;
         public bool Failed;
@@ -128,6 +143,8 @@ public sealed class StudioBackground
                 {
                     result.Is3D = true;
                     result.Volume = LoadVolume(b);
+                    result.Probes = LoadLightProbes(b);
+                    result.Exposure = LoadExposure(b);
                     return result;
                 }
                 result.Dispose();
@@ -172,8 +189,16 @@ public sealed class StudioBackground
         }
         CurrentId = prepared.Data?.Id;
         if (prepared.Is3D) SetGlobalTextures();
+        SetupReflection();
+        SetLightProbes(prepared.Is3D ? prepared.Probes : null);
         SetGradient(prepared.Data);
-        EnvironmentVolume.Apply(prepared.Volume, StageBuilder.MainLight);
+        EnvironmentVolume.Apply(prepared.Volume, StageBuilder.MainLight, prepared.Is3D ? prepared.Exposure : 1f);
+        if (prepared.Is3D && EnvironmentVolume.HasSky(prepared.Volume) && SkyMaterial())
+        {
+            EnvironmentVolume.ApplySky(prepared.Volume, sky);
+            RenderSettings.skybox = sky;
+            cam.clearFlags = CameraClearFlags.Skybox;
+        }
         cam.farClipPlane = prepared.Is3D ? FarFar : NearFar;
     }
 
@@ -205,6 +230,89 @@ public sealed class StudioBackground
         gradient.SetColor("_RightUpper", Hex(b?.RightUpper));
         RenderSettings.skybox = gradient;
         cam.clearFlags = CameraClearFlags.Skybox;
+    }
+
+    /// <summary>배경 프리팹들의 첫 Beautify 프로파일 노출. 없거나 읽지 못하면 1(경고만).</summary>
+    float LoadExposure(StudioBackgroundData b)
+    {
+        foreach (var rel in b.Prefabs)
+        {
+            try
+            {
+                var p = BeautifyProfile.FromPrefab(bundles.Files, BundleCache.AssetRoot + rel);
+                if (p != null) return p.Exposure;
+            }
+            catch (Exception e) { Debug.LogWarning($"[MobiAtelier] 후처리 프로파일 읽기 실패 {rel}: {e.Message}"); }
+        }
+        return 1f;
+    }
+
+    /// <summary>배경 볼륨 키의 GeoData 라이트 프로브. 없거나 읽지 못하면 null(경고만).</summary>
+    LightProbes LoadLightProbes(StudioBackgroundData b)
+    {
+        if (b == null || string.IsNullOrEmpty(b.VolumeKey)) return null;
+        string geo = "GeoData/" + b.VolumeKey + "/GeoData.sjon.bin";
+        if (!bundles.Files.HasResource(geo)) return null;
+        try
+        {
+            var root = bundles.Files.ReadSjon(geo);
+            if (root.Get("GlobalVolumeInfo").Get("DefaultVolumeDataInfo").Get("VolumeDataName").Str() != b.VolumeKey) return null;
+            string path = root.Get("LightProbeAssetPath").Str();
+            if (string.IsNullOrEmpty(path)) return null;
+            var probes = bundles.LoadAsset<LightProbes>(BundleCache.AssetRoot + path);
+            if (!probes) Debug.LogWarning($"[MobiAtelier] 라이트 프로브 없음 {path}");
+            return probes;
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[MobiAtelier] 라이트 프로브 읽기 실패 {geo}: {e.Message}");
+            return null;
+        }
+    }
+
+    LightProbes baseProbes;
+    bool baseProbesCaptured;
+
+    /// <summary>장면 라이트 프로브를 바꾼다. null 이면 장면 처음 프로브로 되돌린다.</summary>
+    void SetLightProbes(LightProbes probes)
+    {
+        if (!baseProbesCaptured) { baseProbes = LightmapSettings.lightProbes; baseProbesCaptured = true; }
+        var target = probes ? probes : baseProbes;
+        if (LightmapSettings.lightProbes == target) return;
+        LightmapSettings.lightProbes = target;
+        LightProbes.Tetrahedralize();
+    }
+
+    static readonly int LowOptionEnableId = Shader.PropertyToID("_LowOptionEnable");
+
+    /// <summary>반사 바닥을 찾아 반사 패스를 켠다. 평면 높이는 첫 반사 렌더러의 위치다(게임은 ReflectionNormalPlane 의 위치를 쓴다).</summary>
+    void SetupReflection()
+    {
+        bool found = false; float planeY = 0f;
+        var block = new MaterialPropertyBlock();
+        foreach (var r in occluders)
+        {
+            if (!r || !r.sharedMaterial || !r.sharedMaterial.shader || r.sharedMaterial.shader.name != "MMN/Special/PlanarReflection") continue;
+            if (!found) { found = true; planeY = r.transform.position.y; }
+            r.GetPropertyBlock(block);
+            block.SetFloat(LowOptionEnableId, 0f);
+            r.SetPropertyBlock(block);
+            r.renderingLayerMask |= StudioBackgroundRendering.ReflectorLayerBit;
+        }
+        StudioBackgroundRendering.SetReflection(found, planeY);
+    }
+
+    /// <summary>하늘 재질. 처음 한 번만 연다. 열지 못하면 경고를 남기고 null(시트 색 그라데이션을 쓴다).</summary>
+    Material SkyMaterial()
+    {
+        if (skyTried) return sky;
+        skyTried = true;
+        Material src = null;
+        try { src = bundles.LoadAsset<Material>(BundleCache.AssetRoot + SkyMaterialPath); }
+        catch (Exception e) { Debug.LogWarning($"[MobiAtelier] 하늘 재질 읽기 실패 {SkyMaterialPath}: {e.Message}"); }
+        if (src && src.shader && src.shader.isSupported) sky = new Material(src) { name = "StudioVolumeSky" };
+        else Debug.LogWarning($"[MobiAtelier] 하늘 재질을 쓸 수 없습니다 {SkyMaterialPath}");
+        return sky;
     }
 
     /// <summary>전역 텍스처를 한 번 넣는다. 읽지 못한 텍스처는 경고만 남기고 건너뛴다.</summary>
@@ -274,6 +382,7 @@ public sealed class StudioBackground
 
     void Clear(bool immediate = false)
     {
+        StudioBackgroundRendering.SetReflection(false);
         occluders.Clear();
         foreach (var go in spawned)
             if (go)
@@ -290,7 +399,9 @@ public sealed class StudioBackground
     {
         Clear(true);
         EnvironmentVolume.Apply(null, StageBuilder.MainLight);
-        if (RenderSettings.skybox == gradient) RenderSettings.skybox = null;
+        if (RenderSettings.skybox == gradient || (sky && RenderSettings.skybox == sky)) RenderSettings.skybox = null;
+        if (sky) UnityEngine.Object.Destroy(sky);
+        SetLightProbes(null);
         if (gradient) UnityEngine.Object.Destroy(gradient);
         if (shadowFloor) UnityEngine.Object.Destroy(shadowFloor);
     }

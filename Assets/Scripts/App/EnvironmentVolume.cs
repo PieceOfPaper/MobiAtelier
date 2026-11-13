@@ -9,6 +9,11 @@
 //   방향: 주광(볼륨이 있으면 볼륨 방향, 없으면 장면 처음 방향)을 따른다. 원본 캐릭터 셰이더가 주광 방향을 쓴다
 //     [확인: 2026-11-12 몸·의상에 원본 셰이더를 임시로 쓰고 볼륨 회전 유무로 촬영하면 명암이 바뀌었다].
 // 볼륨이 없으면(색 배경·키 없음·읽기 실패) 장면 처음 조명으로 되돌리고 전역 값을 0, 안개를 끈다(이 기능 전과 같은 상태).
+// 하늘(Skybox 섹션): 하늘 셰이더(MMN/BG/Sky_Re)는 전역 값이 아니라 재질 속성을 읽는다. 볼륨 항목 이름과 재질 속성 이름이 같아
+//   ApplySky 가 스카이박스 재질에 넣는다 [확인: 2026-11-14 공간의 틈: 빛 하늘색 앱 143,177,202 ↔ 게임 152,185,217]. 게임도 이렇게 넣는다 [추정].
+// 노출: 배경 프리팹의 게임 후처리 프로파일(Beautify)이 화면에 곱하는 노출(BeautifyProfile.Exposure)을 배경 조명에 곱해 근사한다.
+//   주광 세기·GI 배수·장면 앰비언트에 곱한다. 캐릭터 빛은 곱하기 전 값으로 정해 캐릭터는 바뀌지 않는다
+//   [확인: 게임 캐릭터 밝기는 앱과 같다]. 발광·하늘처럼 조명을 받지 않는 면은 바뀌지 않는다(근사의 한계).
 // 볼륨의 앰비언트 그라데이션(PostProcessing 섹션)·SSAO·바람·하늘 Unlit 색은 적용하지 않는다(ImplementationGaps.md).
 using UnityEngine;
 
@@ -34,6 +39,9 @@ public static class EnvironmentVolume
         ("Skybox.SunGlowDisk", "_Global_SunGlowDisk", false),
         ("Skybox.SunGlowColor", "_Global_SunGlowColor", true),
         ("SkyClouds.CloudColor", "_Global_CloudColor", true),
+        ("SkyClouds.CloudColor2", "_Global_CloudColor2", true),   // 구름 셰이더(MMN/CutScene/Sky_Clouds)가 2~4 를 쓴다 [확인: 셰이더 이름 표]
+        ("SkyClouds.CloudColor3", "_Global_CloudColor3", true),
+        ("SkyClouds.CloudColor4", "_Global_CloudColor4", true),
         ("GlobalEnvironment.CloudDensity", "_Global_CloudDensity", false),
         ("GlobalEnvironment.CloudScale", "_Global_CloudScale", false),
         ("GlobalEnvironment.CloudEdgeHardness", "_Global_CloudEdgeHardness", false),
@@ -58,6 +66,11 @@ public static class EnvironmentVolume
     static Quaternion baseRotation;
     static Color baseColor;
     static float baseIntensity, baseShadow;
+    static UnityEngine.Rendering.SphericalHarmonicsL2 baseAmbient;
+    static readonly int GILightMultiId = Shader.PropertyToID("_Global_GILightMulti");
+
+    /// <summary>지금 적용된 노출 배수(1 이면 없음). 로그·시험용.</summary>
+    public static float CurrentExposure { get; private set; } = 1f;
 
     /// <summary>시험용: 적용하지 않을 볼륨 값 이름("섹션.필드"). 스모크 테스트 -maVolumeSkip 이 채운다.</summary>
     public static readonly System.Collections.Generic.HashSet<string> Skip = new System.Collections.Generic.HashSet<string>();
@@ -66,7 +79,7 @@ public static class EnvironmentVolume
     public static string CurrentKey { get; private set; }
 
     /// <summary>볼륨을 적용한다. volume 이 null 이면 장면 처음 상태로 되돌린다.</summary>
-    public static void Apply(EnvironmentVolumeData volume, Light light)
+    public static void Apply(EnvironmentVolumeData volume, Light light, float exposure = 1f)
     {
         Capture(light);
         CurrentKey = volume?.Key;
@@ -90,6 +103,7 @@ public static class EnvironmentVolume
             light.intensity = Has(volume, "MainLight.Intensity", StudioTime, out var i) && i.Length > 0 ? i[0] : baseIntensity;
             light.shadowStrength = Has(volume, "MainLight.ShadowIntensity", StudioTime, out var s) && s.Length > 0 ? Mathf.Clamp01(s[0]) : baseShadow;
             SetCharacterLight(volume, light);
+            light.intensity *= exposure;
         }
 
         float[] fc = null, fs = null, fe = null;
@@ -103,6 +117,44 @@ public static class EnvironmentVolume
             RenderSettings.fogColor = ToColor(fc);
             RenderSettings.fogStartDistance = fs[0];
             RenderSettings.fogEndDistance = Mathf.Max(fe[0], fs[0] + 0.01f);
+        }
+
+        if (captured)
+        {
+            exposure = exposure > 0f ? exposure : 1f;
+            CurrentExposure = exposure;
+            Shader.SetGlobalVector(GILightMultiId, Shader.GetGlobalVector(GILightMultiId) * exposure);
+            RenderSettings.ambientProbe = baseAmbient * exposure;
+        }
+    }
+
+    /// <summary>볼륨 Skybox 값 → 하늘 재질 속성(같은 이름에 _ 를 붙인다). color 면 색, 아니면 첫 성분 실수.</summary>
+    static readonly (string field, string property, bool color)[] SkyProperties =
+    {
+        ("Skybox.SkyColorTop", "_SkyColorTop", true),
+        ("Skybox.SkyColorMiddle", "_SkyColorMiddle", true),
+        ("Skybox.SkyColorBottom", "_SkyColorBottom", true),
+        ("Skybox.SkyPosition1", "_SkyPosition1", false),
+        ("Skybox.SkyPosition2", "_SkyPosition2", false),
+        ("Skybox.SkyPosition3", "_SkyPosition3", false),
+        ("Skybox.SkyPosition4", "_SkyPosition4", false),
+        ("Skybox.SunDisk", "_SunDisk", false),
+        ("Skybox.SunGlowDisk", "_SunGlowDisk", false),
+        ("Skybox.SunGlowColor", "_SunGlowColor", true),
+    };
+
+    /// <summary>볼륨에 하늘 색이 있는지. 없으면 시트 색 그라데이션을 그대로 쓴다.</summary>
+    public static bool HasSky(EnvironmentVolumeData volume) => Has(volume, "Skybox.SkyColorTop", StudioTime, out _);
+
+    /// <summary>볼륨의 하늘 값을 스카이박스 재질에 넣는다. 볼륨에 없는 값은 재질 값을 그대로 둔다.</summary>
+    public static void ApplySky(EnvironmentVolumeData volume, Material sky)
+    {
+        if (!sky) return;
+        foreach (var (field, property, color) in SkyProperties)
+        {
+            if (!sky.HasProperty(property) || !Has(volume, field, StudioTime, out var v)) continue;
+            if (color) sky.SetColor(property, ToColor(v));
+            else if (v.Length > 0) sky.SetFloat(property, v[0]);
         }
     }
 
@@ -121,6 +173,7 @@ public static class EnvironmentVolume
         baseColor = light.color;
         baseIntensity = light.intensity;
         baseShadow = light.shadowStrength;
+        baseAmbient = RenderSettings.ambientProbe;
     }
 
     /// <summary>앱 캐릭터 셰이더가 쓸 빛. URP 주광과 같은 형식(빛 쪽 방향, 선형 색)이다. 규칙은 파일 머리 주석.</summary>

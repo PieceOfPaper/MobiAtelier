@@ -45,7 +45,7 @@
 
 | 경로 | 어셈블리 | 내용 |
 |---|---|---|
-| `Assets\Scripts\Install\` | `MobiAtelier.Runtime` | 설치 폴더 index·blob·리소스 복호화·SJON 리더, 경로 검사. UnityEngine 비의존 |
+| `Assets\Scripts\Install\` | `MobiAtelier.Runtime` | 설치 폴더 index·blob·리소스 복호화·SJON 리더, 에셋 번들 타입트리 리더(`UnityBundle`), 경로 검사. UnityEngine 비의존 |
 | `Assets\Scripts\Sheets\` | 〃 | 게임 시트 리더와 필드 순서(`SheetSchemas.cs`), 시트 조회(`GameData`). UnityEngine 비의존 |
 | `Assets\Scripts\Character\` | 〃 | 조립 계획(`PlanResolver`), 메시·번들 읽기, 조립(`CharacterAssembler`), 캐릭터 상태(`CharacterView`) |
 | `Assets\Scripts\State\` | 〃 | 장면 상태(`EditState`), 앱 설정, JSON 저장·자동 저장 |
