@@ -20,6 +20,7 @@ public sealed class AppController : MonoBehaviour
 {
     public Shader characterShader;
     public Shader gradientShader;
+    public Shader shadowReceiverShader;
     public PanelSettings panelSettings;
 
     const string JsonFilter = "JSON (*.json)\0*.json\0";
@@ -221,7 +222,7 @@ public sealed class AppController : MonoBehaviour
         files = r.Files;
         data = r.Data;
         bundles = new BundleCache(files);
-        background = new StudioBackground(cameraCtl.Cam, bundles, gradientShader);
+        background = new StudioBackground(cameraCtl.Cam, bundles, gradientShader, shadowReceiverShader);
         if (data.BackgroundError != null) Debug.LogWarning("[MobiAtelier] 배경 시트를 읽지 못했습니다: " + data.BackgroundError);
         if (data.DecorationError != null) Debug.LogWarning("[MobiAtelier] 꾸밈 시트를 읽지 못했습니다: " + data.DecorationError);
         if (settings.installPath != path)

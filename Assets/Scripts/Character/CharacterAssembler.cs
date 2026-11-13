@@ -294,6 +294,9 @@ public static class CharacterAssembler
                     if (!src) Fail(part, "메시 재질을 읽지 못했습니다: " + name);
                     if (DebugMaterials && src) L($"  재질 {part.Model}/{name}[{s}]: {src.name} 셰이더 {(src.shader ? src.shader.name : "-")} 큐 {src.renderQueue} 텍스처 {DescribeTextures(src)}");
                     subMats[s] = Convert(src, (part.Role == PartRole.Eyes && KeepOriginalEyeShader) || (part.Role == PartRole.Head && KeepOriginalHeadShader), out _);
+                    // 드러난 피부를 의상 메시 안의 피부 조각으로 그리는 의상이 있다(예: 어깨 트인 상의의 가슴). 몸 메시의 그 자리는 잘린다.
+                    if (part.Role == PartRole.Costume && src && src.shader && src.shader.name.EndsWith("/Skin_Body", StringComparison.Ordinal))
+                        view.CostumeSkinMaterials.Add(subMats[s]);
                 }
                 smr.sharedMaterials = subMats;
 
@@ -782,23 +785,26 @@ public static class CharacterAssembler
         var scalePos = st.Count >= 4 ? new Vector4(st[0].F(), st[1].F(), st[2].F(), st[3].F()) : new Vector4(1, 1, 0, 0);
         string slot = def.Get("ModelPartInfo").Get("AppearanceSlot").Str();
         bool scar = slot == "FaceScar" || slot == "BodyScar";
-        int applied = 0;
+        int applied = 0, costumeSkin = 0;
+        var targets = new List<Material>();
         foreach (var (key, r) in view.Renderers)
+            if (key == host && r) targets.AddRange(r.sharedMaterials);
+        // 몸꾸밈은 의상 안의 피부 조각(Skin_Body)에도 건다. 몸과 같은 몸 UV 다 [확인: 스트리트 고스 캣 웨어 가슴 촬영].
+        if (host == "body")
+            foreach (var m in view.CostumeSkinMaterials)
+                if (m && !targets.Contains(m)) { targets.Add(m); costumeSkin++; }
+        foreach (var m in targets)
         {
-            if (key != host || !r) continue;
-            foreach (var m in r.sharedMaterials)
-            {
-                if (!m || !m.HasProperty("_TattooMap")) continue;
-                m.SetTexture("_TattooMap", tex);
-                m.SetVector("_TattooMapScalePosition", scalePos);
-                m.SetFloat("_TattooMapRotation", info.Get("Rotation").F());
-                if (m.HasProperty("_TattooPushStrength")) m.SetFloat("_TattooPushStrength", info.Get("PushStrength").F());
-                if (m.HasProperty("_IsScarMode")) m.SetFloat("_IsScarMode", scar ? 1 : 0);
-                if (m.HasProperty("_TattooOn")) m.SetFloat("_TattooOn", 1);
-                applied++;
-            }
+            if (!m || !m.HasProperty("_TattooMap")) continue;
+            m.SetTexture("_TattooMap", tex);
+            m.SetVector("_TattooMapScalePosition", scalePos);
+            m.SetFloat("_TattooMapRotation", info.Get("Rotation").F());
+            if (m.HasProperty("_TattooPushStrength")) m.SetFloat("_TattooPushStrength", info.Get("PushStrength").F());
+            if (m.HasProperty("_IsScarMode")) m.SetFloat("_IsScarMode", scar ? 1 : 0);
+            if (m.HasProperty("_TattooOn")) m.SetFloat("_TattooOn", 1);
+            applied++;
         }
-        log?.Invoke($"꾸밈({host}): {tex.name} {slot}, 크기·위치 {scalePos}, 머티리얼 {applied}개" + (applied == 0 ? " (_TattooMap 없음)" : ""));
+        log?.Invoke($"꾸밈({host}): {tex.name} {slot}, 크기·위치 {scalePos}, 머티리얼 {applied}개(의상 피부 {costumeSkin}개)" + (applied == 0 ? " (_TattooMap 없음)" : ""));
         return applied > 0;
     }
 

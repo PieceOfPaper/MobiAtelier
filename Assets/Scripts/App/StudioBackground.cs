@@ -33,17 +33,20 @@ public sealed class StudioBackground
     readonly Camera cam;
     readonly BundleCache bundles;
     readonly Material gradient;
+    /// <summary>그림자 바닥 재질(MobiAtelier/ShadowReceiver). 없으면 프리팹의 원본 재질을 그대로 쓴다.</summary>
+    readonly Material shadowFloor;
     readonly List<GameObject> spawned = new List<GameObject>();
     /// <summary>3D 배경의 렌더러. 카메라와 캐릭터 사이를 가리면 숨긴다(UpdateOccluders).</summary>
     readonly List<Renderer> occluders = new List<Renderer>();
 
     public string CurrentId { get; private set; }
 
-    public StudioBackground(Camera cam, BundleCache bundles, Shader gradientShader)
+    public StudioBackground(Camera cam, BundleCache bundles, Shader gradientShader, Shader shadowReceiverShader)
     {
         this.cam = cam;
         this.bundles = bundles;
         gradient = gradientShader ? new Material(gradientShader) { name = "StudioGradient" } : null;
+        shadowFloor = shadowReceiverShader ? new Material(shadowReceiverShader) { name = "StudioShadowReceiver" } : null;
         StudioBackgroundRendering.Install();
     }
 
@@ -139,6 +142,15 @@ public sealed class StudioBackground
             if (floor)
             {
                 floor.transform.position = Vector3.zero;       // 원본 프리팹은 y = -100 에 숨겨 두고 게임이 옮긴다.
+                // 원본 셰이더(MMN/MMN_ShadowOnly)는 소프트 그림자 필터를 쓰지 않아 계단이 보인다. 앱 셰이더로 바꾼다.
+                if (shadowFloor)
+                    foreach (var r in floor.GetComponentsInChildren<Renderer>(true))
+                    {
+                        var mats = r.sharedMaterials;
+                        for (int i = 0; i < mats.Length; i++) mats[i] = shadowFloor;
+                        r.sharedMaterials = mats;
+                        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    }
                 floor.SetActive(false);
                 result.Objects.Add(floor);
             }
@@ -280,5 +292,6 @@ public sealed class StudioBackground
         EnvironmentVolume.Apply(null, StageBuilder.MainLight);
         if (RenderSettings.skybox == gradient) RenderSettings.skybox = null;
         if (gradient) UnityEngine.Object.Destroy(gradient);
+        if (shadowFloor) UnityEngine.Object.Destroy(shadowFloor);
     }
 }

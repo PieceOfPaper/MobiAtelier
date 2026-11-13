@@ -35,6 +35,8 @@ public sealed class CharacterView : MonoBehaviour
     internal readonly List<UnityEngine.Object> Owned = new List<UnityEngine.Object>();
     internal SkinnedMeshRenderer Body;
     internal Mesh BodyFullMesh, BodyCutMesh;
+    /// <summary>의상 파츠 안의 피부 조각 재질(원본 셰이더 MMN/CH/Skin_Body). 몸과 같은 몸 UV 를 쓰므로 몸꾸밈을 함께 건다.</summary>
+    internal readonly List<Material> CostumeSkinMaterials = new List<Material>();
     public AssemblyPlan Plan;
 
     bool posed = true, bodyCut = true;

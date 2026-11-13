@@ -87,7 +87,7 @@ public static class InstallSmokeTest
                     s.costumes.Add(new CostumeSlotState { part = "Bottom", costumeId = "Fashion_NewbieSword_Bottom" });
                     s.costumes.Add(new CostumeSlotState { part = "Shoes", costumeId = "Fashion_NewbieSword_Shoes" });
                     var view = CharacterAssembler.Build(files, bundles, PlanResolver.Resolve(s, data, files), shader, log);
-                    var studio = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"));
+                    var studio = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"), Shader.Find("MobiAtelier/ShadowReceiver"));
                     // -maVolumeSkip 값1;값2 : 해당 환경 볼륨 값(예: CharacterLight.SilhouetteColor)을 빼고 적용한다(원인 찾기용).
                     string skip = Arg("-maVolumeSkip");
                     if (skip != null) foreach (var f in skip.Split(';')) EnvironmentVolume.Skip.Add(f);
@@ -594,7 +594,7 @@ public static class InstallSmokeTest
         object Call(string method, params object[] args) => typeof(AppController).GetMethod(method, flags).Invoke(app, args);
         var ui = new AppUI(host, AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.PanelSettings>("Assets/UI/MobiAtelierPanel.asset"));
         var camera = cam.gameObject.AddComponent<CameraController>(); camera.Cam = cam;
-        var bg = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"));
+        var bg = new StudioBackground(cam, bundles, Shader.Find("MobiAtelier/StudioGradient"), Shader.Find("MobiAtelier/ShadowReceiver"));
         var autosave = new Autosave(() => app.State);
         var dataField = typeof(JsonStore).GetField("dataDir", BindingFlags.Static | BindingFlags.NonPublic);
         object oldDataDir = dataField.GetValue(null);
