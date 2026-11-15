@@ -37,7 +37,7 @@
 |---|---|
 | 목록 범위 | 2인 모션(`Logic`, 커플댄스 등 5개)만 뺀다. 무작위 모션(`Random`)은 넣는다 |
 | 잠금 모션 | 게임에서 아이템으로 해금하는 모션도 모두 보인다. 해금 조건은 숨김 데이터 판정이 아니다 |
-| 데이터 연결 | `SocialAction.Actions[].Name` → `Action`(그룹 `PlayerFemale`·`PlayerMale`·`PlayerInfant`, 조건 `BodyType`·`Clothing`) → `StartClipPath`·`LoopClipPath`. 얼굴은 클립 이름 + `_Facial`(fbx·xaf) |
+| 데이터 연결 | `SocialAction.Actions[].Name` → `Action`(그룹 `PlayerFemale`·`PlayerMale`·`PlayerInfant`, 조건 `BodyType`·`Clothing`) → `StartClipPath`·`LoopClipPath`. 얼굴은 클립 이름 + `_Facial`(fbx·xaf). xaf 키 보간은 게임 규칙을 따른다: Step·Constant 는 계단, Linear 는 선형, 나머지는 Flat, `_EyeballIndexFromOne` 은 항상 계단(2026-11-15) |
 | 성별·나이별 클립 | 시트 경로를 그대로 쓴다. 전통댄스는 남성·어린 외형도 여성 클립을 쓴다 |
 | 옷 조건 | 입은 의상 모델의 `ClothingCondition`(ShortSkirt·LongSkirt)으로 앉기 등의 클립을 고른다 |
 | 무작위 모션 | 고를 때마다 `Actions` 중 하나를 고른다(가중치가 모두 같다). 다시 조립해 이어 재생할 때는 고른 것을 유지한다 |

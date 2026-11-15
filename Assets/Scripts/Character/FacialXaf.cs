@@ -2,7 +2,10 @@
 //   Morpher    : 블렌드셰이프 가중치(0~100). 눈 깜빡임 MT_Blink* 등
 //   Visibility : 메시 표시(0/1). 눈 하이라이트 Mesh_EyeHigh 는 깜빡이는 동안 꺼진다
 //   Shader     : 머티리얼 값. "이름.x" 는 벡터 성분
-// 시간 단위는 프레임(FrameRate, 보통 30)이다. 키 보간: Constant 는 계단, Flat 은 기울기 0 Hermite(부드러운 출입), 그 밖은 선형.
+// 시간 단위는 프레임(FrameRate, 보통 30)이다. 키 보간은 게임 XafTangentTypeExtension.ForceConvert 를 따른다 [확인: 게임 코드]:
+//   Step·Constant → 계단, Linear → 선형, 그 밖(Auto·Spline·Fast·Slow·Smooth·Flat) → 기울기 0 Hermite(Flat).
+//   _EyeballIndexFromOne 트랙은 게임 XafAnimationMigrator 가 모든 키를 Constant 로 바꾼다.
+//   (Step 을 선형으로 보간하면 입·눈 아틀라스 번호가 중간 칸을 거쳐 여러 텍스처가 빠르게 지나간다.)
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -12,6 +15,13 @@ public sealed class FacialXaf
     enum Kind { Morpher, Visibility, Shader }
 
     struct Key { public float Time, Value; public bool Constant, Flat; }
+
+    /// <summary>게임 ForceConvert: Step·Constant → 계단, Linear → 선형, 나머지 → Flat.</summary>
+    static void Interp(string outTangent, out bool constant, out bool flat)
+    {
+        constant = outTangent == "Step" || outTangent == "Constant";
+        flat = !constant && outTangent != "Linear";
+    }
 
     sealed class Track
     {
@@ -49,12 +59,14 @@ public sealed class FacialXaf
                 var keys = tr.Get("Keyframes").Arr();
                 if (keys.Count == 0) continue;
                 var t = new Track { Renderer = r, Keys = new Key[keys.Count] };
+                string prop = tr.Get("AnimationPropertyName").Str();
+                bool forceConstant = prop == "_EyeballIndexFromOne";
                 for (int i = 0; i < keys.Count; i++)
                 {
-                    string type = keys[i].Get("OutTangentType").Str();
-                    t.Keys[i] = new Key { Time = keys[i].Get("Time").F(), Value = keys[i].Get("Value").F(), Constant = type == "Constant", Flat = type == "Flat" };
+                    Interp(keys[i].Get("OutTangentType").Str(), out bool constant, out bool flat);
+                    if (forceConstant) { constant = true; flat = false; }
+                    t.Keys[i] = new Key { Time = keys[i].Get("Time").F(), Value = keys[i].Get("Value").F(), Constant = constant, Flat = flat };
                 }
-                string prop = tr.Get("AnimationPropertyName").Str();
                 switch (tr.Get("AnimationType").Str())
                 {
                     case "Morpher":
