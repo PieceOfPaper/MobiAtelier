@@ -68,6 +68,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-15 | 에디터 전용 프리 카메라: 화각 버튼 아래 버튼(`#if UNITY_EDITOR`, 빌드 제외). `CameraController.SetFreeMode` 는 각도·거리·높이 제한을 무시하고 따로 움직이며 저장·자동 저장에 남기지 않고, 끄면 켜기 전 시점으로 돌아간다. 런타임 dotnet 빌드(에디터·비에디터 정의) 오류 0. 에디터 플레이 확인 전 |
 | 2026-11-13 | 몸 자르기: `ClothingCut.cs`(ClothingUnit 읽기, 게임 FittingCutPolicy·자르기 규칙, 걸친 삼각형 잘라 새 정점 보간), `SmmReader` 삼각형 파일 순서 반환, 기존 근사(`BodyCut.LimbCuts`·면 근접) 삭제. 설치본 ClothingUnit 3,512개 읽기 [확인: 덤프 전수], 전후 11벌·회귀 4조합 촬영 |
 | 2026-11-12 | 배경 환경 볼륨 2차: 캐릭터 빛 방향을 주광(볼륨) 방향으로, `StudioBackground` 에 EnvironmentConfig 전역 텍스처 4개. 원본 셰이더 임시 시험으로 캐릭터가 주광 방향을 쓰는 것 확인, 접촉 그림자 값 임시 시험(도입 보류). `PhotoStudio` 볼륨은 별도 가상 방 맵 것이라 색 배경에 쓰지 않음. Unity 배치 컴파일 오류 0, 3D 4종 촬영 비교. Background.md 8장·ImplementationGaps 갱신 |
 | 2026-11-12 | 배경 환경 볼륨: `Sheets/EnvironmentVolumeData.cs`(VolumeData SJON 읽기, 그룹 덮어쓰기, 시각 보간), `App/EnvironmentVolume.cs`(주광·안개·전역 셰이더 값·캐릭터 빛), `StudioBackground` 준비 시 볼륨 읽기·확정 시 적용·해제 시 복원, `StageBuilder.MainLight`, `BundleCache.Files`, `MobiCharacter.shader` 의 `_MobiCharLightDir/Color`. 스모크 테스트 `-maNoVolume`·`-maVolumeSkip` 과 볼륨 로그. Unity 배치 컴파일 오류 0, 런타임 dotnet 빌드 오류 0. 공개 3D 4종 전후 촬영 비교. Background.md 8장·ImplementationGaps 갱신 |

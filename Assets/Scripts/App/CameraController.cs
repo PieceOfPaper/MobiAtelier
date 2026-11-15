@@ -6,6 +6,7 @@
 //   카메라 위치 = 기준점 + 회전·(0, 0, −거리) + 카메라 up·(InitialPanningHeight − CameraTargetHeight)·H
 //   렌즈 0.5·1·3: 수직 FOV = 2·atan(tan(Fov/2) / 배율)
 //   창(카메라 영역)이 세로로 길면 세로 값(Portrait)을 쓴다.
+//   에디터 전용 프리 카메라: 각도·거리·높이 제한을 모두 무시한다. 저장·이력에 남기지 않는다.
 //   UI 위에서 시작한 드래그는 끝날 때까지 카메라로 넘기지 않는다. 앱이 포커스를 잃으면 드래그를 해제한다.
 using System;
 using UnityEngine;
@@ -42,6 +43,14 @@ public sealed class CameraController : MonoBehaviour
     Drag drag;
     float scrollIdle = -1;
 
+    // 에디터 전용 프리 카메라. 제한된 값(yaw·pitch·distance·panHeight)은 그대로 두고 따로 움직인다.
+    bool free;
+    Vector3 freePivot;
+    float freeYaw, freePitch, freeDistance;
+    public bool FreeMode => free;
+    /// <summary>프리 카메라가 켜지거나 꺼졌을 때.</summary>
+    public event Action<bool> FreeModeChanged;
+
     StudioCameraParams P => portrait ? data.Portrait : data.Landscape;
 
     public void SetData(StudioCameraData value) { if (value != null) data = value; }
@@ -72,8 +81,30 @@ public sealed class CameraController : MonoBehaviour
         hi = bodyH * Mathf.Lerp(P.MaxPanningHeightWhenMinDistance, P.MaxPanningHeightWhenMaxDistance, t);
     }
 
+    /// <summary>에디터 전용. 켜면 현재 화면에서 시작해 모든 제한을 무시하고, 끄면 켜기 전 시점으로 돌아간다.</summary>
+    public void SetFreeMode(bool on)
+    {
+#if !UNITY_EDITOR
+        on = false;
+#endif
+        if (free == on) return;
+        if (on && Cam)
+        {
+            var t = Cam.transform;
+            freeYaw = t.eulerAngles.y;
+            freePitch = Mathf.DeltaAngle(0, t.eulerAngles.x);
+            freeDistance = Mathf.Max(curDistance, 0.05f);
+            freePivot = t.position + t.forward * freeDistance;
+        }
+        free = on;
+        if (drag != Drag.None) drag = Drag.Blocked;
+        scrollIdle = -1;
+        FreeModeChanged?.Invoke(free);
+    }
+
     public void ResetView()
     {
+        SetFreeMode(false);
         portrait = IsPortraitArea();
         yaw = 180; pitch = P.InitialPitch; distance = MaxDistance; panHeight = P.InitialPanningHeight * bodyH;
         lensMultiplier = 1f;
@@ -104,6 +135,7 @@ public sealed class CameraController : MonoBehaviour
     public void Load(CameraState s)
     {
         if (s == null || !s.valid) { ResetView(); return; }
+        SetFreeMode(false);
         portrait = IsPortraitArea();
         lensMultiplier = NormalizeLensMultiplier(s.lensMultiplier);
         yaw = s.yaw;
@@ -157,7 +189,7 @@ public sealed class CameraController : MonoBehaviour
 
     void EndDrag()
     {
-        bool changed = drag == Drag.Rotate || drag == Drag.Pan;
+        bool changed = !free && (drag == Drag.Rotate || drag == Drag.Pan);
         drag = Drag.None;
         if (changed) Committed?.Invoke();
     }
@@ -191,6 +223,8 @@ public sealed class CameraController : MonoBehaviour
             if (next != drag) { drag = next; d = Vector2.zero; }
         }
 
+        if (free) { HandleFreeInput(mouse, pos, d); return; }
+
         if (drag == Drag.Rotate)
         {
             yaw += d.x * RotateSpeed;
@@ -221,6 +255,30 @@ public sealed class CameraController : MonoBehaviour
         }
     }
 
+    /// <summary>프리 카메라: 회전 각도 무제한, 좌+우 드래그는 화면 평면 이동, 휠은 거리 배율(하한만 둔다).</summary>
+    void HandleFreeInput(Mouse mouse, Vector2 pos, Vector2 d)
+    {
+        if (drag == Drag.Rotate)
+        {
+            freeYaw += d.x * RotateSpeed;
+            freePitch -= d.y * RotateSpeed;
+        }
+        else if (drag == Drag.Pan && d != Vector2.zero)
+        {
+            // 화면 높이만큼 끌면 현재 거리에서 보이는 높이만큼 움직인다.
+            float viewH = 2f * freeDistance * Mathf.Tan(Cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            float k = viewH / Mathf.Max(Cam.pixelHeight, 1);
+            var rot = Quaternion.Euler(freePitch, freeYaw, 0);
+            freePivot -= rot * new Vector3(d.x * k, d.y * k, 0);
+        }
+        float sc = mouse.scroll.ReadValue().y;
+        if (sc != 0 && drag != Drag.Blocked && (IsPointerOverUI == null || !IsPointerOverUI(pos)))
+        {
+            float notches = Mathf.Abs(sc) >= 10f ? sc / 120f : sc;
+            freeDistance = Mathf.Max(0.01f, freeDistance * Mathf.Pow(0.85f, notches));
+        }
+    }
+
     static float Follow(float cur, float target, float time, float dt) =>
         dt <= 0 ? target : Mathf.Lerp(cur, target, 1f - Mathf.Exp(-dt / Mathf.Max(time, 1e-3f) * 3f));
 
@@ -232,6 +290,13 @@ public sealed class CameraController : MonoBehaviour
         eyeLift = Follow(eyeLift, EyeLiftRatio * bodyH * (1f - Ratio(curDistance)), EyeLiftTime, dt);
         curFov = Follow(curFov, TargetFov(), FovTime, dt);
         Cam.fieldOfView = curFov;
+        if (free)
+        {
+            var frot = Quaternion.Euler(freePitch, freeYaw, 0);
+            Pivot = freePivot;
+            Cam.transform.SetPositionAndRotation(freePivot + frot * new Vector3(0, 0, -freeDistance), frot);
+            return;
+        }
         var rot = Quaternion.Euler(pitch, yaw, 0);
         float upOffset = (p.InitialPanningHeight - p.CameraTargetHeight) * bodyH;
         Pivot = new Vector3(0, baseY + panHeight - upOffset + eyeLift, 0);

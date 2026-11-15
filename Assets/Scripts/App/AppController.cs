@@ -605,6 +605,10 @@ public sealed class AppController : MonoBehaviour
             () => background?.CurrentId, SetBackground, Undo, Redo, BeginHeightEdit, EndHeightEdit);
         panel.Bind(data);
         ui.AddViewControls(cameraCtl.SetLensMultiplier, () => state != null && !ui.ModalOpen && !dialogOpen, OpenMenu, settings, SaveSettings);
+#if UNITY_EDITOR
+        ui.AddFreeCameraButton(() => cameraCtl.SetFreeMode(!cameraCtl.FreeMode));
+        cameraCtl.FreeModeChanged += ui.SetFreeCameraSelection;
+#endif
         if (data.SocialActions.Count > 0)
         {
             motionUI = new SocialMotionControl(() => ui.WindowLayer, MotionItems, PlayMotion, StopMotion, () => state != null && !ui.ModalOpen && !dialogOpen);

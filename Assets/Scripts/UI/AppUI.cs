@@ -17,6 +17,9 @@ public sealed class AppUI
     Label loading, notice;
     IVisualElementScheduledItem noticeHide;
     VisualElement lensControls, motionControls;
+#if UNITY_EDITOR
+    Button freeCamButton;   // 에디터 전용(빌드에서는 만들지 않는다)
+#endif
     Button eyeButton, menuButton;
     ControlsHelpView help;
     readonly List<(float multiplier, Button button)> lensButtons = new List<(float, Button)>();
@@ -134,6 +137,35 @@ public sealed class AppUI
 
     public ControlsHelpView Help => help;
 
+#if UNITY_EDITOR
+    /// <summary>에디터 확인용 프리 카메라 버튼. 화각 버튼 바로 아래에 둔다. 빌드에는 들어가지 않는다.</summary>
+    public void AddFreeCameraButton(Action toggle)
+    {
+        if (freeCamButton != null || lensControls == null) return;
+        freeCamButton = new Button(() => { if (canUseViewControls?.Invoke() != false) toggle(); }) { name = "free-camera", text = "프리 카메라 (에디터)" };
+        freeCamButton.style.position = Position.Absolute;
+        freeCamButton.style.height = 26;
+        freeCamButton.style.paddingLeft = freeCamButton.style.paddingRight = 10;
+        freeCamButton.style.fontSize = 12;
+        freeCamButton.style.color = Text;
+        freeCamButton.style.borderTopWidth = freeCamButton.style.borderBottomWidth = freeCamButton.style.borderLeftWidth = freeCamButton.style.borderRightWidth = 0;
+        Round(freeCamButton, 8);
+        UIAnim.SmoothColor(freeCamButton, UIAnim.Normal);
+        Tips.Attach(freeCamButton, () => "에디터 전용. 각도·거리·높이 제한을 모두 무시합니다. 좌+우 드래그는 화면 평면 이동, 휠은 거리. 끄면 원래 시점으로 돌아가며 저장하지 않습니다.");
+        SetFreeCameraSelection(false);
+        viewport.Add(freeCamButton);
+        freeCamButton.RegisterCallback<GeometryChangedEvent>(e => PlaceViewTools());
+        PlaceViewTools();
+    }
+
+    public void SetFreeCameraSelection(bool on)
+    {
+        if (freeCamButton == null) return;
+        freeCamButton.style.backgroundColor = on ? new Color(0.75f, 0.35f, 0.2f, 1f) : IconButtons.Bg;
+        freeCamButton.text = on ? "프리 카메라 켜짐 (에디터)" : "프리 카메라 (에디터)";
+    }
+#endif
+
     /// <summary>T: 소셜 모션 버튼. 카메라 영역 오른쪽 아래(SocialMotion.md).</summary>
     public void AddMotionControl(VisualElement control)
     {
@@ -161,6 +193,15 @@ public sealed class AppUI
         }
         float lensLeft = Mathf.Max(8, (w - lw) * 0.5f);
         lensControls.style.left = lensLeft;
+#if UNITY_EDITOR
+        // 에디터 전용 프리 카메라 버튼은 화각 버튼 아래에 두고 화각 버튼을 그만큼 올린다.
+        if (freeCamButton != null && !float.IsNaN(freeCamButton.layout.width))
+        {
+            freeCamButton.style.left = Mathf.Max(8, (w - freeCamButton.layout.width) * 0.5f);
+            freeCamButton.style.bottom = bottom;
+            bottom += freeCamButton.layout.height + 6;
+        }
+#endif
         lensControls.style.bottom = bottom;
         help?.SetDetailBottom(baseBottom);
         // 모션 버튼: 오른쪽 아래. 좁아서 화각과 겹치면 화각 위 줄로 올린다.
