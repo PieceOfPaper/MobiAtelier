@@ -28,6 +28,7 @@ public sealed class AppController : MonoBehaviour
     AppSettings settings;
     AppUI ui;
     CameraController cameraCtl;
+    StudioCameraData cameraData;
     Autosave autosave;
     InstallFiles files;
     GameData data;
@@ -222,6 +223,9 @@ public sealed class AppController : MonoBehaviour
         files = r.Files;
         data = r.Data;
         bundles = new BundleCache(files);
+        cameraData = StudioCameraData.Load(files);
+        if (cameraData.Error != null) Debug.LogWarning("[MobiAtelier] 카메라 설정을 읽지 못해 기본값을 씁니다: " + cameraData.Error);
+        cameraCtl.SetData(cameraData);
         background = new StudioBackground(cameraCtl.Cam, bundles, gradientShader, shadowReceiverShader);
         if (data.BackgroundError != null) Debug.LogWarning("[MobiAtelier] 배경 시트를 읽지 못했습니다: " + data.BackgroundError);
         if (data.DecorationError != null) Debug.LogWarning("[MobiAtelier] 꾸밈 시트를 읽지 못했습니다: " + data.DecorationError);
@@ -424,15 +428,22 @@ public sealed class AppController : MonoBehaviour
         if (!helpOffered) { helpOffered = true; ui.Help?.ShowOnFirstUse(); }
     }
 
-    /// <summary>캐릭터 크기로 기준점·기본 거리를 정하고 저장된 시점(없으면 기본 구도)을 적용한다.</summary>
+    /// <summary>캐릭터 크기를 카메라에 알리고 저장된 시점(없으면 기본 구도)을 적용한다.</summary>
     void FrameCamera(CameraState saved)
     {
-        var b = view.VisibleBounds();
-        cameraCtl.Pivot = new Vector3(0, b.size.y > 0.1f ? b.center.y : 0.9f, 0);
-        cameraCtl.FitSize(b.size.y, Mathf.Max(b.size.x, b.size.z));
+        UpdateCameraCharacter();
         cameraCtl.Load(saved);
         state.camera = cameraCtl.Save();
         ui.SetLensSelection(cameraCtl.LensMultiplier);
+    }
+
+    /// <summary>게임 스튜디오 카메라의 캐릭터 높이 기준(머리 아래 높이·기준 키)을 갱신한다. 시점은 유지한다(Camera.md).</summary>
+    void UpdateCameraCharacter()
+    {
+        if (!view || !cameraCtl) return;
+        float h = view.MeasureBodyHeightWithoutHead(out float floor);
+        float standard = cameraData != null && plan != null ? cameraData.StandardHeight(plan.Male, plan.Infant) : 0f;
+        cameraCtl.SetCharacter(floor, h, standard);
     }
 
     /// <summary>화면 밖에서 조립을 마쳤지만 아직 장면에 넣지 않은 캐릭터와 그 상태·계획.</summary>
@@ -512,6 +523,7 @@ public sealed class AppController : MonoBehaviour
         p.View = null;
         RecordSubstitutes(state, plan);
         ui.SetNotes(Notes(plan));
+        UpdateCameraCharacter();
         if (motionSocial != null)
         {
             if (motionTime >= 0) StartMotion(motionSocial, motionAction, motionTime, false);
@@ -605,7 +617,7 @@ public sealed class AppController : MonoBehaviour
 
     /// <summary>
     /// 카메라 출력 영역(WindowAndCustomizationUI.md 3장). 패널 닫힘·전체 UI 숨김은 전체, 열림은 패널을 뺀 영역.
-    /// 회전·팬·거리·화각과 기준점은 그대로 두고 화면비만 바뀐다(FitSize·ResetView 를 부르지 않는다).
+    /// 회전·팬·거리·화각과 기준점은 그대로 두고 화면비만 바뀐다(ResetView 를 부르지 않는다). 세로↔가로가 바뀌면 카메라가 같은 비율로 값을 옮긴다.
     /// </summary>
     void UpdateCameraArea()
     {
@@ -1136,7 +1148,7 @@ public sealed class AppController : MonoBehaviour
     }
 
     /// <summary>시험용: -maScreenshot &lt;파일&gt; [-maShotDelay 초] 이면 시작 후 일정 시간 뒤 화면을 저장하고 종료한다.</summary>
-    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,undo,short,tall,weapon,draw,male,partial,motion:ID (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
+    /// 시험용 화면 상태: -maShotUI open,menu,options,hidden,nohelp,edit,bg,lens3,lens05,near,undo,short,tall,weapon,draw,male,partial,motion:ID (쉼표로 여러 개). 촬영 -maShotUIWait 초(기본 1) 전에 적용한다.
     System.Collections.IEnumerator ShotAndQuit(string file)
     {
         float delay = float.TryParse(CommandLine.Value("-maShotDelay"), out var d) ? d : 8f;
@@ -1195,6 +1207,9 @@ public sealed class AppController : MonoBehaviour
             // male: 성별을 남성으로 바꾼다(필수 외형 호환 대체·실행 취소 확인용)
             if (opts.Contains("male")) Edit(s => s.appearance.gender = "Male");
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
+            if (opts.Contains("lens05")) cameraCtl.SetLensMultiplier(0.5f);
+            // near: 가장 가까운 거리로 다가간다(게임 최근접 스크린샷 비교용)
+            if (opts.Contains("near")) cameraCtl.ZoomToNearest();
             // motion:ID : 소셜 모션을 재생한다(모션 버튼 확인용, -maShotUIWait 로 재생 시점을 정한다)
             foreach (var o in opts) if (o.StartsWith("motion:", StringComparison.Ordinal)) PlayMotion(o.Substring("motion:".Length));
             // bg:ID : 배경을 바꾼다(3D 배경 하늘·반사 확인용)

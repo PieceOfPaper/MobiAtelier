@@ -307,6 +307,7 @@ public static class CharacterAssembler
                 view.Renderers.Add((part.Key, smr));
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body && !view.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
+                if (part.Role == PartRole.Head) view.HeadRenderers.Add(smr);
                 if (missing > 0) { L($"  {part.Model}/{name}: 본 {missing}개 없음"); Fail(part, $"메시 {name}의 본 {missing}개를 찾지 못했습니다"); }
             }
 

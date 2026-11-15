@@ -124,6 +124,8 @@ public class ColorOverride
 public class CameraState
 {
     public bool valid;
+    /// <summary>카메라 방식. 0 = 이전 자유 팬(pan 은 화면 오프셋), 1 = 게임 스튜디오 카메라(pan.y 는 높이 m, Camera.md).</summary>
+    public int rig;
     public float yaw, pitch, distance;
     public Vector2 pan;
     /// <summary>기본 렌즈 대비 배율(0.5, 1, 3). 필드가 없는 구버전의 0은 1x로 복원한다.</summary>

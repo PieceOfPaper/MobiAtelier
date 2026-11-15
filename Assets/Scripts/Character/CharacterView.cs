@@ -34,6 +34,8 @@ public sealed class CharacterView : MonoBehaviour
     public readonly List<DyeBinding> Dyes = new List<DyeBinding>();
     internal readonly List<UnityEngine.Object> Owned = new List<UnityEngine.Object>();
     internal SkinnedMeshRenderer Body;
+    /// <summary>머리(Head 역할) 메시. 카메라 높이 기준(머리 아래 높이)에 쓴다.</summary>
+    internal readonly List<SkinnedMeshRenderer> HeadRenderers = new List<SkinnedMeshRenderer>();
     internal Mesh BodyFullMesh, BodyCutMesh;
     /// <summary>의상 파츠 안의 피부 조각 재질(원본 셰이더 MMN/CH/Skin_Body). 몸과 같은 몸 UV 를 쓰므로 몸꾸밈을 함께 건다.</summary>
     internal readonly List<Material> CostumeSkinMaterials = new List<Material>();
@@ -140,6 +142,39 @@ public sealed class CharacterView : MonoBehaviour
             if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
         }
         return b;
+    }
+
+    /// <summary>
+    /// 게임 HeightInfo 의 BodyHeightWithoutHead 근사: 머리 메시의 가장 낮은 점 − 몸 메시의 가장 낮은 점(지금 포즈, 월드).
+    /// 머리·몸 메시가 없으면 표시 바운드 높이를 쓴다. floorY 는 몸 최저점.
+    /// </summary>
+    public float MeasureBodyHeightWithoutHead(out float floorY)
+    {
+        floorY = transform.position.y;
+        float bodyLow = LowestY(Body);
+        float headLow = float.MaxValue;
+        foreach (var r in HeadRenderers)
+            if (r && r.gameObject.activeInHierarchy) headLow = Mathf.Min(headLow, LowestY(r));
+        if (bodyLow < float.MaxValue) floorY = bodyLow;
+        if (headLow < float.MaxValue && bodyLow < float.MaxValue && headLow > bodyLow) return headLow - bodyLow;
+        var b = VisibleBounds();
+        return b.size.y;
+    }
+
+    static float LowestY(SkinnedMeshRenderer r)
+    {
+        if (!r || !r.sharedMesh) return float.MaxValue;
+        var m = new Mesh();
+        try
+        {
+            r.BakeMesh(m, true);
+            var tr = r.transform;
+            float low = float.MaxValue;
+            // useScale=true 로 구운 정점은 크기가 이미 반영돼 있어 위치·회전만 적용한다.
+            foreach (var v in m.vertices) low = Mathf.Min(low, (tr.position + tr.rotation * v).y);
+            return low;
+        }
+        finally { if (Application.isPlaying) Destroy(m); else DestroyImmediate(m); }
     }
 
     void OnDestroy()

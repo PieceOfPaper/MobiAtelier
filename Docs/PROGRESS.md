@@ -1,9 +1,18 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-14
+> 최종 갱신: 2026-11-15
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
+
+- 게임 스튜디오 카메라 구현(2026-11-15, Claude Code): 사용자 결정(좌+우 드래그는 위아래만, 거리·상하각 게임 값, 세로 창은 세로 값)으로 `CameraController` 를 게임 식으로 바꿨다. 값은 설치 폴더에서 읽는다(`Sheets/StudioCameraData.cs`, 새 .cs·.meta 는 Unity 배치 실행이 만듦). `CharacterView.MeasureBodyHeightWithoutHead`(머리 메시 최저점 − 몸 최저점), 조립 확정마다 `UpdateCameraCharacter`. `CameraState.rig`(0 = 이전 저장, 거리·높이 기본으로). 빌드 촬영 옵션 `-maShotUI lens05,near`. Unity 배치 컴파일·Windows 빌드 오류 0, 2560×1440 빌드 촬영 6장(1x·0.5x·3x × 기본·최근접)이 게임 스크린샷 구도와 맞음 [확인]. 마우스 드래그·휠 실조작, 휠 한 칸 크기(게임 칸 수 확인 필요)는 [미확인]. 스펙은 Camera.md "게임 스튜디오 카메라".
+- 스튜디오 카메라 값 조사(2026-11-15, Claude Code, 코드 변경 없음): 사용자 게임 스크린샷(0.5x·1x·3x 기본=가장 멀리, 각각 가장 가까이)과 비교했다. 설치 폴더에서 읽을 수 있는 값 [확인]:
+  - `CameraSettings/CameraPresetSettings.sjon.bin`(ResourcesPackage Starter)의 `StudioModeCameraSetting` Portrait/Landscape. 가로: Fov 50, InitialPitch 3, Pitch -1~25, DefaultDistance 3, MinDistance 1.3, CameraTargetHeight 0.9, InitialPanningHeight 0.7, 팬 높이 범위(최소 거리 0.2~1, 최대 거리 0.25~1.1). 세로: Fov 50, InitialPitch 10, Pitch 4~25, DefaultDistance 4.2, MinDistance 1.5, CameraTargetHeight 0.2, InitialPanningHeight 0.6, 팬 높이(0.1~1, 0.25~1.1).
+  - `StageConstantSettings/StageConstants` 의 `PhotoModeCameraSettings.MouseWheelToDistanceRatioOnStudio` 0.1, `PinchZoomApplyRatioOnStudio` 0.5, 성별·연령별 `StandardHeightReference`(여 성인 1.685396, 남 성인 1.792207, 여 아동 1.651735, 남 아동 1.742354).
+  - 코드(GameAssembly 정적 디스어셈블) [확인]: 렌즈 배율 0.5·1·3, `FOV = 2·atan(tan(Fov/2)/배율)`(앱과 같은 식, 기준만 50°). 최대 거리 = clamp(BodyHeightWithoutHead / StandardHeightReference × DefaultDistance, MinDistance, DefaultDistance), 시작 거리 = 최대 거리. 초기 팬 높이 = InitialPanningHeight × BodyHeightWithoutHead. 스튜디오 카메라는 상하 팬 높이만 갖는다 — 앱의 확정 사항(좌+우 드래그 자유 팬)과 다르므로 바꾸려면 사용자 결정이 필요하다.
+  - 스크린샷 대조 [추정]: 1x 기본에서 캐릭터가 화면 높이의 약 74%이고 0.5x는 약 38%(비율 약 1.95, 식의 2.0과 맞음). 수직 FOV 50°·거리 약 2.6m 일 때와 맞는다.
+  - 후속 조사(같은 날, 디스어셈블) [확인]: ① 휠: `ZoomDisplacement = 휠 원값 × OrbitModifier.MouseWheelToDistanceRatio(2.5, CameraSettings.sjon.bin)`, 스튜디오에서 `목표 거리 -= ZoomDisplacement × 0.1 / 2.5`(= 원값 × 0.1) 후 [MinDistance, 최대 거리]로 자르고 부드럽게 따라간다. 휠 한 칸의 원값은 [미확인](1이면 칸당 0.1m) — 게임에서 가장 먼 곳→가장 가까운 곳 칸 수를 세면 확정된다. ② H = BodyHeightWithoutHead = 머리 메시 기준 높이 − 몸 메시 최저점(머리 메시가 없으면 VisualHeight). StandardHeightReference 는 외형 변형 경로에서는 메시로 다시 계산하고, 아니면 성별·연령 상수를 쓴다. ③ 거리 비율 t = clamp01((거리 − MinDistance)/(최대 거리 − MinDistance)). 팬 높이 범위 = H × lerp(MinPanningHeightWhenMinDistance→WhenMaxDistance, t) ~ H × lerp(MaxPanning…, t). 기준점 y = 캐릭터 y + 팬 높이 − (InitialPanningHeight − CameraTargetHeight)·H + 0.25·H·(1 − t)(0.2초 보간). 리그에는 상향 오프셋 (InitialPanningHeight − CameraTargetHeight)·H 를 따로 넣는다. ④ 렌즈 변경 FOV는 0.4초 보간. Fov 는 `CalcOneToOneFov`(× (w+h)/2h)로 저장했다가 투영에서 되돌린다.
+  - 스크린샷 픽셀 측정(2560×1440) [확인]: 0.5x 머리 꼭대기 491·발 1031, 1x 머리 꼭대기 261 → 화면 중심 기준 비율 2.00 = tan43°/tan25°. 렌즈 배율은 수직 FOV 50°에 적용된다(1:1 FOV에 적용하면 1.74가 되어 맞지 않는다). 캐릭터 높이 ≈ 0.70 × 거리 → 키 약 1.74m 이면 거리 약 2.49m(= 1.4/1.685×3, H≈1.4 일 때와 맞음). 기본 화면 중심 높이 ≈ 0.57 × 키 ≈ 0.99m = InitialPanningHeight 0.7 × H 와 맞는다 — 상향 오프셋이 화면 중심을 CameraTargetHeight 위치에서 InitialPanningHeight 위치로 내린다고 본다 [추정].
 
 - 게임 스튜디오 스크린샷 비교(2026-11-13, Claude Code): 색 배경 민트바닐라·스트리트 고스 캣 웨어 조합으로 비교했다.
   - 몸꾸밈 의상 피부 조각 [수정함]: 상의 `Fashion_BlackCat_OnePiece_00_F` 는 가슴 피부를 의상 안의 `Mesh_Skin_Body`(원본 셰이더 `MMN/CH/Skin_Body`, 몸과 같은 DyeMap)로 그리고 몸 메시의 그 자리는 잘린다. 문신을 몸 렌더러에만 걸어 빠졌다. 이제 의상 재질 중 원본 셰이더가 Skin_Body 인 것(`CharacterView.CostumeSkinMaterials`)에도 건다. 배치 촬영으로 매듭 문양이 게임처럼 가슴에 보이는 것을 확인했다.

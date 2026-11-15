@@ -1,6 +1,11 @@
-// 카메라 조작 (Camera.md, 확정)
-//   좌 또는 우 단독 드래그: 캐릭터 기준점 중심 회전 / 좌+우 드래그: 카메라 right·up 방향 평행 이동 / 스크롤: 확대·축소
-//   평행 이동은 화면 오프셋으로 유지하고, 회전 중심은 항상 캐릭터 기준점이다(팬 위치를 회전 중심으로 쓰지 않는다).
+// 카메라 조작 (Camera.md). 게임 스튜디오 촬영 카메라 값과 식을 따른다(2026-11-15 사용자 결정).
+//   좌 또는 우 단독 드래그: 캐릭터 기준 회전(상하각은 게임 범위) / 좌+우 드래그: 위아래 높이만 이동(거리별 범위) / 스크롤: 거리
+//   H = 캐릭터 머리 메시 아래 높이 − 몸 최저점, t = clamp01((거리 − 최소 거리) / (최대 거리 − 최소 거리))
+//   최대 거리 = clamp(H / 기준 키 × DefaultDistance, MinDistance, DefaultDistance). 기본 시점은 최대 거리.
+//   기준점 y = 바닥 + 팬 높이 + (CameraTargetHeight − InitialPanningHeight)·H + 0.25·H·(1 − t)
+//   카메라 위치 = 기준점 + 회전·(0, 0, −거리) + 카메라 up·(InitialPanningHeight − CameraTargetHeight)·H
+//   렌즈 0.5·1·3: 수직 FOV = 2·atan(tan(Fov/2) / 배율)
+//   창(카메라 영역)이 세로로 길면 세로 값(Portrait)을 쓴다.
 //   UI 위에서 시작한 드래그는 끝날 때까지 카메라로 넘기지 않는다. 앱이 포커스를 잃으면 드래그를 해제한다.
 using System;
 using UnityEngine;
@@ -8,34 +13,71 @@ using UnityEngine.InputSystem;
 
 public sealed class CameraController : MonoBehaviour
 {
-    // 기존 앱의 기본 수직 화각이다. 원본 게임의 렌즈별 FOV를 재현한 수치는 아니다.
-    public const float DefaultFieldOfView = 30f;
+    /// <summary>저장 형식. 0(필드 없음)은 이전 자유 팬 카메라라 거리·팬을 기본값으로 바꾼다.</summary>
+    public const int RigVersion = 1;
+    // 게임 코드 상수 [확인: 디스어셈블]
+    const float EyeLiftRatio = 0.25f, EyeLiftTime = 0.2f, FovTime = 0.4f;
+    // 거리 추종 시간은 게임 값을 찾지 못해 정했다 [추정].
+    const float DistanceTime = 0.12f;
+
     public Camera Cam;
-    /// <summary>회전 기준점(캐릭터 기준 월드 위치)</summary>
-    public Vector3 Pivot = new Vector3(0, 0.9f, 0);
+    /// <summary>현재 회전 기준점(월드). 벽 가림 판정에 쓴다.</summary>
+    public Vector3 Pivot { get; private set; } = new Vector3(0, 0.9f, 0);
     /// <summary>화면 좌표가 UI 위인지 판단한다. true 면 그 위치에서 시작한 입력을 카메라가 받지 않는다.</summary>
     public Func<Vector2, bool> IsPointerOverUI;
     /// <summary>조작이 끝나 상태가 확정되었을 때(드래그 종료, 스크롤 정지).</summary>
     public event Action Committed;
 
-    public float RotateSpeed = 0.3f, PanSpeed = 0.0025f, ZoomStep = 0.12f;
-    public float MinPitch = -80, MaxPitch = 80, MinDistance = 0.4f, MaxDistance = 10f;
+    public float RotateSpeed = 0.3f;
+    StudioCameraData data = StudioCameraData.Defaults();
+    // 캐릭터 기준
+    float baseY, bodyH = 1.4f, standardH = 1.685396f;
 
-    /// <summary>저장된 시점이 없을 때의 거리. 캐릭터 크기에 맞춰 FitHeight 로 정한다.</summary>
-    public float DefaultDistance = 4.2f;
-    float yaw = 180, pitch = 5, distance = 4.2f;
+    float yaw = 180, pitch = 3, distance = 3, panHeight = 0.98f;
+    float curDistance = 3, eyeLift, curFov = 50;
     float lensMultiplier = 1f;
     public float LensMultiplier => lensMultiplier;
-    Vector2 pan;
+    bool portrait;
     enum Drag { None, Rotate, Pan, Blocked }
     Drag drag;
     float scrollIdle = -1;
 
+    StudioCameraParams P => portrait ? data.Portrait : data.Landscape;
+
+    public void SetData(StudioCameraData value) { if (value != null) data = value; }
+
+    /// <summary>캐릭터 크기를 갱신한다. 시점은 유지하고 범위만 다시 맞춘다.</summary>
+    public void SetCharacter(float floorY, float bodyHeightWithoutHead, float standardHeight)
+    {
+        baseY = floorY;
+        if (bodyHeightWithoutHead > 0.2f) bodyH = bodyHeightWithoutHead;
+        if (standardHeight > 0.2f) standardH = standardHeight;
+        distance = Mathf.Clamp(distance, P.MinDistance, MaxDistance);
+        curDistance = Mathf.Clamp(curDistance, P.MinDistance, MaxDistance);
+        Apply(0);
+    }
+
+    float MaxDistance => Mathf.Clamp(bodyH / standardH * P.DefaultDistance, P.MinDistance, P.DefaultDistance);
+
+    float Ratio(float d)
+    {
+        float span = MaxDistance - P.MinDistance;
+        return span <= 1e-4f ? 0f : Mathf.Clamp01((d - P.MinDistance) / span);
+    }
+
+    void PanRange(float d, out float lo, out float hi)
+    {
+        float t = Ratio(d);
+        lo = bodyH * Mathf.Lerp(P.MinPanningHeightWhenMinDistance, P.MinPanningHeightWhenMaxDistance, t);
+        hi = bodyH * Mathf.Lerp(P.MaxPanningHeightWhenMinDistance, P.MaxPanningHeightWhenMaxDistance, t);
+    }
+
     public void ResetView()
     {
-        yaw = 180; pitch = 5; distance = DefaultDistance; pan = Vector2.zero;
+        portrait = IsPortraitArea();
+        yaw = 180; pitch = P.InitialPitch; distance = MaxDistance; panHeight = P.InitialPanningHeight * bodyH;
         lensMultiplier = 1f;
-        Apply();
+        Snap();
     }
 
     /// <summary>거리·팬·각도는 유지하고 초점거리 배율에 대응하는 화각만 바꾼다.</summary>
@@ -44,9 +86,11 @@ public sealed class CameraController : MonoBehaviour
         value = NormalizeLensMultiplier(value);
         if (Mathf.Approximately(lensMultiplier, value)) return;
         lensMultiplier = value;
-        Apply();
         Committed?.Invoke();
     }
+
+    /// <summary>가장 가까운 거리로 다가간다(시험 촬영용).</summary>
+    public void ZoomToNearest() { distance = P.MinDistance; Committed?.Invoke(); }
 
     static float NormalizeLensMultiplier(float value)
     {
@@ -55,28 +99,55 @@ public sealed class CameraController : MonoBehaviour
         return 1f;
     }
 
-    /// <summary>현재 화면비에서 캐릭터 높이·너비가 여백을 두고 들어오는 기본 거리를 정한다. 저장된 시점에는 쓰지 않는다.</summary>
-    public void FitSize(float height, float width)
-    {
-        if (!Cam || height <= 0.1f) return;
-        // 초기화는 1x로 돌아가므로 기본 거리도 항상 1x 화각에서 계산한다.
-        float halfV = Mathf.Tan(DefaultFieldOfView * 0.5f * Mathf.Deg2Rad);
-        float halfH = halfV * Mathf.Max(Cam.aspect, 0.1f);
-        float d = Mathf.Max(height * 0.62f / halfV, width * 0.62f / halfH);
-        DefaultDistance = Mathf.Clamp(d, MinDistance, MaxDistance);
-    }
-
-    public CameraState Save() => new CameraState { valid = true, yaw = yaw, pitch = pitch, distance = distance, pan = pan, lensMultiplier = lensMultiplier };
+    public CameraState Save() => new CameraState { valid = true, rig = RigVersion, yaw = yaw, pitch = pitch, distance = distance, pan = new Vector2(0, panHeight), lensMultiplier = lensMultiplier };
 
     public void Load(CameraState s)
     {
         if (s == null || !s.valid) { ResetView(); return; }
-        yaw = s.yaw;
-        pitch = Mathf.Clamp(s.pitch, MinPitch, MaxPitch);
-        distance = Mathf.Clamp(s.distance, MinDistance, MaxDistance);
-        pan = s.pan;
+        portrait = IsPortraitArea();
         lensMultiplier = NormalizeLensMultiplier(s.lensMultiplier);
-        Apply();
+        yaw = s.yaw;
+        pitch = Mathf.Clamp(s.pitch, P.MinPitch, P.MaxPitch);
+        if (s.rig < RigVersion)
+        {
+            // 이전 자유 팬 카메라 값은 의미가 달라 거리·높이만 기본으로 돌린다(방향·렌즈는 유지).
+            distance = MaxDistance;
+            panHeight = P.InitialPanningHeight * bodyH;
+        }
+        else
+        {
+            distance = Mathf.Clamp(s.distance, P.MinDistance, MaxDistance);
+            panHeight = s.pan.y;
+        }
+        Snap();
+    }
+
+    void Snap()
+    {
+        curDistance = distance;
+        eyeLift = EyeLiftRatio * bodyH * (1f - Ratio(curDistance));
+        curFov = TargetFov();
+        Apply(0);
+    }
+
+    float TargetFov() => 2f * Mathf.Atan(Mathf.Tan(P.Fov * 0.5f * Mathf.Deg2Rad) / lensMultiplier) * Mathf.Rad2Deg;
+
+    bool IsPortraitArea() => Cam && Cam.pixelHeight > Cam.pixelWidth;
+
+    /// <summary>가로↔세로 값이 바뀌면 거리 비율·각도를 새 범위로 옮긴다(사용자 구도를 초기화하지 않는다).</summary>
+    void CheckOrientation()
+    {
+        bool p = IsPortraitArea();
+        if (p == portrait) return;
+        float t = Ratio(distance);
+        PanRange(distance, out float lo, out float hi);
+        float pt = hi - lo > 1e-4f ? Mathf.Clamp01((panHeight - lo) / (hi - lo)) : 0.5f;
+        portrait = p;
+        distance = Mathf.Lerp(P.MinDistance, MaxDistance, t);
+        curDistance = distance;
+        pitch = Mathf.Clamp(pitch, P.MinPitch, P.MaxPitch);
+        PanRange(distance, out lo, out hi);
+        panHeight = Mathf.Lerp(lo, hi, pt);
     }
 
     void OnApplicationFocus(bool focus)
@@ -93,8 +164,15 @@ public sealed class CameraController : MonoBehaviour
 
     void Update()
     {
+        if (!Cam) return;
+        CheckOrientation();
         var mouse = Mouse.current;
-        if (!Cam || mouse == null) return;
+        if (mouse != null) HandleInput(mouse);
+        Apply(Time.unscaledDeltaTime);
+    }
+
+    void HandleInput(Mouse mouse)
+    {
         bool l = mouse.leftButton.isPressed, r = mouse.rightButton.isPressed;
         Vector2 pos = mouse.position.ReadValue();
         Vector2 d = mouse.delta.ReadValue();
@@ -116,17 +194,24 @@ public sealed class CameraController : MonoBehaviour
         if (drag == Drag.Rotate)
         {
             yaw += d.x * RotateSpeed;
-            pitch = Mathf.Clamp(pitch - d.y * RotateSpeed, MinPitch, MaxPitch);
+            pitch = Mathf.Clamp(pitch - d.y * RotateSpeed, P.MinPitch, P.MaxPitch);
         }
-        else if (drag == Drag.Pan)
+        else if (drag == Drag.Pan && d.y != 0)
         {
-            pan -= d * PanSpeed * Mathf.Max(distance, 0.5f) / 4.2f;
+            // 게임: 높이 −= 화면 위쪽 이동량 / 화면 높이. 범위 밖으로 나가는 방향만 막는다.
+            float next = panHeight - d.y / Mathf.Max(Cam.pixelHeight, 1);
+            PanRange(distance, out float lo, out float hi);
+            if (next < panHeight && next < lo) next = Mathf.Min(panHeight, lo);
+            if (next > panHeight && next > hi) next = Mathf.Max(panHeight, hi);
+            panHeight = next;
         }
 
         float sc = mouse.scroll.ReadValue().y;
         if (sc != 0 && drag != Drag.Blocked && (IsPointerOverUI == null || !IsPointerOverUI(pos)))
         {
-            distance = Mathf.Clamp(distance * (1f - Mathf.Sign(sc) * ZoomStep), MinDistance, MaxDistance);
+            // 휠 한 칸 = 원값 1. 칸당 120 으로 들어오는 환경도 같은 값이 되게 맞춘다.
+            float notches = Mathf.Abs(sc) >= 10f ? sc / 120f : sc;
+            distance = Mathf.Clamp(distance - notches * data.WheelToDistance, P.MinDistance, MaxDistance);
             scrollIdle = 0.4f;
         }
         if (scrollIdle > 0)
@@ -134,15 +219,22 @@ public sealed class CameraController : MonoBehaviour
             scrollIdle -= Time.unscaledDeltaTime;
             if (scrollIdle <= 0) Committed?.Invoke();
         }
-        Apply();
     }
 
-    void Apply()
+    static float Follow(float cur, float target, float time, float dt) =>
+        dt <= 0 ? target : Mathf.Lerp(cur, target, 1f - Mathf.Exp(-dt / Mathf.Max(time, 1e-3f) * 3f));
+
+    void Apply(float dt)
     {
         if (!Cam) return;
-        Cam.fieldOfView = 2f * Mathf.Atan(Mathf.Tan(DefaultFieldOfView * 0.5f * Mathf.Deg2Rad) / lensMultiplier) * Mathf.Rad2Deg;
+        var p = P;
+        curDistance = Follow(curDistance, distance, DistanceTime, dt);
+        eyeLift = Follow(eyeLift, EyeLiftRatio * bodyH * (1f - Ratio(curDistance)), EyeLiftTime, dt);
+        curFov = Follow(curFov, TargetFov(), FovTime, dt);
+        Cam.fieldOfView = curFov;
         var rot = Quaternion.Euler(pitch, yaw, 0);
-        Vector3 right = rot * Vector3.right, up = rot * Vector3.up;
-        Cam.transform.SetPositionAndRotation(Pivot + rot * new Vector3(0, 0, -distance) + right * pan.x + up * pan.y, rot);
+        float upOffset = (p.InitialPanningHeight - p.CameraTargetHeight) * bodyH;
+        Pivot = new Vector3(0, baseY + panHeight - upOffset + eyeLift, 0);
+        Cam.transform.SetPositionAndRotation(Pivot + rot * new Vector3(0, 0, -curDistance) + rot * Vector3.up * upOffset, rot);
     }
 }
