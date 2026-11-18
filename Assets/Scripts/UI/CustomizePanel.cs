@@ -654,7 +654,7 @@ public sealed class CustomizePanel
             }
             bool resource = slot.kind == CostumeSlotState.KindResource;
             string id = resource ? slot.resource : slot.costumeId;
-            data.Costumes.TryGetValue(resource ? "" : slot.costumeId ?? "", out var row);
+            var row = slot.Row(data);
             // 직접 리소스·미공개 의상은 에디터 전용이라 [숨김] 을 붙인다. 가림·미적용 표시는 접두사와 따로 상태 줄에 쓴다.
             string name = ItemLabel.Of(id, row?.DisplayName, resource || Disclosure.IsHidden(row));
             Color? color = null;
@@ -678,7 +678,8 @@ public sealed class CustomizePanel
                         lines.Add(i.Message + ".");
                         if (i.IsFailure) { color = AppUI.ErrorColor; statusColor = AppUI.ErrorColor; }
                     }
-            dd.SetValue(resource ? null : id, name, resource ? "직접 리소스" : null, color);
+            dd.SetValue(resource ? null : ItemKey(slot.IsTool, id), name,
+                resource ? "직접 리소스" : slot.IsTool ? ToolSub(row) : null, color);
             SetStatus(status, lines.Count == 0 ? null : string.Join("\n", lines), statusColor);
         });
         var box = Row(label, dd, status);
@@ -698,15 +699,26 @@ public sealed class CustomizePanel
         (WeaponPoseState.Pose3, "꾸미기 포즈 3"),
     };
 
+    /// <summary>도구(생활 도구·악기)의 자세. 도구는 꺼냄·포즈를 모두 사용 동작으로 본다(Equipment.md "도구").</summary>
+    static readonly (string id, string name)[] ToolStances =
+    {
+        (WeaponPoseState.Undrawn, "넣음"),
+        (WeaponPoseState.Use, "사용 (연주·채집)"),
+    };
+
     static string StanceName(string id)
     {
         foreach (var (k, n) in Stances) if (k == id) return n;
+        if (id == WeaponPoseState.Use) return "사용 (연주·채집)";
         return "넣음";
     }
 
+    /// <summary>무기 칸에 도구를 골랐는지(표시 여부와 관계없이 선택 기준).</summary>
+    bool ToolSelected => state.Costume("Weapon")?.IsTool ?? false;
+
     /// <summary>
     /// 무기 아래의 자세(넣음·꺼냄)와 자세 직업. 직업은 기본으로 무기 외형의 원래 직업을 쓰고(자동), 바꿀 수 있다.
-    /// 직업은 자세만 바꾸며 무기 선택을 제한하지 않는다.
+    /// 직업은 자세만 바꾸며 무기 선택을 제한하지 않는다. 도구를 고르면 자세는 넣음·사용이고 직업 줄은 숨긴다.
     /// </summary>
     void WeaponPoseRows(VisualElement parent)
     {
@@ -714,34 +726,41 @@ public sealed class CustomizePanel
         var stance = Dropdown(() =>
         {
             var items = new List<DropdownItem>();
-            foreach (var (id, name) in Stances) items.Add(new DropdownItem { Id = id, Name = name });
+            foreach (var (id, name) in ToolSelected ? ToolStances : Stances) items.Add(new DropdownItem { Id = id, Name = name });
             return items;
         }, it => edit(s => (s.weaponPose ??= new WeaponPoseState()).stance = it.Id == WeaponPoseState.Undrawn ? null : it.Id));
         refreshers.Add(() =>
         {
+            bool tool = ToolSelected;
             string id = state.weaponPose?.stance;
             if (!WeaponPoseState.IsDrawn(id)) id = WeaponPoseState.Undrawn;
-            stance.SetValue(id, StanceName(id), null);
+            // 도구는 꺼냄·포즈 값도 사용으로 보인다(값은 그대로 둔다).
+            string shown = tool && WeaponPoseState.IsDrawn(id) ? WeaponPoseState.Use : id;
+            stance.SetValue(shown, StanceName(shown), null);
             string note = null;
             if (WeaponPoseState.IsDrawn(id) && plan != null && !plan.WeaponDrawn)
-                note = data.AnimationStates.Count == 0 ? "자세 데이터를 읽지 못해 넣은 자세로 표시합니다."
-                    : plan.WeaponId == null ? "무기가 표시되지 않아 넣은 자세로 표시합니다."
+                note = plan.WeaponId == null ? (tool ? "도구가" : "무기가") + " 표시되지 않아 넣은 자세로 표시합니다."
+                    : tool ? "이 도구·외형에 맞는 사용 동작이 없어 넣은 자세로 표시합니다."
+                    : id == WeaponPoseState.Use ? "무기에는 사용 동작이 없어 넣은 자세로 표시합니다."
+                    : data.AnimationStates.Count == 0 ? "자세 데이터를 읽지 못해 넣은 자세로 표시합니다."
                     : "이 외형·직업에 맞는 자세 클립이 없어 넣은 자세로 표시합니다.";
-            else if (WeaponPoseState.IsPose(id) && plan != null && plan.WeaponDrawn)
+            else if (!tool && WeaponPoseState.IsPose(id) && plan != null && plan.WeaponDrawn)
                 note = "꾸미기 포즈는 직업 계열(" + (JobName(LineJob(plan.StanceJob)) ?? "공통") + ")의 포즈입니다.";
-            SetStatus(stanceStatus, note, WeaponPoseState.IsPose(id) && plan != null && plan.WeaponDrawn ? AppUI.Sub : AppUI.WarnColor);
+            SetStatus(stanceStatus, note, note != null && note.StartsWith("꾸미기 포즈") ? AppUI.Sub : AppUI.WarnColor);
         });
         parent.Add(Row("무기 자세", stance, stanceStatus));
 
         var job = Dropdown(JobItems, it => edit(s => (s.weaponPose ??= new WeaponPoseState()).job = it.Id));
+        var jobRow = Row("자세 직업", job, null);
         refreshers.Add(() =>
         {
+            jobRow.style.display = ToolSelected ? DisplayStyle.None : DisplayStyle.Flex;
             string chosen = state.weaponPose?.job;
             string current = PlanResolver.StanceJob(state, data, out bool auto);
             string text = auto ? "자동 (" + (JobName(current) ?? "공통 자세") + ")" : JobName(chosen) ?? chosen;
             job.SetValue(auto ? null : chosen, text, null);
         });
-        parent.Add(Row("자세 직업", job, null));
+        parent.Add(jobRow);
     }
 
     string JobName(string id) => id == null ? null : data.CombatJob(id)?.DisplayName ?? id;
@@ -753,7 +772,7 @@ public sealed class CustomizePanel
     {
         string weaponJob = null;
         var w = state.Costume("Weapon");
-        if (w != null && data.Costumes.TryGetValue(w.costumeId ?? "", out var row) && row.EquippableCombatJobs.Count > 0) weaponJob = row.EquippableCombatJobs[0];
+        if (w != null && !w.IsTool && w.Row(data) is CostumeData row && row.EquippableCombatJobs.Count > 0) weaponJob = row.EquippableCombatJobs[0];
         var items = new List<DropdownItem>
         {
             new DropdownItem { Id = null, Name = "자동 (" + (JobName(weaponJob) ?? "공통 자세") + ")", Sub = "무기 외형의 직업" },
@@ -784,8 +803,7 @@ public sealed class CustomizePanel
         box.style.display = DisplayStyle.None;
         if (slot == null || res == null || res.Status != CostumeStatus.Applied) return;
         box.style.display = DisplayStyle.Flex;
-        CostumeData row = null;
-        if (slot.kind == CostumeSlotState.KindCostume) data.Costumes.TryGetValue(slot.costumeId ?? "", out row);
+        var row = slot.Row(data);
         if (row != null && row.DyePolicy == "AlwaysCantDye") { box.Add(Note("염색할 수 없는 의상입니다.")); return; }
         string key = AssemblyPlan.CostumeKey(part);
         var v = view();
@@ -982,18 +1000,28 @@ public sealed class CustomizePanel
         return list.ToArray();
     }
 
-    static void SetCostume(EditState s, string part, string costumeId)
+    /// <summary>드롭다운 항목 키. 도구는 패션장비 ID 와 겹치지 않게 접두사를 붙인다(장면 상태에는 kind 로 따로 저장한다).</summary>
+    const string ToolKeyPrefix = "tool:";
+    static string ItemKey(bool tool, string id) => tool ? ToolKeyPrefix + id : id;
+
+    /// <summary>도구 항목의 보조 표시: "도구 · 종류 이름".</summary>
+    static string ToolSub(CostumeData row) => row == null || string.IsNullOrEmpty(row.ToolTypeName) ? "도구" : "도구 · " + row.ToolTypeName;
+
+    static void SetCostume(EditState s, string part, string key)
     {
         var slot = s.Costume(part);
-        if (costumeId == null)
+        if (key == null)
         {
             if (slot != null) s.costumes.Remove(slot);
             return;
         }
+        bool tool = key.StartsWith(ToolKeyPrefix, StringComparison.Ordinal);
+        string kind = tool ? CostumeSlotState.KindTool : CostumeSlotState.KindCostume;
+        string costumeId = tool ? key.Substring(ToolKeyPrefix.Length) : key;
         if (slot == null) s.costumes.Add(slot = new CostumeSlotState { part = part });
         // 다른 의상을 고르면 새 의상의 원본 초기색으로 시작한다(Dye.md 확정).
-        if (slot.kind != CostumeSlotState.KindCostume || slot.costumeId != costumeId) slot.dyes.Clear();
-        slot.kind = CostumeSlotState.KindCostume;
+        if (slot.kind != kind || slot.costumeId != costumeId) slot.dyes.Clear();
+        slot.kind = kind;
         slot.costumeId = costumeId;
         slot.resource = null;
     }
@@ -1101,16 +1129,20 @@ public sealed class CustomizePanel
     List<DropdownItem> CostumeItems(string part)
     {
         var items = new List<DropdownItem> { new DropdownItem { Id = null, Name = "(착용 안 함)" } };
-        string current = state.Costume(part)?.costumeId;
-        foreach (var c in data.CostumeList)
+        var slot = state.Costume(part);
+        string current = slot == null || slot.kind == CostumeSlotState.KindResource ? null : ItemKey(slot.IsTool, slot.costumeId);
+        void Add(CostumeData c)
         {
-            if (c.CostumeType != part) continue;
+            string key = ItemKey(c.IsTool, c.Id);
             bool hidden = Disclosure.IsHidden(c);
             bool blocked = hidden && !Disclosure.AllowRestricted;
-            if (blocked && c.Id != current) continue;
+            if (blocked && key != current) return;
             bool fits = PlanResolver.CheckCostume(c, Male, Infant, out _, out _) == CostumeStatus.Applied;
-            items.Add(new DropdownItem { Id = c.Id, Name = ItemLabel.Of(c.Id, c.DisplayName, hidden), Dim = !fits || blocked });
+            items.Add(new DropdownItem { Id = key, Name = ItemLabel.Of(c.Id, c.DisplayName, hidden), Sub = c.IsTool ? ToolSub(c) : null, Dim = !fits || blocked });
         }
+        foreach (var c in data.CostumeList) if (c.CostumeType == part) Add(c);
+        // 무기 칸은 생활 도구·악기와 택일한다(Equipment.md "도구"). 무기 뒤에 도구 시트 순서로 둔다.
+        if (part == "Weapon") foreach (var c in data.ToolList) Add(c);
         return items;
     }
 }

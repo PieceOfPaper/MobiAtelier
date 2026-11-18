@@ -372,10 +372,12 @@ public static class CharacterAssembler
                     int score = (infant == plan.Infant ? 4 : 0) + (g == gender ? 2 : g == "None" ? 1 : 0);
                     if (score > best) { best = score; pick = t; }
                 }
+                // 도구 중 넣은 장착점이 캐릭터 루트인 것(피아노·하프·큰북 등)은 들고 다니지 않으므로 넣은 상태에서 숨긴다(Equipment.md "도구").
+                bool rootTool = !drawn && plan.WeaponIsTool && d.Part.Key == AssemblyPlan.CostumeKey("Weapon") && (to == "#MODEL_ROOT" || string.IsNullOrEmpty(to));
                 var pl = new ToolMount.Placement
                 {
                     Valid = true, Parent = parent,
-                    Hidden = ap.Get("ModelPartVisibleState").Str() == "AlwaysInvisible",
+                    Hidden = ap.Get("ModelPartVisibleState").Str() == "AlwaysInvisible" || rootTool,
                     Position = pick != null ? Vec(pick.Get("Position"), Vector3.zero) : Vector3.zero,
                     Rotation = pick != null ? Quaternion.Euler(Vec(pick.Get("Rotation"), Vector3.zero)) : Quaternion.identity,
                     Scale = pick != null ? Vec(pick.Get("LocalScale"), Vector3.one) : Vector3.one,

@@ -46,7 +46,7 @@ public static class InstallSmokeTest
             log.AppendLine($"검사: {check.Step} {check.Message} {check.Detail}");
             if (!check.Ok) throw new Exception("설치 경로 검사 실패");
             var files = check.Files; var data = check.Data;
-            log.AppendLine($"index {files.IndexLoadMs}ms, 시트 {data.LoadMs}ms, 의상 {data.Costumes.Count}, 프리셋 {data.Presets.Count}");
+            log.AppendLine($"index {files.IndexLoadMs}ms, 시트 {data.LoadMs}ms, 의상 {data.Costumes.Count}, 도구 {data.Tools.Count}{(data.ToolError != null ? " (" + data.ToolError + ")" : "")}, 프리셋 {data.Presets.Count}");
 
             using (var bundles = new BundleCache(files))
             {
@@ -283,6 +283,7 @@ public static class InstallSmokeTest
                 // -maOutfit 이름:Top=ID,Gloves=ID;이름2:... : 지정 조합만 조립해 전신·팔·발을 촬영한다(관통 진단용).
                 //   age=14, height=-1, gender=Male, body=Fat, stance=Alert|Combat, job=CombatJob.Id, intro=클립, loop=클립 도 같은 자리에 쓸 수 있다.
                 //   social=SocialAction.Id [act=행동 이름] : 앱과 같은 방식(SocialMotionLoader)으로 소셜 모션을 재생한다. 촬영 시점은 행동 시작 기준이다.
+                //   tool=EquipmentTool.Id : 무기 칸에 생활 도구·악기(Equipment.md "도구").
                 //   beard=ID, faceDeco=ID, bodyDeco=ID, skin=CharacterSkinColor.Id : 꾸밈·피부색(Appearance.md). 꾸밈이 있으면 얼굴·등 근접 사진도 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
@@ -317,6 +318,7 @@ public static class InstallSmokeTest
                             else if (k == "faceDeco") s.appearance.faceDeco = v;
                             else if (k == "bodyDeco") s.appearance.bodyDeco = v;
                             else if (k == "skin") s.appearance.skinColor = v;
+                            else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
                         log.AppendLine($"[{tag}]");

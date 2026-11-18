@@ -77,16 +77,27 @@ public class CostumeSlotState
 {
     public const string KindCostume = "costume";
     public const string KindResource = "resource";
+    /// <summary>생활 도구·악기(EquipmentTool 시트). 무기 칸(part = Weapon)에서만 쓴다.</summary>
+    public const string KindTool = "tool";
 
     /// <summary>착용 부위(Costume.CostumeType: Top, Bottom, Shoes ...)</summary>
     public string part;
-    /// <summary>costume = 패션장비 시트 항목, resource = 시트에 없는 모델 리소스 직접 선택</summary>
+    /// <summary>costume = 패션장비 시트 항목, tool = 도구 시트 항목(costumeId 에 도구 Id), resource = 시트에 없는 모델 리소스 직접 선택</summary>
     public string kind = KindCostume;
     public string costumeId;
     /// <summary>kind = resource 일 때 모델 정의 이름</summary>
     public string resource;
     /// <summary>슬롯(Slot0~5 등)별 사용자 지정 색. 없으면 의상 기본색(원본 머티리얼 + 시트 DyeColor)을 쓴다.</summary>
     public List<ColorOverride> dyes = new List<ColorOverride>();
+
+    public bool IsTool => kind == KindTool;
+
+    /// <summary>이 칸이 가리키는 시트 행(패션장비 또는 도구). 직접 리소스·빈 칸·없는 ID 는 null. 빈 kind 는 패션장비로 본다.</summary>
+    public CostumeData Row(GameData data)
+    {
+        if (data == null || kind == KindResource) return null;
+        return data.Item(IsTool, costumeId);
+    }
 }
 
 [Serializable]
@@ -100,8 +111,10 @@ public class WeaponPoseState
     public const string Combat = "Combat";
     /// <summary>게임 꾸미기 화면의 무기 포즈 1~3(Action Customize_Costume_04~06, 직업 계열별). 무기는 꺼낸 상태다.</summary>
     public const string Pose1 = "Pose1", Pose2 = "Pose2", Pose3 = "Pose3";
+    /// <summary>도구(생활 도구·악기)의 사용 동작(연주·채집, Action 시작 → 반복 클립). 도구는 꺼냄·포즈도 이것으로 본다.</summary>
+    public const string Use = "Use";
 
-    /// <summary>Undrawn / Alert / Combat / Pose1~3. 알 수 없는 값은 Undrawn 으로 본다.</summary>
+    /// <summary>Undrawn / Alert / Combat / Pose1~3 / Use. 알 수 없는 값은 Undrawn 으로 본다.</summary>
     public string stance;
     /// <summary>자세에 쓸 CombatJob.Id. 비어 있으면 무기 외형의 원래 직업(EquippableCombatJobs)을 쓴다. 무기 선택을 제한하지 않는다.</summary>
     public string job;
@@ -109,7 +122,7 @@ public class WeaponPoseState
     public static bool IsPose(string stance) => stance == Pose1 || stance == Pose2 || stance == Pose3;
     /// <summary>포즈 순번 0~2. 포즈가 아니면 -1.</summary>
     public static int PoseIndex(string stance) => stance == Pose1 ? 0 : stance == Pose2 ? 1 : stance == Pose3 ? 2 : -1;
-    public static bool IsDrawn(string stance) => stance == Alert || stance == Combat || IsPose(stance);
+    public static bool IsDrawn(string stance) => stance == Alert || stance == Combat || IsPose(stance) || stance == Use;
 }
 
 [Serializable]

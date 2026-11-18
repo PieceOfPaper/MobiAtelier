@@ -117,19 +117,21 @@ public static class LastCharacterImport
         if (a.mouth == null && !r.Failed.Exists(f => f.part == "입 모양")) r.Failed.Add(("입 모양", "캐시에 없음"));
 
         // 의상(모델 이름) → 패션장비 거꾸로 찾기
-        var index = CostumeIndex(data);
-        void Wear(object part, string label)
+        var index = CostumeIndex(data.CostumeList, data);
+        Dictionary<string, List<(CostumeData row, char col)>> toolIndex = null;
+        bool Wear(object part, string label, bool tool = false)
         {
             var models = Models(part);
-            if (models.Count == 0) return;
-            var c = PickCostume(data, index, models, male, infant, part.Get("DyeSlots"), out string why);
-            if (c == null) { r.Failed.Add((label, why + " (" + models[0] + ")")); return; }
+            if (models.Count == 0) return false;
+            var idx = tool ? toolIndex ??= CostumeIndex(data.ToolList, data) : index;
+            var c = PickCostume(data, idx, models, male, infant, part.Get("DyeSlots"), tool, out string why);
+            if (c == null) { r.Failed.Add((label, why + " (" + models[0] + ")")); return false; }
             if (s.costumes.Exists(x => x.part == c.CostumeType))
             {
                 r.Failed.Add((AssemblyPlan.PartLabel(c.CostumeType), "같은 부위 의상이 이미 있어 " + ItemLabel.Of(c.Id, c.DisplayName) + "을(를) 장착하지 않습니다"));
-                return;
+                return false;
             }
-            var slot = new CostumeSlotState { part = c.CostumeType, kind = CostumeSlotState.KindCostume, costumeId = c.Id };
+            var slot = new CostumeSlotState { part = c.CostumeType, kind = c.IsTool ? CostumeSlotState.KindTool : CostumeSlotState.KindCostume, costumeId = c.Id };
             var dyes = part.Get("DyeSlots") as Dictionary<string, object>;
             if (dyes != null)
                 foreach (var kv in dyes)
@@ -141,26 +143,40 @@ public static class LastCharacterImport
                     slot.dyes.Add(new ColorOverride { slot = "Slot" + k, color = ColorOverrides.ToHex(col.color) });
                 }
             s.costumes.Add(slot);
+            return true;
         }
         foreach (var part in d.Get("Clothes").Arr()) Wear(part, "의상");
         foreach (var part in d.Get("Accessories").Arr()) Wear(part, "장신구");
 
-        // 무기·도구
+        // 무기·도구: 아틀리에는 무기 칸 하나에 무기와 도구 중 하나만 둔다(LastCharacterImport.md "무기·도구").
+        //   무기가 있으면 무기만 장착한다. 무기가 없을 때만 도구 번호가 가장 작은 도구 하나를 장착한다 [추정: 타이틀 화면은 손에 든 것 하나만 보인다].
+        //   IsWeaponHidden 이면 무기·도구 모두 장착하지 않는다.
         var tools = d.Get("Tools") as Dictionary<string, object>;
-        var otherTools = new List<string>();
-        if (tools != null)
+        if (tools != null && !d.Get("IsWeaponHidden").B())
+        {
+            var order = new List<(int no, object part)>();
             foreach (var kv in tools)
+                if (Models(kv.Value).Count > 0 && int.TryParse(kv.Key, out int no)) order.Add((no, kv.Value));
+            order.Sort((x, y) => x.no.CompareTo(y.no));
+            bool held = false;
+            // 장착하지 않은 도구는 종류별 개수로 한 줄에 모은다(예: 생활 도구 8개, 악기 1개).
+            var skipped = new List<string>();
+            var skippedCount = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var (no, part) in order)
             {
-                if (Models(kv.Value).Count == 0) continue;
-                if (kv.Key == ToolWeapon)
+                string label = no == -1 ? "무기" : ToolLabel(no);
+                if (held)
                 {
-                    if (d.Get("IsWeaponHidden").B()) continue;
-                    Wear(kv.Value, "무기");
+                    if (!skippedCount.ContainsKey(label)) { skipped.Add(label); skippedCount[label] = 0; }
+                    skippedCount[label]++;
+                    continue;
                 }
-                else otherTools.Add(kv.Key == "9" ? "악기" : "생활 도구");
+                held = Wear(part, label, no != -1);
             }
-        if (otherTools.Contains("생활 도구")) r.Unsupported.Add("생활 도구");
-        if (otherTools.Contains("악기")) r.Unsupported.Add("악기");
+            if (skipped.Count > 0)
+                r.Failed.Add((string.Join(", ", skipped.ConvertAll(l => $"{l} {skippedCount[l]}개")),
+                    "무기 칸에는 무기·도구 중 하나만 장착합니다"));
+        }
 
         // 무기 자세 직업: 캐릭터의 현재 직업(애니메이션 조건). 데이터에 없으면 무기 외형의 원래 직업(자동).
         string job = d.Get("CombatJobAnimationCondition").Str();
@@ -244,7 +260,9 @@ public static class LastCharacterImport
     }
 
     /// <summary>모델 이름 → 그 모델을 쓰는 패션장비 행(성별·나이 열 표시). 같은 모델을 여러 행이 공유할 수 있다.</summary>
-    static Dictionary<string, List<(CostumeData row, char col)>> CostumeIndex(GameData data)
+    static string ToolLabel(int no) => no == 9 ? "악기" : no == 10 ? "연금 도구" : "생활 도구";
+
+    static Dictionary<string, List<(CostumeData row, char col)>> CostumeIndex(List<CostumeData> rows, GameData data)
     {
         var idx = new Dictionary<string, List<(CostumeData, char)>>(StringComparer.Ordinal);
         void Add(string m, CostumeData c, char col)
@@ -253,7 +271,7 @@ public static class LastCharacterImport
             if (!idx.TryGetValue(m, out var l)) idx[m] = l = new List<(CostumeData, char)>();
             l.Add((c, col));
         }
-        foreach (var c in data.CostumeList)
+        foreach (var c in rows)
         {
             foreach (var m in c.MaleModels) Add(m, c, 'M');
             foreach (var m in c.FemaleModels) Add(m, c, 'F');
@@ -276,10 +294,11 @@ public static class LastCharacterImport
     /// 여러 모델로 된 의상(검+방패 등)은 모든 모델을 가진 행만 후보로 본다.
     /// </summary>
     static CostumeData PickCostume(GameData data, Dictionary<string, List<(CostumeData row, char col)>> index, List<string> models,
-        bool male, bool infant, object dyes, out string why)
+        bool male, bool infant, object dyes, bool tool, out string why)
     {
         why = null;
-        if (!index.TryGetValue(models[0], out var cands)) { why = "패션장비 데이터에서 찾지 못한 모델"; return null; }
+        string sheet = tool ? "도구" : "패션장비";
+        if (!index.TryGetValue(models[0], out var cands)) { why = sheet + " 데이터에서 찾지 못한 모델"; return null; }
         char want = infant ? (male ? 'B' : 'G') : (male ? 'M' : 'F');
         CostumeData best = null;
         long bestScore = long.MinValue;
@@ -304,7 +323,7 @@ public static class LastCharacterImport
             score -= row.Index;
             if (score > bestScore) { bestScore = score; best = row; }
         }
-        if (best == null) why = anyHidden ? "숨김 항목이라 불러오지 않음" : "같은 모델 구성의 패션장비를 찾지 못함";
+        if (best == null) why = anyHidden ? "숨김 항목이라 불러오지 않음" : "같은 모델 구성의 " + sheet + "를 찾지 못함";
         return best;
     }
 

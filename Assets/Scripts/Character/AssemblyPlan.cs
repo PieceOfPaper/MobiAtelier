@@ -149,6 +149,8 @@ public sealed class AssemblyPlan
     public Func<string, string, string> PartClip;
     /// <summary>현재 무기 외형 ID(적용된 경우). 전환 판정에 쓴다.</summary>
     public string WeaponId;
+    /// <summary>무기 칸이 생활 도구·악기다(EquipmentTool). 넣은 상태에서 장착점이 캐릭터 루트인 도구(피아노 등)는 숨긴다.</summary>
+    public bool WeaponIsTool;
     /// <summary>입은 의상의 옷 모양 조건(ModelPartInfo.ClothingCondition: ShortSkirt·LongSkirt 등). 조립할 때 채운다. 없으면 null.</summary>
     public string Clothing;
 
@@ -278,15 +280,21 @@ public static class PlanResolver
         plan.StanceJob = StanceJob(state, data, out _);
         var weapon = plan.Costumes.Find(c => c.Part == "Weapon");
         bool hasWeapon = weapon != null && weapon.Status == CostumeStatus.Applied;
-        plan.WeaponId = hasWeapon ? weapon.CostumeId ?? weapon.DisplayName : null;
+        var slot = state.Costume("Weapon");
+        plan.WeaponIsTool = hasWeapon && slot != null && slot.IsTool;
+        plan.WeaponId = hasWeapon ? (plan.WeaponIsTool ? "tool:" : "") + (weapon.CostumeId ?? weapon.DisplayName) : null;
         if (plan.Idle == null) return;
         if (WeaponPoseState.IsDrawn(stance))
         {
             if (!hasWeapon) plan.Notes.Add("무기가 표시되지 않아 넣은 자세로 표시합니다.");
+            // 도구는 꺼냄·포즈를 모두 사용 동작으로 본다. 무기에는 사용 동작이 없다(넣은 자세).
+            else if (plan.WeaponIsTool) ResolveToolUse(plan, data, files, folder, slot.Row(data));
+            else if (stance == WeaponPoseState.Use) plan.Notes.Add("무기에는 사용 동작이 없어 넣은 자세로 표시합니다.");
             else if (WeaponPoseState.IsPose(stance)) ResolvePose(plan, data, files, folder, stance);
             else ResolveStand(plan, data, files, folder, stance);
         }
-        if (previous != null && hasWeapon && plan.Intro == null && previous.WeaponId == plan.WeaponId
+        // 꺼내기·넣기 전환 클립은 무기 전용이다(도구의 사용 동작은 자기 시작 클립이 있다).
+        if (previous != null && hasWeapon && !plan.WeaponIsTool && !previous.WeaponIsTool && plan.Intro == null && previous.WeaponId == plan.WeaponId
             && previous.Male == plan.Male && previous.Infant == plan.Infant && previous.WeaponDrawn != plan.WeaponDrawn)
         {
             // 넣기는 직전(꺼낸) 자세의 직업 클립을 쓴다.
@@ -333,6 +341,26 @@ public static class PlanResolver
         plan.Idle = path;
         plan.WeaponDrawn = true;
         plan.StanceCondition = row.Condition;
+    }
+
+    /// <summary>
+    /// 도구의 사용 동작(연주·채집): Action 의 Player&lt;Female|Male|Infant&gt; 그룹에서 도구의 UseAction 행(성별·체형 조건) 시작 → 반복 클립.
+    /// 도구는 꺼낸 상태다(행동의 ToolIndices 가 도구 슬롯을 꺼낸다). 행이나 클립이 없으면 넣은 자세로 둔다.
+    /// </summary>
+    static void ResolveToolUse(AssemblyPlan plan, GameData data, InstallFiles files, string folder, CostumeData tool)
+    {
+        string action = tool?.UseAction;
+        if (action == null) { plan.Notes.Add("이 도구에는 사용 동작이 없어 넣은 자세로 표시합니다."); return; }
+        var row = data.FindAction("Player" + folder, action, Facts(plan, data, null, false));
+        if (row == null || string.IsNullOrEmpty(row.LoopClip)) { plan.Notes.Add($"사용 동작 없음: Player{folder} {action}"); return; }
+        string loop = BundleCache.AssetRoot + row.LoopClip;
+        if (!files.HasAsset(loop)) { plan.Notes.Add("사용 동작 클립이 설치 폴더에 없음: " + loop); return; }
+        plan.Idle = loop;
+        plan.WeaponDrawn = true;
+        plan.StanceJob = null;
+        plan.StanceCondition = action + " " + row.Condition;
+        string start = string.IsNullOrEmpty(row.StartClip) ? null : BundleCache.AssetRoot + row.StartClip;
+        if (start != null && files.HasAsset(start)) { plan.Intro = start; plan.IntroDrawn = true; }
     }
 
     static void ResolvePose(AssemblyPlan plan, GameData data, InstallFiles files, string folder, string stance)
@@ -540,10 +568,12 @@ public static class PlanResolver
                 continue;
             }
             if (string.IsNullOrEmpty(slot.costumeId)) { plan.Costumes.Remove(res); continue; }
-            if (!data.Costumes.TryGetValue(slot.costumeId, out var row))
+            var row = slot.Row(data);
+            if (row == null)
             {
-                res.Status = CostumeStatus.UnknownId; res.Detail = "패션장비 데이터에 없는 ID입니다.";
-                plan.AddIssue(key, IssueKind.UnknownId, slot.costumeId, null, "패션장비 데이터에 없는 ID입니다");
+                string what = slot.IsTool ? "도구" : "패션장비";
+                res.Status = CostumeStatus.UnknownId; res.Detail = what + " 데이터에 없는 ID입니다.";
+                plan.AddIssue(key, IssueKind.UnknownId, slot.costumeId, null, what + " 데이터에 없는 ID입니다");
                 continue;
             }
             res.DisplayName = row.DisplayName;
@@ -563,7 +593,8 @@ public static class PlanResolver
                 plan.AddIssue(key, IssueKind.MissingResource, row.Id, row.DisplayName, "모델 리소스를 정상적으로 준비하지 못했습니다: " + missing);
                 continue;
             }
-            res.Models.AddRange(models);
+            // 도구 행에는 같은 모델을 두 번 적은 것이 있다(치즈 고양이의 하모니카). 한 번만 붙인다.
+            foreach (var m in models) if (!row.IsTool || !res.Models.Contains(m)) res.Models.Add(m);
             applied.Add((slot, res, row));
         }
 

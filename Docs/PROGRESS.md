@@ -1,9 +1,11 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-15
+> 최종 갱신: 2026-11-17
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
+
+- 도구(생활 도구·악기) 구현(2026-11-17, Claude Code): 미구현 A 목록(도구 → 무기 오라 → 세트 효과 → 불러오기 연결)의 첫 항목. `EquipmentTool`·`EquipmentToolType`·`Instrument` 시트를 읽어(설치본 도구 430행 [확인]) 의상 › 무기 칸에 무기 뒤로 넣었다(`CostumeSlotState.KindTool`, 드롭다운 키 `tool:` 접두). 사용자 결정: 도구 자세는 넣음 / 사용(연주·채집 Action 시작→반복), 넣은 상태의 루트 장착 악기(피아노 등) 숨김, 불러오기는 무기 우선. 배치 조립 촬영 11조합·Windows 빌드 실제 캐시 불러오기 확인. 스모크 테스트 `-maOutfit` 에 `tool=도구Id` 키 추가. 앱 실조작은 [미확인]. 남은 A: 무기 오라(이펙트 연결 미확인), 세트 효과.
 
 - 모션 얼굴 텍스처 깜빡임 수정(2026-11-15, Claude Code): 사용자 제보(입·눈 텍스처를 바꾸는 모션에서 여러 텍스처가 빠르게 지나감). 원인은 `FacialXaf` 가 `Step` 키를 선형 보간해 아틀라스 번호(`_EmotionMouthMapAtlasSize.z`·`_EyeballIndexFromOne` 등)가 중간 칸을 거친 것. 게임 `XafTangentTypeExtension.ForceConvert`(Step·Constant→계단, Linear→선형, 나머지→Flat)와 `XafAnimationMigrator` 의 `_EyeballIndexFromOne` 전 키 Constant 를 그대로 옮겼다 [확인: 디스어셈블]. 여성 소셜·감정 xaf 112 트랙에서 지나가는 번호 수가 줄었다(예: Airplane 입 20→3) [확인: 데이터 평가]. 런타임 dotnet 빌드 오류 0. 앱 화면 재생은 [미확인].
 - 게임 스튜디오 카메라 구현(2026-11-15, Claude Code): 사용자 결정(좌+우 드래그는 위아래만, 거리·상하각 게임 값, 세로 창은 세로 값)으로 `CameraController` 를 게임 식으로 바꿨다. 값은 설치 폴더에서 읽는다(`Sheets/StudioCameraData.cs`, 새 .cs·.meta 는 Unity 배치 실행이 만듦). `CharacterView.MeasureBodyHeightWithoutHead`(머리 메시 최저점 − 몸 최저점), 조립 확정마다 `UpdateCameraCharacter`. `CameraState.rig`(0 = 이전 저장, 거리·높이 기본으로). 빌드 촬영 옵션 `-maShotUI lens05,near`. Unity 배치 컴파일·Windows 빌드 오류 0, 2560×1440 빌드 촬영 6장(1x·0.5x·3x × 기본·최근접)이 게임 스크린샷 구도와 맞음 [확인]. 마우스 드래그·휠 실조작, 휠 한 칸 크기(게임 칸 수 확인 필요)는 [미확인]. 스펙은 Camera.md "게임 스튜디오 카메라".
@@ -68,6 +70,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-17 | 도구: `SheetSchemas` EquipmentTool·EquipmentToolType·Instrument, `GameData.Tools/ToolList/LoadTools/LinkGatheringActions`, `CostumeSlotState.KindTool·Row()`, `PlanResolver.ResolveToolUse`·`WeaponIsTool`, 루트 장착 도구 넣음 숨김(`CharacterAssembler.Mount`), 패널 무기 목록·도구 자세, 불러오기 도구 역조회(무기 우선·건너뛴 도구 한 줄 안내). 런타임·에디터 dotnet 빌드 오류 0, 정책 시험 실패 4개는 변경 전과 같음(아래 인계 메모) |
 | 2026-11-15 | 에디터 전용 프리 카메라: 화각 버튼 아래 버튼(`#if UNITY_EDITOR`, 빌드 제외). `CameraController.SetFreeMode` 는 각도·거리·높이 제한을 무시하고 따로 움직이며 저장·자동 저장에 남기지 않고, 끄면 켜기 전 시점으로 돌아간다. 런타임 dotnet 빌드(에디터·비에디터 정의) 오류 0. 에디터 플레이 확인 전 |
 | 2026-11-13 | 몸 자르기: `ClothingCut.cs`(ClothingUnit 읽기, 게임 FittingCutPolicy·자르기 규칙, 걸친 삼각형 잘라 새 정점 보간), `SmmReader` 삼각형 파일 순서 반환, 기존 근사(`BodyCut.LimbCuts`·면 근접) 삭제. 설치본 ClothingUnit 3,512개 읽기 [확인: 덤프 전수], 전후 11벌·회귀 4조합 촬영 |
 | 2026-11-12 | 배경 환경 볼륨 2차: 캐릭터 빛 방향을 주광(볼륨) 방향으로, `StudioBackground` 에 EnvironmentConfig 전역 텍스처 4개. 원본 셰이더 임시 시험으로 캐릭터가 주광 방향을 쓰는 것 확인, 접촉 그림자 값 임시 시험(도입 보류). `PhotoStudio` 볼륨은 별도 가상 방 맵 것이라 색 배경에 쓰지 않음. Unity 배치 컴파일 오류 0, 3D 4종 촬영 비교. Background.md 8장·ImplementationGaps 갱신 |
@@ -175,6 +178,9 @@
 12. 마지막으로 접속한 캐릭터 불러오기는 구현했다. 남은 순서: 도구 → 무기 오라 → 세트 효과(불러오기 연결 포함). 남성·어린·로브 캐릭터 불러오기는 [미확인].
 
 ## 4. 인계 메모
+
+- 정책 시험 실패 4개(2026-11-17 발견): `InstallSmokeTest.Policy` 의 "실행 취소/다시 실행·배경 실행 취소/다시 실행 시 카메라 유지" 4항목이 실패한다. 도구 작업을 뺀 상태에서도 같은 4개가 실패해 11-15 카메라 교체(게임 스튜디오 카메라) 이후의 문제로 본다 [추정: 시험이 넣는 카메라 값(거리 4, 자유 팬)이 새 카메라 제한에 잘린다]. 시험을 새 카메라에 맞출지, 코드 문제인지 확인이 필요하다.
+- 도구(2026-11-17): 도구 행은 `CostumeData`(IsTool=true, CostumeType="Weapon")로 담는다. 의상 칸에서 행을 찾을 때는 `data.Costumes` 를 직접 보지 말고 `slot.Row(data)` 를 쓴다. 생활 도구의 사용 동작은 시트 직접 연결이 없어 이름 규칙(ToolIndices = 도구 종류, `Gathering_` 중 가장 짧은 이름)으로 고른다(WeaponPose.md).
 
 - 몸 자르기(2026-11-13): 분리면 평면은 의상 자기 바인드 공간 값이라 의상마다 자세가 다르다(T자세 장갑 등). `Mesh_SP_<Id>` 메시의 주 본 × 바인드포즈로 기본 자세 월드로 옮겨 몸(기본 자세 BakeMesh)과 비교한다 [추정: 게임이 공간을 맞추는 방식은 미해석]. 몸 삼각형 번호는 SMM 파일 순서다(서브메시로 묶기 전). 일부 장갑(예: Female_Newbiecombat_Gloves_00)은 분리면 이름 L/R과 실제 위치가 반대라 손을 자르지 않는다 — 게임 데이터 그대로다. 디버그: `InstallSmokeTest -maOutfit` 로그의 "몸 자르기 …" 줄에 의상별 평면·부위·제외 수가 나온다.
 

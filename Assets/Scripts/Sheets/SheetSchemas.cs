@@ -210,6 +210,27 @@ public static class SheetSchemas
         "",
         "ActionName:S AnimationGroupName:S MultiCondition:S TimelineOverrideConditionTag:S _:I StartTimelines:S LoopTimelines:S");
 
+    /// <summary>
+    /// 생활 도구·악기(Equipment.md "도구"). 의상 › 무기 칸에서 무기 대신 고른다. 모델 이름 배열과 기본 염색은 Costume 과 같은 형식이다.
+    /// 시작에 필요하지 않다. 읽지 못하면 도구 목록만 비운다.
+    /// </summary>
+    public static readonly SheetSchema EquipmentTool = new SheetSchema("EquipmentTool",
+        "Id:K(EquipmentToolSheet)",
+        @"DisplayName:S FlavorText:S ToolType:K(EquipmentToolTypeSheet) Instrument:K(InstrumentSheet) Rarity:E _:I _:I _:U _:I _:U _:U _:K _:U _:I _:E _:E _:I _:I _:I
+          _:[K] DyeColor0:C DyeColor1:C DyeColor2:C DyeColor3:C DyeColor4:C DyeColor5:C
+          MaleModelName:[S] FemaleModelName:[S] BoyModelName:[S] GirlModelName:[S]
+          MaleIconPath:S FemaleIconPath:S DiscloseZone:E DiscloseTime:S _:K");
+
+    /// <summary>악기: 연주 행동 이름(Action.ActionName, 그룹 Player&lt;Female|Male|Infant&gt;). 도구의 "사용" 자세에 쓴다.</summary>
+    public static readonly SheetSchema Instrument = new SheetSchema("Instrument",
+        "Id:K(InstrumentSheet)",
+        "_:I _:N _:N ActionName:S _:S _:S _:S _:S _:[S+S+S+S] _:E");
+
+    /// <summary>도구 종류(낚싯대·악기 등) 이름.</summary>
+    public static readonly SheetSchema EquipmentToolType = new SheetSchema("EquipmentToolType",
+        "Id:K(EquipmentToolTypeSheet)",
+        "DisplayName:S _:E _:N _:N");
+
     /// <summary>시작할 때 읽어야 하는 시트 전부.</summary>
     public static readonly SheetSchema[] Required =
     {

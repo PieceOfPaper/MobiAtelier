@@ -20,6 +20,18 @@ public sealed class CostumeData
     /// <summary>판매 시작 시각(SalesStartTime). 판매 정보일 뿐 숨김·공개 판정에 쓰지 않는다.</summary>
     public string SalesStartText;
     public DateTime? SalesStartUtc;
+    /// <summary>
+    /// 생활 도구·악기(EquipmentTool 시트) 행이면 true. CostumeType 은 "Weapon" 으로 두어 무기 칸에서 고른다(무기와 택일).
+    /// 장면 상태에서는 CostumeSlotState.KindTool 로 구분한다. 직업·성별 제한이 없다.
+    /// </summary>
+    public bool IsTool;
+    /// <summary>도구 종류 ID(EquipmentToolType: FishingRod, Instrument ...)와 화면 이름.</summary>
+    public string ToolType, ToolTypeName;
+    /// <summary>
+    /// 도구의 "사용" 자세 행동 이름(Action.ActionName). 악기는 Instrument.ActionName(연주),
+    /// 생활 도구는 ToolIndices 가 도구 종류와 같은 Gathering_* 행 중 이름이 가장 짧은 것(채집). 없으면 null.
+    /// </summary>
+    public string UseAction;
 }
 
 public sealed class PresetAppearanceData
@@ -206,6 +218,10 @@ public sealed class GameData
     public readonly Dictionary<string, ColorData> HairColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> EyeColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> MouthColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
+    /// <summary>생활 도구·악기(시트 순서). 읽지 못하면 비어 있고 ToolError 에 사유가 있다.</summary>
+    public readonly Dictionary<string, CostumeData> Tools = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
+    public readonly List<CostumeData> ToolList = new List<CostumeData>();
+    public string ToolError;
     public readonly Dictionary<string, SheetRow> ModelVariants = new Dictionary<string, SheetRow>(StringComparer.Ordinal);
     /// <summary>스튜디오 배경(시트 순서). 시트를 읽지 못하면 비어 있고 BackgroundError 에 사유가 있다.</summary>
     public readonly List<StudioBackgroundData> Backgrounds = new List<StudioBackgroundData>();
@@ -305,10 +321,57 @@ public sealed class GameData
         Colors(set.Read(SheetSchemas.CharacterEyeColor), g.EyeColors, "ColorCode", null, null);
         Colors(set.Read(SheetSchemas.CharacterMouthColor), g.MouthColors, "ColorCode", null, null);
         LoadDecorations(set, g);
+        LoadTools(set, g);
         LoadBackgrounds(set, g);
         LoadMotion(set, g);
+        LinkGatheringActions(g);
         g.LoadMs = sw.ElapsedMilliseconds;
         return g;
+    }
+
+    /// <summary>패션장비(tool=false) 또는 도구(tool=true) 행. 없으면 null.</summary>
+    public CostumeData Item(bool tool, string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        return (tool ? Tools : Costumes).TryGetValue(id, out var c) ? c : null;
+    }
+
+    /// <summary>생활 도구·악기. 시작에 필요하지 않으므로 읽기 실패는 도구 목록만 비운다.</summary>
+    static void LoadTools(SheetSet set, GameData g)
+    {
+        try
+        {
+            var typeNames = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (set.Has(SheetSchemas.EquipmentToolType.Sheet))
+                foreach (var r in set.Read(SheetSchemas.EquipmentToolType))
+                    if (r.Str("Id") != null) typeNames[r.Str("Id")] = r.Str("DisplayName");
+            var playActions = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (set.Has(SheetSchemas.Instrument.Sheet))
+                foreach (var r in set.Read(SheetSchemas.Instrument))
+                    if (r.Str("Id") != null && !string.IsNullOrEmpty(r.Str("ActionName"))) playActions[r.Str("Id")] = r.Str("ActionName");
+            foreach (var r in set.Read(SheetSchemas.EquipmentTool))
+            {
+                var c = new CostumeData
+                {
+                    Index = r.Index, Id = r.Str("Id"), DisplayName = r.Str("DisplayName"), FlavorText = r.Str("FlavorText"),
+                    CostumeType = "Weapon", IsTool = true, ToolType = r.Str("ToolType"),
+                    MaleIconPath = r.Str("MaleIconPath"), FemaleIconPath = r.Str("FemaleIconPath"),
+                    HidingParts = new List<string>(), MaleModels = r.Strs("MaleModelName"), FemaleModels = r.Strs("FemaleModelName"),
+                    BoyModels = r.Strs("BoyModelName"), GirlModels = r.Strs("GirlModelName"), ExceptionModels = new List<string>(),
+                    EquippableCombatJobs = new List<string>(),
+                };
+                c.ToolTypeName = c.ToolType != null && typeNames.TryGetValue(c.ToolType, out var tn) && !string.IsNullOrWhiteSpace(tn) ? tn : c.ToolType;
+                string inst = r.Str("Instrument");
+                if (inst != null && playActions.TryGetValue(inst, out var play)) c.UseAction = play;
+                for (int i = 0; i < 6; i++) c.DyeColors[i] = r.Color("DyeColor" + i);
+                c.DiscloseText = Disclosure.Describe(r.Str("DiscloseZone"), r.Str("DiscloseTime"));
+                c.DiscloseUtc = Disclosure.TryParse(r.Str("DiscloseZone"), r.Str("DiscloseTime"), out var du) ? du : (DateTime?)null;
+                if (c.Id == null) continue;
+                g.Tools[c.Id] = c;
+                g.ToolList.Add(c);
+            }
+        }
+        catch (Exception e) { g.Tools.Clear(); g.ToolList.Clear(); g.ToolError = "EquipmentTool: " + e.Message; }
     }
 
     /// <summary>배경은 시작에 꼭 필요하지 않으므로 읽기 실패를 앱 시작 실패로 만들지 않는다.</summary>
@@ -463,6 +526,24 @@ public sealed class GameData
             g.ActionTimelines.Clear();
             g.SocialError = "모션 데이터: " + e.Message;
         }
+    }
+
+    /// <summary>
+    /// 연주 행동이 없는 도구(생활 도구)의 "사용" 행동: 행동 중 ToolIndices 가 도구 종류 하나와 같고 이름이 Gathering_ 로 시작하는 행 중
+    /// 이름이 가장 짧은 것(Gathering_Fishing 등. _Bait·_PullRod·_Cancel·_SitChair 변형보다 짧다). 같으면 이름 순.
+    /// </summary>
+    static void LinkGatheringActions(GameData g)
+    {
+        var byType = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var list in g.Actions.Values)
+            foreach (var a in list)
+            {
+                if (a.Name == null || !a.Name.StartsWith("Gathering_", StringComparison.Ordinal) || string.IsNullOrEmpty(a.ToolIndices) || a.ToolIndices.Contains(",")) continue;
+                if (!byType.TryGetValue(a.ToolIndices, out var cur) || a.Name.Length < cur.Length || (a.Name.Length == cur.Length && string.CompareOrdinal(a.Name, cur) < 0))
+                    byType[a.ToolIndices] = a.Name;
+            }
+        foreach (var t in g.ToolList)
+            if (t.UseAction == null && t.ToolType != null && byType.TryGetValue(t.ToolType, out var name)) t.UseAction = name;
     }
 
     static bool IsSocialGroup(string group) => group == "PlayerFemale" || group == "PlayerMale" || group == "PlayerInfant";
