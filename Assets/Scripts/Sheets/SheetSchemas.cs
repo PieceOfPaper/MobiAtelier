@@ -231,6 +231,18 @@ public static class SheetSchemas
         "Id:K(EquipmentToolTypeSheet)",
         "DisplayName:S _:E _:N _:N");
 
+    /// <summary>
+    /// 패션 세트 효과(Equipment.md "세트 효과"). 앱은 성별별 부위 구성과 세트 활성 연출(스테이지 타임라인 이름)만 쓴다.
+    /// 능력치 효과(MagicEffectIds_*)·공명(ResonanceSheetId)은 읽고 버린다. 시작에 필요하지 않다.
+    /// </summary>
+    public static readonly SheetSchema CostumeSetEffect = new SheetSchema("CostumeSetEffect",
+        "Id:K(CostumeSetEffectSheet)",
+        @"Rarity:E DisplayName:S _:K
+          MaleSet_Hat:[K(CostumeSheet)] MaleSet_Top:[K(CostumeSheet)] MaleSet_Bottom:[K(CostumeSheet)] MaleSet_Gloves:[K(CostumeSheet)] MaleSet_Shoes:[K(CostumeSheet)]
+          FemaleSet_Hat:[K(CostumeSheet)] FemaleSet_Top:[K(CostumeSheet)] FemaleSet_Bottom:[K(CostumeSheet)] FemaleSet_Gloves:[K(CostumeSheet)] FemaleSet_Shoes:[K(CostumeSheet)]
+          _:[K] _:[K] _:[K] _:[K] _:[K]
+          MaleSetActivationEffectFX:S FemaleSetActivationEffectFX:S BoySetActivationEffectFX:S GirlSetActivationEffectFX:S");
+
     /// <summary>시작할 때 읽어야 하는 시트 전부.</summary>
     public static readonly SheetSchema[] Required =
     {

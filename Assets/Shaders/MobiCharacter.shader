@@ -15,6 +15,12 @@
 //   문신: t.rgb * (_DyeColor1 * 0.7 + 0.3)          (_DyeColor1 = 피부색)
 //   흉터(_IsScarMode = 1): 텍스처를 HSV 로 바꿔 명도를 피부 밝기에 맞추고 피부색 쪽으로 물들인다.
 //   albedo = lerp(albedo * _TintColor, 꾸밈색, t.a). 원본의 문신 발광·반사(_TattooEmission*, _TattooSpecula*)는 옮기지 않았다.
+// 무기 오라(WeaponGradeOutline 패스, Equipment.md "무기 오라"): 원본 MMN/CH/Weapon 의 TwoPassOutline 패스를 옮겼다(2026-11-18 디스어셈블 확인).
+//   정점: 월드 위치 + 월드 법선 × 0.007, 앞면 컬링·깊이 쓰기 없음·알파 블렌드.
+//   _WeaponGradeColor.w = 등급 번호(Rarity). 8·9(전설+·전설++): sin(|uv − 0.5| × 12 − 2t)를 BlendMin~Max 로 smoothstep 해 두 색을 섞는다.
+//   4 이상: _WeaponGradeColor. 4 미만: 그리지 않는다. 색 × 4, 알파 = max(pow(sat(노이즈1 × 노이즈2), 3.8), 0.02)
+//   노이즈 = _Global_Weapon_Texture.r (uv × 5 + frac(0.1t) + 1), (uv + frac(−0.2t) + 1).
+//   이 패스는 외곽선 전용 재질에서만 켠다(CharacterAssembler.ConvertMaterial 은 끈다).
 Shader "MobiAtelier/Character"
 {
     Properties
@@ -38,6 +44,10 @@ Shader "MobiAtelier/Character"
         [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Src Blend", Float) = 1
         [Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Dst Blend", Float) = 0
         _ZWrite ("ZWrite", Float) = 1
+        _WeaponGradeColor ("Weapon Grade Color (w = Rarity)", Vector) = (0,0,0,0)
+        _WeaponGradeColor2 ("Weapon Grade Color 2", Color) = (0,0,0,0)
+        _OutlineColorBlendMin ("Outline Color Blend Min", Float) = 0
+        _OutlineColorBlendMax ("Outline Color Blend Max", Float) = 1
     }
     SubShader
     {
@@ -55,6 +65,8 @@ Shader "MobiAtelier/Character"
             float _AlbedoOnly, _UseTexAlpha, _Alpha, _Cull, _SrcBlend, _DstBlend, _ZWrite;
             float4 _TattooMapScalePosition;
             float _TattooOn, _TattooMapRotation, _IsScarMode;
+            float4 _WeaponGradeColor, _WeaponGradeColor2;
+            float _OutlineColorBlendMin, _OutlineColorBlendMax;
         CBUFFER_END
         ENDHLSL
 
@@ -210,6 +222,49 @@ Shader "MobiAtelier/Character"
                 return o;
             }
             float4 frag (Varyings i) : SV_Target { return float4(NormalizeNormalPerPixel(i.normalWS), 0.0); }
+            ENDHLSL
+        }
+
+        Pass
+        {
+            Name "WeaponGradeOutline"
+            Tags { "LightMode" = "SRPDefaultUnlit" }
+            Cull Front ZWrite Off ZTest LEqual
+            Blend SrcAlpha OneMinusSrcAlpha
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            TEXTURE2D(_Global_Weapon_Texture);
+            SamplerState sampler_linear_repeat;
+            struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
+            Varyings vert (Attributes v)
+            {
+                Varyings o;
+                float3 n = normalize(TransformObjectToWorldNormal(v.normalOS));
+                float3 p = TransformObjectToWorld(v.positionOS.xyz) + n * 0.007;
+                // 등급이 없는 재질은 삼각형을 한 점으로 모아 그리지 않는다.
+                o.positionCS = _WeaponGradeColor.w < 3.5 ? float4(0, 0, 0, 0) : TransformWorldToHClip(p);
+                o.uv = v.uv;
+                return o;
+            }
+            float4 frag (Varyings i) : SV_Target
+            {
+                float g = _WeaponGradeColor.w;
+                if (g < 3.5) return 0;
+                float3 c = _WeaponGradeColor.rgb;
+                if (abs(g - 8.0) < 0.5 || abs(g - 9.0) < 0.5)
+                {
+                    float s = sin(length(i.uv - 0.5) * 12.0 - 2.0 * _Time.y);
+                    float k = saturate((s - _OutlineColorBlendMin) / max(_OutlineColorBlendMax - _OutlineColorBlendMin, 1e-4));
+                    c = lerp(_WeaponGradeColor.rgb, _WeaponGradeColor2.rgb, k * k * (3.0 - 2.0 * k));
+                }
+                float2 a = i.uv * 5.0 + frac(_Time.y * 0.1) + 1.0;
+                float2 b = i.uv + frac(_Time.y * -0.2) + 1.0;
+                float nz = saturate(SAMPLE_TEXTURE2D(_Global_Weapon_Texture, sampler_linear_repeat, a).r *
+                                    SAMPLE_TEXTURE2D(_Global_Weapon_Texture, sampler_linear_repeat, b).r);
+                return float4(c * 4.0, max(pow(nz, 3.8), 0.02));
+            }
             ENDHLSL
         }
     }

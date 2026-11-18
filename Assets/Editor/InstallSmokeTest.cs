@@ -284,6 +284,8 @@ public static class InstallSmokeTest
                 //   age=14, height=-1, gender=Male, body=Fat, stance=Alert|Combat, job=CombatJob.Id, intro=클립, loop=클립 도 같은 자리에 쓸 수 있다.
                 //   social=SocialAction.Id [act=행동 이름] : 앱과 같은 방식(SocialMotionLoader)으로 소셜 모션을 재생한다. 촬영 시점은 행동 시작 기준이다.
                 //   tool=EquipmentTool.Id : 무기 칸에 생활 도구·악기(Equipment.md "도구").
+                //   aura=Rarity(Elite·Epic·Legendary·Unique·Legendary2·Legendary3·Mythic) : 무기 오라. 무기 근접 사진도 찍는다.
+                //   세트 활성 연출이 판정되면 1.5초까지 진행한 뒤 찍는다(Equipment.md "세트 효과").
                 //   beard=ID, faceDeco=ID, bodyDeco=ID, skin=CharacterSkinColor.Id : 꾸밈·피부색(Appearance.md). 꾸밈이 있으면 얼굴·등 근접 사진도 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
@@ -318,6 +320,7 @@ public static class InstallSmokeTest
                             else if (k == "faceDeco") s.appearance.faceDeco = v;
                             else if (k == "bodyDeco") s.appearance.bodyDeco = v;
                             else if (k == "skin") s.appearance.skinColor = v;
+                            else if (k == "aura") s.weaponAura = v;
                             else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
@@ -352,7 +355,17 @@ public static class InstallSmokeTest
                                 Capture(cam, view, Path.Combine(outDir, t + "_back.png"), 0, 5, 3.0f, new Vector3(0, 0.85f, 0));
                             }
                         }
+                        var setFx = view.GetComponent<TimelineEffectPlayer>();
+                        if (setFx) setFx.Simulate(1.5);
                         Detail(tag);
+                        if (!string.IsNullOrEmpty(s.weaponAura))
+                        {
+                            // 무기 근접: 넣은 무기는 등 쪽에 있으므로 뒤에서, 꺼낸 무기는 오른손 근처를 앞에서 찍는다.
+                            var hand = view.FindBone("_R Hand");
+                            var spine = view.FindBone("_Spine2") ?? view.FindBone("_Spine1");
+                            if (plan.WeaponDrawn && hand) Capture(cam, view, Path.Combine(outDir, tag + "_weapon.png"), 150, 5, 1.2f, hand.position, 768, 768);
+                            else if (spine) Capture(cam, view, Path.Combine(outDir, tag + "_weapon.png"), 20, 5, 1.4f, spine.position, 768, 768);
+                        }
                         var om = view.GetComponent<CharacterMotion>();
                         if (om && social != null)
                         {
@@ -723,7 +736,8 @@ public static class InstallSmokeTest
                 s.Costume("Top").dyes.Add(new ColorOverride { slot = "Slot1", color = "#123456" }); };
             Call("Edit", change);
             check(history.CanUndo, "정상 꾸미기 편집을 이력에 기록");
-            camera.Load(new CameraState { valid = true, yaw = 73, pitch = 12, distance = 4, pan = new Vector2(0.2f, 0.1f), lensMultiplier = 3 });
+            // 거리는 두 체형의 최대 거리(키에 따라 줄어든다) 안쪽 값이어야 한다. 범위 밖이면 키가 바뀔 때 게임 규칙대로 다시 잘린다.
+            camera.Load(new CameraState { valid = true, rig = CameraController.RigVersion, yaw = 73, pitch = 12, distance = 2, pan = new Vector2(0, 0.6f), lensMultiplier = 3 });
             string cameraBefore = JsonUtility.ToJson(camera.Save());
             string edited = JsonUtility.ToJson(EditHistory.Snapshot(app.State));
             Call("Undo");

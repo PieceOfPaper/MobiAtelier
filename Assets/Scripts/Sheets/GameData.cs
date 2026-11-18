@@ -132,6 +132,23 @@ public sealed class ActionTimelineRow
 }
 
 /// <summary>
+/// 세트 활성 연출이 있는 패션 세트(CostumeSetEffect, Equipment.md "세트 효과").
+/// 부위별 의상 목록은 성별로 나뉜다(어린 외형도 같은 목록). 연출은 남·여·남아·여아 타임라인 이름이다.
+/// </summary>
+public sealed class CostumeSetEffectData
+{
+    public static readonly string[] Parts = { "Hat", "Top", "Bottom", "Gloves", "Shoes" };
+    public int Index;
+    public string Id, DisplayName, Rarity;
+    /// <summary>키: 부위(Hat·Top·Bottom·Gloves·Shoes). 빈 목록은 그 부위를 보지 않는다.</summary>
+    public readonly Dictionary<string, List<string>> Male = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    public readonly Dictionary<string, List<string>> Female = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    public string MaleFx, FemaleFx, BoyFx, GirlFx;
+
+    public string Fx(bool male, bool infant) => infant ? (male ? BoyFx : GirlFx) : (male ? MaleFx : FemaleFx);
+}
+
+/// <summary>
 /// 공개 범위 판정(Equipment.md "공개 범위와 에디터 전용 리소스"). 목록·가져오기·자동 복원·실행 취소·최종 조립이 모두 이 판정을 쓴다.
 ///   숨김: 외형·색 시트의 HideOnCustomize, 도감 공개 시각이 미래이거나 해석하지 못한 Costume, 시트 없는 직접 리소스.
 ///   판매 시작·해금 조건(SalesStartTime, UnlockedBy*)은 숨김 판정에 쓰지 않는다. 공개 항목은 잠그지 않는다.
@@ -222,6 +239,11 @@ public sealed class GameData
     public readonly Dictionary<string, CostumeData> Tools = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
     public readonly List<CostumeData> ToolList = new List<CostumeData>();
     public string ToolError;
+    /// <summary>무기 오라 등급 색. 읽지 못하면 조사 시점 값이고 Error 에 사유가 있다.</summary>
+    public WeaponAuraData WeaponAura = WeaponAuraData.Defaults();
+    /// <summary>세트 활성 연출이 있는 패션 세트(시트 순서). 읽지 못하면 비어 있고 SetEffectError 에 사유가 있다.</summary>
+    public readonly List<CostumeSetEffectData> ActivationSets = new List<CostumeSetEffectData>();
+    public string SetEffectError;
     public readonly Dictionary<string, SheetRow> ModelVariants = new Dictionary<string, SheetRow>(StringComparer.Ordinal);
     /// <summary>스튜디오 배경(시트 순서). 시트를 읽지 못하면 비어 있고 BackgroundError 에 사유가 있다.</summary>
     public readonly List<StudioBackgroundData> Backgrounds = new List<StudioBackgroundData>();
@@ -322,6 +344,8 @@ public sealed class GameData
         Colors(set.Read(SheetSchemas.CharacterMouthColor), g.MouthColors, "ColorCode", null, null);
         LoadDecorations(set, g);
         LoadTools(set, g);
+        LoadSetEffects(set, g);
+        g.WeaponAura = WeaponAuraData.Load(files);
         LoadBackgrounds(set, g);
         LoadMotion(set, g);
         LinkGatheringActions(g);
@@ -372,6 +396,36 @@ public sealed class GameData
             }
         }
         catch (Exception e) { g.Tools.Clear(); g.ToolList.Clear(); g.ToolError = "EquipmentTool: " + e.Message; }
+    }
+
+    /// <summary>
+    /// 세트 활성 연출이 있는 세트만 남긴다(게임 CostumeSetEffectSheetDataHolder.ActivationEffectSets 와 같은 대상 [추정: 메서드 이름]).
+    /// 시작에 필요하지 않으므로 읽기 실패는 세트 효과만 끈다.
+    /// </summary>
+    static void LoadSetEffects(SheetSet set, GameData g)
+    {
+        try
+        {
+            if (!set.Has(SheetSchemas.CostumeSetEffect.Sheet)) { g.SetEffectError = "CostumeSetEffect 시트가 없습니다"; return; }
+            foreach (var r in set.Read(SheetSchemas.CostumeSetEffect))
+            {
+                var s = new CostumeSetEffectData
+                {
+                    Index = r.Index, Id = r.Str("Id"), DisplayName = r.Str("DisplayName"), Rarity = r.Str("Rarity"),
+                    MaleFx = r.Str("MaleSetActivationEffectFX"), FemaleFx = r.Str("FemaleSetActivationEffectFX"),
+                    BoyFx = r.Str("BoySetActivationEffectFX"), GirlFx = r.Str("GirlSetActivationEffectFX"),
+                };
+                if (s.Id == null) continue;
+                if (string.IsNullOrEmpty(s.MaleFx) && string.IsNullOrEmpty(s.FemaleFx) && string.IsNullOrEmpty(s.BoyFx) && string.IsNullOrEmpty(s.GirlFx)) continue;
+                foreach (var part in CostumeSetEffectData.Parts)
+                {
+                    s.Male[part] = r.Strs("MaleSet_" + part);
+                    s.Female[part] = r.Strs("FemaleSet_" + part);
+                }
+                g.ActivationSets.Add(s);
+            }
+        }
+        catch (Exception e) { g.ActivationSets.Clear(); g.SetEffectError = "CostumeSetEffect: " + e.Message; }
     }
 
     /// <summary>배경은 시작에 꼭 필요하지 않으므로 읽기 실패를 앱 시작 실패로 만들지 않는다.</summary>

@@ -40,6 +40,18 @@ public sealed class CharacterView : MonoBehaviour
     /// <summary>의상 파츠 안의 피부 조각 재질(원본 셰이더 MMN/CH/Skin_Body). 몸과 같은 몸 UV 를 쓰므로 몸꾸밈을 함께 건다.</summary>
     internal readonly List<Material> CostumeSkinMaterials = new List<Material>();
     public AssemblyPlan Plan;
+    /// <summary>무기 파츠 메시와 서브메시별 원본 재질(외곽선을 그릴지 정한다). 조립기가 채운다.</summary>
+    internal readonly List<(SkinnedMeshRenderer renderer, Material[] sources)> WeaponMeshes = new List<(SkinnedMeshRenderer, Material[])>();
+    /// <summary>외곽선 재질을 만들 앱 캐릭터 셰이더.</summary>
+    internal Shader CharacterShader;
+    /// <summary>세트 활성 연출 재생기. 없으면 null.</summary>
+    internal TimelineEffectPlayer SetEffect;
+
+    readonly List<GameObject> outlineObjects = new List<GameObject>();
+    readonly List<(Material material, bool enabled)> outlineMaterials = new List<(Material, bool)>();
+    bool outlinesBuilt;
+    /// <summary>외곽선을 그리는 서브메시 수(진단용).</summary>
+    internal int WeaponOutlineCount { get { int n = 0; foreach (var (_, on) in outlineMaterials) if (on) n++; return n; } }
 
     bool posed = true, bodyCut = true;
 
@@ -92,6 +104,76 @@ public sealed class CharacterView : MonoBehaviour
             else if (plan.GlobalColors.TryGetValue(d.Slot, out var gc)) c = gc;
             d.Material.SetColor(d.Property, c);
         }
+        ApplyWeaponAura(plan.WeaponAura);
+    }
+
+    /// <summary>
+    /// 무기 오라(Equipment.md "무기 오라"). 무기 메시마다 같은 메시·본을 쓰는 외곽선 렌더러를 자식으로 붙인다(무기 숨김을 따라간다).
+    /// 원본 재질이 무기 셰이더(MMN/CH/Weapon)이고 외곽선을 끄지 않은(_OutlineOff = 0) 서브메시만 그린다.
+    /// </summary>
+    public void ApplyWeaponAura(WeaponAuraGrade grade)
+    {
+        if (grade == null)
+        {
+            foreach (var go in outlineObjects) Kill(go);
+            outlineObjects.Clear();
+            foreach (var (m, _) in outlineMaterials) Kill(m);
+            outlineMaterials.Clear();
+            outlinesBuilt = false;
+            return;
+        }
+        // 조립 중(셰이더를 넘기기 전)에 불리면 만들지 않고, 조립 끝에서 다시 불릴 때 만든다.
+        if (!outlinesBuilt && CharacterShader)
+        {
+            outlinesBuilt = true;
+            foreach (var (src, sources) in WeaponMeshes)
+            {
+                if (!src || !src.sharedMesh) continue;
+                var mats = new Material[src.sharedMesh.subMeshCount];
+                bool any = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    var o = i < sources.Length ? sources[i] : null;
+                    bool on = o && o.shader && o.shader.name.StartsWith("MMN/CH/Weapon", StringComparison.Ordinal)
+                              && !(o.HasProperty("_OutlineOff") && o.GetFloat("_OutlineOff") > 0.5f);
+                    var m = new Material(CharacterShader) { name = (o ? o.name : "Weapon") + "_GradeOutline", renderQueue = 3000 };
+                    foreach (var pass in new[] { "UniversalForward", "ForwardLit", "ShadowCaster", "DepthOnly", "DepthNormals" }) m.SetShaderPassEnabled(pass, false);
+                    if (o && o.HasProperty("_OutlineColorBlendMin")) m.SetFloat("_OutlineColorBlendMin", o.GetFloat("_OutlineColorBlendMin"));
+                    if (o && o.HasProperty("_OutlineColorBlendMax")) m.SetFloat("_OutlineColorBlendMax", o.GetFloat("_OutlineColorBlendMax"));
+                    outlineMaterials.Add((m, on));
+                    mats[i] = m;
+                    any |= on;
+                }
+                if (!any) continue;
+                var go = new GameObject(src.name + "_GradeOutline");
+                go.transform.SetParent(src.transform, false);
+                var r = go.AddComponent<SkinnedMeshRenderer>();
+                r.sharedMesh = src.sharedMesh;
+                r.bones = src.bones;
+                r.rootBone = src.rootBone;
+                r.localBounds = src.localBounds;
+                r.updateWhenOffscreen = true;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                r.receiveShadows = false;
+                r.sharedMaterials = mats;
+                go.AddComponent<OutlineFollow>().Source = src;
+                outlineObjects.Add(go);
+            }
+        }
+        var main = new Color(grade.Main[0], grade.Main[1], grade.Main[2], grade.Index);
+        var sub = new Color(grade.Sub[0], grade.Sub[1], grade.Sub[2], 0);
+        foreach (var (m, on) in outlineMaterials)
+        {
+            // SetColor 는 rgb 만 감마 → 선형으로 바꾸고 알파(등급 번호)는 그대로 둔다(게임도 Color 로 넣는다).
+            m.SetColor("_WeaponGradeColor", on ? main : Color.clear);
+            m.SetColor("_WeaponGradeColor2", sub);
+        }
+    }
+
+    static void Kill(UnityEngine.Object o)
+    {
+        if (!o) return;
+        if (Application.isPlaying) Destroy(o); else DestroyImmediate(o);
     }
 
     /// <summary>한 파츠의 슬롯 색만 바꾼다. partKey 가 null 이면 모든 파츠의 같은 슬롯(외형 색)을 바꾼다.</summary>
@@ -179,11 +261,29 @@ public sealed class CharacterView : MonoBehaviour
 
     void OnDestroy()
     {
+        foreach (var (m, _) in outlineMaterials) Kill(m);
+        outlineMaterials.Clear();
         foreach (var o in Owned)
         {
             if (!o) continue;
             if (Application.isPlaying) Destroy(o); else DestroyImmediate(o);
         }
         Owned.Clear();
+    }
+}
+
+/// <summary>외곽선 렌더러가 원본 무기 렌더러의 렌더링 끔(소셜 모션 숨김 등)·블렌드셰이프를 따른다.</summary>
+public sealed class OutlineFollow : MonoBehaviour
+{
+    public SkinnedMeshRenderer Source;
+    SkinnedMeshRenderer self;
+
+    void LateUpdate()
+    {
+        if (!self) self = GetComponent<SkinnedMeshRenderer>();
+        if (!Source || !self) return;
+        if (self.forceRenderingOff != Source.forceRenderingOff) self.forceRenderingOff = Source.forceRenderingOff;
+        var m = Source.sharedMesh;
+        if (m) for (int i = 0; i < m.blendShapeCount; i++) self.SetBlendShapeWeight(i, Source.GetBlendShapeWeight(i));
     }
 }

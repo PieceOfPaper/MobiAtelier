@@ -761,6 +761,49 @@ public sealed class CustomizePanel
             job.SetValue(auto ? null : chosen, text, null);
         });
         parent.Add(jobRow);
+
+        // 무기 오라(Equipment.md "무기 오라"): 등급을 직접 고른다. 모델은 그대로라 색 편집처럼 다시 조립하지 않는다.
+        var auraStatus = StatusLabel();
+        var aura = Dropdown(() =>
+        {
+            var items = new List<DropdownItem> { new DropdownItem { Id = null, Name = "없음" } };
+            foreach (var g in data.WeaponAura.Grades) items.Add(new DropdownItem { Id = g.Id, Name = g.Name });
+            return items;
+        }, it => editColors(s => s.weaponAura = it.Id));
+        var auraRow = Row("무기 오라", aura, auraStatus);
+        refreshers.Add(() =>
+        {
+            auraRow.style.display = ToolSelected ? DisplayStyle.None : DisplayStyle.Flex;
+            string id = state.weaponAura;
+            var g = data.WeaponAura.Find(id);
+            aura.SetValue(string.IsNullOrEmpty(id) ? null : id, string.IsNullOrEmpty(id) ? "없음" : g?.Name ?? WeaponAuraData.NameOf(id) ?? id, null);
+            string note = null;
+            if (!string.IsNullOrEmpty(id) && plan != null && plan.WeaponAura == null)
+                note = g == null ? "외곽선이 없는 등급이라 표시하지 않습니다." : "무기가 표시되지 않아 오라를 표시하지 않습니다.";
+            SetStatus(auraStatus, note, AppUI.WarnColor);
+        });
+        parent.Add(auraRow);
+
+        // 세트 효과(Equipment.md "세트 효과"): 입은 의상으로 자동 판정한다. 고르는 항목이 아니라 표시만 한다.
+        var setLabel = new Label();
+        setLabel.style.fontSize = 12;
+        setLabel.style.whiteSpace = WhiteSpace.Normal;
+        var setRow = Row("세트 효과", setLabel, null);
+        refreshers.Add(() =>
+        {
+            var s = plan?.SetEffect;
+            setRow.style.display = s == null ? DisplayStyle.None : DisplayStyle.Flex;
+            if (s != null) setLabel.text = SetName(s) + (plan.SetEffectTimeline == null || plan.SetEffectTimeline == "EmptyTimeline" ? " (연출 없음)" : "");
+        });
+        parent.Add(setRow);
+    }
+
+    /// <summary>세트 이름. 에픽·전설 행은 의상 구성이 같아 구별하지 않으므로 이름 끝의 "(등급)"을 뗀다.</summary>
+    static string SetName(CostumeSetEffectData s)
+    {
+        string name = s.DisplayName ?? s.Id;
+        string suffix = " (" + WeaponAuraData.NameOf(s.Rarity) + ")";
+        return name.EndsWith(suffix, StringComparison.Ordinal) ? name.Substring(0, name.Length - suffix.Length) : name;
     }
 
     string JobName(string id) => id == null ? null : data.CombatJob(id)?.DisplayName ?? id;

@@ -183,10 +183,16 @@ public static class LastCharacterImport
         s.weaponPose.job = job != null && data.CombatJob(job) != null ? job : null;
         s.weaponPose.stance = WeaponPoseState.Undrawn;
 
+        // 무기 오라: 캐시의 등급(Rarity 이름)을 그대로 쓴다. 외곽선이 없는 등급(일반~레어)과 도구는 오라 없음이다(LastCharacterImport.md).
+        // 세트 효과는 입은 의상으로 다시 판정하므로 캐시의 CostumeSet 은 읽지 않는다(Equipment.md "세트 효과").
         string aura = d.Get("WeaponAuraGrade").Str();
-        if (!string.IsNullOrEmpty(aura) && aura != "None" && aura != "Common" && s.Costume("Weapon") != null) r.Unsupported.Add("무기 오라");
-        var set = d.Get("CostumeSet").Arr();
-        if (set.Count >= 2 && set[1].Str() is string setId && setId != "Invalid" && setId != "") r.Unsupported.Add("세트 효과");
+        var weaponSlot = s.Costume("Weapon");
+        s.weaponAura = null;
+        if (!string.IsNullOrEmpty(aura) && aura != "None" && weaponSlot != null && !weaponSlot.IsTool)
+        {
+            if (data.WeaponAura.Find(aura) != null) s.weaponAura = aura;
+            else if (WeaponAuraData.IndexOf(aura) < 0) r.Failed.Add(("무기 오라", "알 수 없는 등급입니다: " + aura));
+        }
         if (d.Get("IsCapClosed").B() && s.Costume("Hat") != null) r.Unsupported.Add("모자 접힘 상태");
         if (d.Get("IsHoodOn").B()) r.Unsupported.Add("후드 씀 상태");
 

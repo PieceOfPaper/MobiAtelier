@@ -20,6 +20,11 @@ public class EditState
     public string background;
     /// <summary>무기 자세(WeaponPose.md). 필드가 없는 이전 파일은 넣은 자세·직업 자동으로 읽는다.</summary>
     public WeaponPoseState weaponPose = new WeaponPoseState();
+    /// <summary>
+    /// 무기 오라 등급(Rarity 이름: Elite·Epic·Legendary·Unique·Legendary2·Legendary3·Mythic, Equipment.md "무기 오라").
+    /// 비어 있으면 없음. 무기(도구 제외)를 착용했을 때만 표시한다. 외곽선이 없는 등급·모르는 값은 표시하지 않고 값은 그대로 둔다.
+    /// </summary>
+    public string weaponAura;
 
     public CostumeSlotState Costume(string part)
     {

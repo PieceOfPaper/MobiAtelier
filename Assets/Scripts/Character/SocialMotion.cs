@@ -279,6 +279,35 @@ public sealed class ActionMotion : IDisposable
         return bone;
     }
 
+    /// <summary>
+    /// 이펙트를 구간에 맞춰 켜고 끈다. 반복 구간이 처음으로 돌아가면 다시 재생한다.
+    /// simulate 면 입자를 그 시점까지 즉시 진행한다(배치 촬영용).
+    /// </summary>
+    internal void UpdateEffects(Transform character, int seg, double t, bool simulate)
+    {
+        foreach (var fx in Effects)
+        {
+            if (!fx.Go) continue;
+            bool on = fx.Segment == seg && Inside(t, fx.Begin, fx.End, fx.Infinite);
+            bool restart = on && (!fx.Active || t < fx.LastLocal);
+            fx.LastLocal = t;
+            if (!on)
+            {
+                if (fx.Active) { fx.Active = false; fx.Go.SetActive(false); }
+                continue;
+            }
+            if (restart)
+            {
+                fx.Active = true;
+                fx.Spawn(character);
+                fx.Go.SetActive(true);
+                foreach (var ps in fx.Systems) if (ps) { ps.Clear(true); ps.Play(true); }
+            }
+            if (simulate)
+                foreach (var ps in fx.Systems) if (ps) ps.Simulate((float)(t - fx.Begin), true, true);
+        }
+    }
+
     /// <summary>캐릭터 렌더러에 바꾼 것(덧그린 재질·셰이더 값·숨김)을 되돌린다.</summary>
     internal void RestoreRenderers()
     {
@@ -378,6 +407,25 @@ public static class SocialMotionLoader
         }
         if (a.Props.Count + a.Effects.Count + a.IKs.Count + a.Additives.Count + a.Shaders.Count + a.Visibilities.Count > 0)
             log?.Invoke($"  소품 {a.Props.Count}, 이펙트 {a.Effects.Count}, 손 IK {a.IKs.Count}, 덧그림 {a.Additives.Count}, 셰이더 값 {a.Shaders.Count}, 숨김 {a.Visibilities.Count}");
+        return a;
+    }
+
+    /// <summary>
+    /// 클립 없이 스테이지 타임라인만 읽는다(세트 활성 연출 등). 모든 트랙을 구간 0 으로 둔다.
+    /// 재생은 TimelineEffectPlayer 가 한다(이펙트·덧그림만 쓴다).
+    /// </summary>
+    public static ActionMotion LoadTimelines(InstallFiles files, BundleCache bundles, CharacterView view, Shader shader,
+        IEnumerable<string> names, Action<string> log)
+    {
+        var a = new ActionMotion { ActionName = "Timeline" };
+        a.Holder = new GameObject("TimelineEffects");
+        a.Holder.transform.SetParent(view.transform, false);
+        var pending = new List<(ActionTrack track, object p)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var n in names) ReadTimeline(files, bundles, view, shader, a, 0, n, pending, seen, log);
+        foreach (var (track, p) in pending) ResolveTargets(view, a, track, p, log);
+        if (a.Props.Count + a.IKs.Count + a.Shaders.Count + a.Visibilities.Count > 0)
+            log?.Invoke($"  타임라인의 소품 {a.Props.Count}, 손 IK {a.IKs.Count}, 셰이더 값 {a.Shaders.Count}, 숨김 {a.Visibilities.Count}는 쓰지 않습니다");
         return a;
     }
 
@@ -652,5 +700,52 @@ public static class SocialMotionLoader
             }
             if (changed) r.sharedMaterials = mats;
         }
+    }
+}
+
+/// <summary>
+/// 클립 없는 스테이지 타임라인(세트 활성 연출)을 캐릭터에 계속 재생한다. 이펙트·덧그림 구간만 켜고 끈다.
+/// 시간은 붙인 때부터 흐르며 되감지 않는다(끝없는 구간은 계속, 끝이 있는 구간은 한 번).
+/// </summary>
+public sealed class TimelineEffectPlayer : MonoBehaviour
+{
+    ActionMotion motion;
+    double time;
+
+    public ActionMotion Motion => motion;
+
+    public void Play(ActionMotion m)
+    {
+        motion?.Dispose();
+        motion = m;
+        time = 0;
+        Step(false);
+    }
+
+    /// <summary>입자를 t 초까지 즉시 진행한다(배치 촬영용).</summary>
+    public void Simulate(double t)
+    {
+        time = t;
+        Step(true);
+    }
+
+    void LateUpdate()
+    {
+        if (motion == null) return;
+        time += Time.deltaTime;
+        Step(false);
+    }
+
+    void Step(bool simulate)
+    {
+        if (motion == null) return;
+        motion.UpdateEffects(transform, 0, time, simulate);
+        foreach (var ad in motion.Additives) ad.Set(ad.Active(0, time), time);
+    }
+
+    void OnDestroy()
+    {
+        motion?.Dispose();
+        motion = null;
     }
 }

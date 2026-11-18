@@ -1,9 +1,12 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-17
+> 최종 갱신: 2026-11-18
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
+
+- 무기 오라·세트 효과·불러오기 연결(2026-11-18, Claude Code): 미구현 A 목록을 마쳤다. 오라는 게임 무기 셰이더의 외곽선 패스를 디스어셈블해 `MobiCharacter.shader` 의 `WeaponGradeOutline` 패스로 옮겼다(색은 설치 폴더 StageConstants `WeaponGradeOutlineColorSettings`, 7등급 [확인]). 상태 `weaponAura`, 패널 "무기 오라" 줄(색 편집 경로, 재조립 없음). 세트 효과는 `CostumeSetEffect` 의 활성 연출 5행 [확인]을 보이는 의상으로 판정해 타임라인을 계속 재생한다(`TimelineEffectPlayer`, 소셜 모션 로더 재사용). 불러오기는 `WeaponAuraGrade` 를 넣고 `CostumeSet` 은 다시 판정한다. 얼굴·몸꾸밈 색은 고르지 않기로 확정(사용자: 게임도 못 고름). 배치 촬영(에픽·전설+·신화 외곽선, JUJU 두 세트 연출)·정책 시험 60개 통과·Windows 빌드 실행 확인. 앱 실조작·게임 화면 비교는 [미확인].
+- 정책 시험 실패 4개 수정(2026-11-18): 원인은 시험이 넣은 카메라 거리 4가 새 카메라 최대 거리(3, 키에 따라 줄어듦)를 넘어, 실행 취소로 키가 바뀌면 게임 규칙대로 다시 잘린 것 [확인]. 코드는 그대로 두고 시험 값을 범위 안(거리 2)으로 고쳤다.
 
 - 도구(생활 도구·악기) 구현(2026-11-17, Claude Code): 미구현 A 목록(도구 → 무기 오라 → 세트 효과 → 불러오기 연결)의 첫 항목. `EquipmentTool`·`EquipmentToolType`·`Instrument` 시트를 읽어(설치본 도구 430행 [확인]) 의상 › 무기 칸에 무기 뒤로 넣었다(`CostumeSlotState.KindTool`, 드롭다운 키 `tool:` 접두). 사용자 결정: 도구 자세는 넣음 / 사용(연주·채집 Action 시작→반복), 넣은 상태의 루트 장착 악기(피아노 등) 숨김, 불러오기는 무기 우선. 배치 조립 촬영 11조합·Windows 빌드 실제 캐시 불러오기 확인. 스모크 테스트 `-maOutfit` 에 `tool=도구Id` 키 추가. 앱 실조작은 [미확인]. 남은 A: 무기 오라(이펙트 연결 미확인), 세트 효과.
 
@@ -70,6 +73,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-18 | 무기 오라: `WeaponAuraData`(새 파일, StageConstants 색), `EditState.weaponAura`, `PlanResolver.ResolveWeaponAura`, `CharacterView.ApplyWeaponAura`(무기 메시 자식 외곽선 렌더러, `OutlineFollow`), 셰이더 `WeaponGradeOutline` 패스(일반 재질은 `SetShaderPassEnabled` 로 끔), 전역 `_Global_Weapon_Texture` 를 조립 때 넣음. 세트 효과: `SheetSchemas.CostumeSetEffect`, `GameData.ActivationSets`, `ResolveSetEffect`, `SocialMotionLoader.LoadTimelines`·`TimelineEffectPlayer`(이펙트 갱신을 `ActionMotion.UpdateEffects` 로 옮겨 공유). 패널 "무기 오라"·"세트 효과" 줄, 불러오기 오라 연결, 스모크 `aura=` 키. 정책 시험 카메라 값 수정 |
 | 2026-11-17 | 도구: `SheetSchemas` EquipmentTool·EquipmentToolType·Instrument, `GameData.Tools/ToolList/LoadTools/LinkGatheringActions`, `CostumeSlotState.KindTool·Row()`, `PlanResolver.ResolveToolUse`·`WeaponIsTool`, 루트 장착 도구 넣음 숨김(`CharacterAssembler.Mount`), 패널 무기 목록·도구 자세, 불러오기 도구 역조회(무기 우선·건너뛴 도구 한 줄 안내). 런타임·에디터 dotnet 빌드 오류 0, 정책 시험 실패 4개는 변경 전과 같음(아래 인계 메모) |
 | 2026-11-15 | 에디터 전용 프리 카메라: 화각 버튼 아래 버튼(`#if UNITY_EDITOR`, 빌드 제외). `CameraController.SetFreeMode` 는 각도·거리·높이 제한을 무시하고 따로 움직이며 저장·자동 저장에 남기지 않고, 끄면 켜기 전 시점으로 돌아간다. 런타임 dotnet 빌드(에디터·비에디터 정의) 오류 0. 에디터 플레이 확인 전 |
 | 2026-11-13 | 몸 자르기: `ClothingCut.cs`(ClothingUnit 읽기, 게임 FittingCutPolicy·자르기 규칙, 걸친 삼각형 잘라 새 정점 보간), `SmmReader` 삼각형 파일 순서 반환, 기존 근사(`BodyCut.LimbCuts`·면 근접) 삭제. 설치본 ClothingUnit 3,512개 읽기 [확인: 덤프 전수], 전후 11벌·회귀 4조합 촬영 |
@@ -175,11 +179,12 @@
 9. ~~외형 선택 보관·공개 호환 기본값 대체·부분 복원·ID/숨김 표기·UNITY_EDITOR 제한~~ (2026-11-03 보완·자동 검증). 전체 외형·의상 조합의 육안 검수는 별개다. 최초 초보자 의상은 구현돼 있으며 기존에 저장된 빈 의상은 강제로 채우지 않는다.
 10. 남은 검증·조정: 키·나이 범위·조작 방식, 꾸밈 중첩·색상 연결, 카테고리 묶음·펼침 정책, 의상의 추가 공개 제어 참조. 게임 전체 공개 판정을 해석한 것으로 취급하지 않는다.
 11. 소셜 모션 사용자 확인(`SocialMotion.md` 5장): 목록 열기·검색·선택·■·ESC, 재생 중 의상·성별 변경 이어 재생, 페이드·이펙트 모양. 남은 구현: 어린 외형 소품 크기 보정.
-12. 마지막으로 접속한 캐릭터 불러오기는 구현했다. 남은 순서: 도구 → 무기 오라 → 세트 효과(불러오기 연결 포함). 남성·어린·로브 캐릭터 불러오기는 [미확인].
+12. 마지막으로 접속한 캐릭터 불러오기와 미지원 항목(도구·무기 오라·세트 효과)을 구현했다. 남은 확인: 앱에서 오라 등급 바꾸기·실행 취소, 세트 연출 화면을 게임과 비교, 오라가 있는 실제 캐시·남성·어린·로브 캐릭터 불러오기 [미확인].
 
 ## 4. 인계 메모
 
-- 정책 시험 실패 4개(2026-11-17 발견): `InstallSmokeTest.Policy` 의 "실행 취소/다시 실행·배경 실행 취소/다시 실행 시 카메라 유지" 4항목이 실패한다. 도구 작업을 뺀 상태에서도 같은 4개가 실패해 11-15 카메라 교체(게임 스튜디오 카메라) 이후의 문제로 본다 [추정: 시험이 넣는 카메라 값(거리 4, 자유 팬)이 새 카메라 제한에 잘린다]. 시험을 새 카메라에 맞출지, 코드 문제인지 확인이 필요하다.
+- 무기 오라(2026-11-18): 외곽선 재질은 `MobiCharacter` 셰이더 복사본에서 외곽선 패스(LightMode `SRPDefaultUnlit`)만 켠 것이다. 다른 캐릭터 재질은 `ConvertMaterial` 이 이 패스를 끄고, 셰이더도 등급 번호(`_WeaponGradeColor.w`) 4 미만이면 삼각형을 모은다. `ApplyPlanColors` 가 조립 중에도 불리므로 외곽선은 셰이더를 넘긴 뒤(조립 끝) 한 번만 만든다. 이 순서를 바꾸면 색이 0으로 남아 안 보인다(실제로 겪음). 원본 식대로라 외곽선은 희미하고 노이즈로 반짝인다(알파 평균 약 0.05).
+- 세트 효과(2026-11-18): 시각 연출이 있는 세트는 설치본 5행뿐이다(JUJU 콜라보 4 + EmptyTimeline 1). 나머지 256행은 능력치만 있다. 에픽·전설 행은 의상·연출이 같아 시트 순서 첫 행(에픽)을 고르고 이름의 "(에픽)"을 뗀다.
 - 도구(2026-11-17): 도구 행은 `CostumeData`(IsTool=true, CostumeType="Weapon")로 담는다. 의상 칸에서 행을 찾을 때는 `data.Costumes` 를 직접 보지 말고 `slot.Row(data)` 를 쓴다. 생활 도구의 사용 동작은 시트 직접 연결이 없어 이름 규칙(ToolIndices = 도구 종류, `Gathering_` 중 가장 짧은 이름)으로 고른다(WeaponPose.md).
 
 - 몸 자르기(2026-11-13): 분리면 평면은 의상 자기 바인드 공간 값이라 의상마다 자세가 다르다(T자세 장갑 등). `Mesh_SP_<Id>` 메시의 주 본 × 바인드포즈로 기본 자세 월드로 옮겨 몸(기본 자세 BakeMesh)과 비교한다 [추정: 게임이 공간을 맞추는 방식은 미해석]. 몸 삼각형 번호는 SMM 파일 순서다(서브메시로 묶기 전). 일부 장갑(예: Female_Newbiecombat_Gloves_00)은 분리면 이름 L/R과 실제 위치가 반대라 손을 자르지 않는다 — 게임 데이터 그대로다. 디버그: `InstallSmokeTest -maOutfit` 로그의 "몸 자르기 …" 줄에 의상별 평면·부위·제외 수가 나온다.

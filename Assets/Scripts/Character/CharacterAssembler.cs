@@ -299,6 +299,12 @@ public static class CharacterAssembler
                         view.CostumeSkinMaterials.Add(subMats[s]);
                 }
                 smr.sharedMaterials = subMats;
+                if (part.Key == AssemblyPlan.CostumeKey("Weapon") && !plan.WeaponIsTool)
+                {
+                    var origin = new Material[subMats.Length];
+                    for (int s = 0; s < origin.Length; s++) origin[s] = srcMats.Length == 0 ? null : srcMats[Mathf.Min(s, srcMats.Length - 1)];
+                    view.WeaponMeshes.Add((smr, origin));
+                }
 
                 // 프리팹의 켜짐·꺼짐을 그대로 따른다(예: 눈의 Mesh_EyeBasePlane 은 감은 눈 평면이라 기본으로 꺼져 있다).
                 if (psmr) { go2.SetActive(psmr.gameObject.activeSelf); smr.enabled = psmr.enabled; }
@@ -511,8 +517,53 @@ public static class CharacterAssembler
         view.SetPosed(true);
         AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, mounts, L);
         CheckDyes(plan, view);
+        view.CharacterShader = shader;
+        if (view.WeaponMeshes.Count > 0) EnsureWeaponTexture(bundles, L);
+        view.ApplyWeaponAura(plan.WeaponAura);
+        if (plan.WeaponAura != null)
+        {
+            var shaders = new List<string>();
+            foreach (var (_, src) in view.WeaponMeshes)
+                foreach (var m in src) shaders.Add(m && m.shader ? $"{m.shader.name}(외곽선 끔 {(m.HasProperty("_OutlineOff") ? m.GetFloat("_OutlineOff") : -1)})" : "-");
+            L($"무기 오라: {plan.WeaponAura.Name}({plan.WeaponAura.Id}), 무기 메시 {view.WeaponMeshes.Count}, 외곽선 서브메시 {view.WeaponOutlineCount}, " +
+              $"텍스처 {(Shader.GetGlobalTexture(WeaponTextureId) ? Shader.GetGlobalTexture(WeaponTextureId).name : "없음")}, 원본 [{string.Join(", ", shaders)}]");
+        }
+        AttachSetEffect(files, bundles, plan, view, shader, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         return view;
+    }
+
+    /// <summary>무기 외곽선 노이즈(전역 _Global_Weapon_Texture, EnvironmentConfig 값과 같은 텍스처). 배경과 관계없이 한 번 넣는다.</summary>
+    internal const string WeaponTexturePath = "Shaders/Texture/GlobalTexture2.tga";
+    static readonly int WeaponTextureId = Shader.PropertyToID("_Global_Weapon_Texture");
+
+    internal static void EnsureWeaponTexture(BundleCache bundles, Action<string> L)
+    {
+        if (Shader.GetGlobalTexture(WeaponTextureId)) return;
+        Texture2D tex = null;
+        try { tex = bundles.LoadAsset<Texture2D>(BundleCache.AssetRoot + WeaponTexturePath); }
+        catch (Exception e) when (!(e is OutOfMemoryException)) { L?.Invoke("무기 외곽선 텍스처 읽기 실패: " + e.Message); }
+        if (tex) Shader.SetGlobalTexture(WeaponTextureId, tex);
+        else L?.Invoke("무기 외곽선 텍스처 없음: " + WeaponTexturePath);
+    }
+
+    /// <summary>
+    /// 세트 활성 연출(Equipment.md "세트 효과"): 판정한 세트의 스테이지 타임라인을 캐릭터에 계속 재생한다.
+    /// 읽지 못하면 연출만 빼고 조립은 그대로 둔다(로그만 남긴다).
+    /// </summary>
+    static void AttachSetEffect(InstallFiles files, BundleCache bundles, AssemblyPlan plan, CharacterView view, Shader shader, Action<string> L)
+    {
+        if (plan.SetEffect == null) return;
+        L($"세트 효과: {plan.SetEffect.DisplayName}({plan.SetEffect.Id}), 연출 {plan.SetEffectTimeline ?? "없음"}");
+        if (plan.SetEffectTimeline == null) return;
+        try
+        {
+            var m = SocialMotionLoader.LoadTimelines(files, bundles, view, shader, new[] { plan.SetEffectTimeline }, L);
+            if (m.Effects.Count + m.Additives.Count == 0) { m.Dispose(); return; }
+            view.SetEffect = view.gameObject.AddComponent<TimelineEffectPlayer>();
+            view.SetEffect.Play(m);
+        }
+        catch (Exception e) when (!(e is OutOfMemoryException)) { L("세트 연출 읽기 실패: " + e.Message); }
     }
 
     /// <summary>
@@ -533,6 +584,9 @@ public static class CharacterAssembler
                            orig.IndexOf("Transparent", StringComparison.OrdinalIgnoreCase) >= 0;
         c.shader = shader;
         c.renderQueue = -1;
+        // 무기 등급 외곽선 패스는 외곽선 전용 재질(CharacterView.ApplyWeaponAura)에서만 그린다.
+        c.SetShaderPassEnabled("SRPDefaultUnlit", false);
+        c.SetShaderPassEnabled("WeaponGradeOutline", false);
         c.SetFloat("_Cull", cull);
         c.SetFloat("_Alpha", 1); c.SetFloat("_UseTexAlpha", 0);
         c.SetFloat("_SrcBlend", 1); c.SetFloat("_DstBlend", 0); c.SetFloat("_ZWrite", 1);

@@ -112,6 +112,7 @@ public sealed class AssemblyPlan
         { "beard", "수염" }, { "faceDeco", "얼굴꾸밈" }, { "bodyDeco", "몸꾸밈" },
         { "Hat", "모자" }, { "Top", "상의" }, { "Bottom", "하의" }, { "Robe", "로브" }, { "Gloves", "장갑" },
         { "Shoes", "신발" }, { "EarDeco", "귀장식" }, { "EyeDeco", "눈장식" }, { "FaceDeco", "얼굴장식" }, { "Weapon", "무기" },
+        { "weaponAura", "무기 오라" },
     };
 
     /// <summary>파츠 키(costume:Top 포함)·부위 이름 → 화면 이름.</summary>
@@ -153,6 +154,12 @@ public sealed class AssemblyPlan
     public bool WeaponIsTool;
     /// <summary>입은 의상의 옷 모양 조건(ModelPartInfo.ClothingCondition: ShortSkirt·LongSkirt 등). 조립할 때 채운다. 없으면 null.</summary>
     public string Clothing;
+    /// <summary>무기 오라(무기 등급 외곽선). 무기가 없거나 도구이거나 외곽선이 없는 등급이면 null.</summary>
+    public WeaponAuraGrade WeaponAura;
+    /// <summary>입은 의상으로 판정한 세트 활성 연출(CostumeSetEffect). 없으면 null.</summary>
+    public CostumeSetEffectData SetEffect;
+    /// <summary>세트 활성 연출 스테이지 타임라인 이름(성별·연령별). 없으면 null.</summary>
+    public string SetEffectTimeline;
 
     public static string CostumeKey(string part) => "costume:" + part;
 }
@@ -248,7 +255,59 @@ public static class PlanResolver
         plan.FaceIdle = plan.Idle;
         plan.PartClip = data.PartAnimations.Count > 0 ? data.PartAnimation : (Func<string, string, string>)null;
         ResolveWeaponPose(plan, state, data, files, folder, previous);
+        ResolveWeaponAura(plan, state, data);
+        ResolveSetEffect(plan, data);
         return plan;
+    }
+
+    /// <summary>
+    /// 무기 오라(Equipment.md "무기 오라"). 사용자가 고른 등급을 표시 중인 무기에 건다. 도구에는 걸지 않는다.
+    /// 외곽선이 없는 등급(일반~레어)은 표시하지 않는다. 모르는 값은 값을 보존하고 알린다.
+    /// </summary>
+    static void ResolveWeaponAura(AssemblyPlan plan, EditState state, GameData data)
+    {
+        string id = state.weaponAura;
+        if (string.IsNullOrEmpty(id)) return;
+        if (WeaponAuraData.IndexOf(id) < 0)
+        {
+            plan.AddIssue("weaponAura", IssueKind.UnknownId, id, null, "알 수 없는 무기 오라 등급이라 표시하지 않습니다(값 보존)");
+            return;
+        }
+        var weapon = plan.Costumes.Find(c => c.Part == "Weapon");
+        if (weapon == null || weapon.Status != CostumeStatus.Applied) return;
+        if (plan.WeaponIsTool) { plan.Notes.Add("도구에는 무기 오라를 표시하지 않습니다."); return; }
+        plan.WeaponAura = data.WeaponAura?.Find(id);
+    }
+
+    /// <summary>
+    /// 세트 활성 연출(Equipment.md "세트 효과"). 보이는 모자·상의·하의·장갑·신발이 한 세트의 성별 목록을 모두 채우면 그 세트다.
+    /// 목록이 빈 부위는 보지 않는다. 등급(에픽·전설)은 보지 않으며 시트 순서로 처음 맞는 세트를 고른다.
+    /// 게임 TryGetActivationEffectSheetId(성별, 모자, 상의, 하의, 신발, 장갑)·IsWearingFullSet 과 같은 판정이다 [추정: 메서드 이름·인자, 빈 목록 규칙].
+    /// </summary>
+    static void ResolveSetEffect(AssemblyPlan plan, GameData data)
+    {
+        string Shown(string part)
+        {
+            var c = plan.Costumes.Find(x => x.Part == part);
+            return c != null && c.Status == CostumeStatus.Applied ? c.CostumeId : null;
+        }
+        foreach (var s in data.ActivationSets)
+        {
+            var parts = plan.Male ? s.Male : s.Female;
+            bool any = false, full = true;
+            foreach (var p in CostumeSetEffectData.Parts)
+            {
+                if (!parts.TryGetValue(p, out var list) || list.Count == 0) continue;
+                any = true;
+                string shown = Shown(p);
+                if (shown == null || !list.Contains(shown)) { full = false; break; }
+            }
+            if (!any || !full) continue;
+            plan.SetEffect = s;
+            string fx = s.Fx(plan.Male, plan.Infant);
+            plan.SetEffectTimeline = string.IsNullOrEmpty(fx) ? null : fx;
+            return;
+        }
     }
 
     /// <summary>

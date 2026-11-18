@@ -600,30 +600,7 @@ public sealed class CharacterMotion : MonoBehaviour
     }
 
     /// <summary>이펙트를 구간에 맞춰 켜고 끈다. 반복 구간이 처음으로 돌아가면 다시 재생한다.</summary>
-    void UpdateEffects(int asi, double alt)
-    {
-        foreach (var fx in action.Effects)
-        {
-            if (!fx.Go) continue;
-            bool on = fx.Segment == asi && ActionMotion.Inside(alt, fx.Begin, fx.End, fx.Infinite);
-            bool restart = on && (!fx.Active || alt < fx.LastLocal);
-            fx.LastLocal = alt;
-            if (!on)
-            {
-                if (fx.Active) { fx.Active = false; fx.Go.SetActive(false); }
-                continue;
-            }
-            if (restart)
-            {
-                fx.Active = true;
-                fx.Spawn(transform);
-                fx.Go.SetActive(true);
-                foreach (var ps in fx.Systems) if (ps) { ps.Clear(true); ps.Play(true); }
-            }
-            if (simulateEffects)
-                foreach (var ps in fx.Systems) if (ps) ps.Simulate((float)(alt - fx.Begin), true, true);
-        }
-    }
+    void UpdateEffects(int asi, double alt) => action.UpdateEffects(transform, asi, alt, simulateEffects);
 
     void LateUpdate()
     {
