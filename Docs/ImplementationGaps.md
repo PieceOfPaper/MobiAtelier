@@ -1,6 +1,6 @@
 # 미구현·생략 목록
 
-> 정리일: 2026-11-19
+> 정리일: 2026-11-20
 > 구현하지 않았거나 일부러 빼거나 보류한 항목을 한곳에 모은 목록이다. 세부 근거와 확정·제안·미정 상태는 링크한 기획서가 기준이다. 이 문서는 목록과 링크만 가진다.
 > 구현 중에 원본 기능을 옮기지 않거나 생략하면 여기에 한 줄을 추가한다(`AGENTS.md` 7장). 구현하면 줄을 지우고 해당 기획서에 기록한다.
 
@@ -40,9 +40,11 @@
 | 로브 착용 표시(IsRobeWeared) | 미확인 | 불러오기에서 읽지 않는다. 로브를 입었는데 이 값이 거짓인 경우의 의미를 확인하지 않았다 | 실제 캐시 확인 | [LastCharacterImport.md](LastCharacterImport.md) |
 | 무기 표시 전용 옵션 | 보류 | 무기를 미장착하면 숨길 수 있다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 무기 장착점 보정값 | 생략 | 모델 정의 `MeshVisibleStateOverrides`(22개)·`TransformOverrides`(1개)를 적용하지 않았다 | 손·무기 위치 문제 발견 시 | [WeaponPose.md](WeaponPose.md) 4장 |
-| 옷끼리 자르기 | 생략 | 몸 자르기만 게임 규칙(`.ClothingUnit.bytes`)으로 한다. 상의를 하의로 자르기(CutTopWithBottom) 등 의상→의상 자르기, 의상 피부 조각 자르기, 자르기 제외 규칙(IsFitIgnoringCase·HasVeryHighestOnCommonJunction)을 옮기지 않았다 | 옷끼리 관통·겹침 문제 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
-| 옷 밀어내기(Pusher) | 생략 | 분리면의 경계 돌출 좌표·밀기 곡선으로 옷 정점을 바깥으로 미는 처리를 하지 않는다 | 이음매 틈·관통 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
-| 모델 보정 정보 | 생략 | `SkirtBoneCorrectionInfos`·`CageMorphInfo`·`BoneLocalScaleDiffInfos`·`BodytoolBoneDisplacements`·`JunctionPointInfo`를 읽지 않는다 [확인: 코드 검색] | 치마·체형별 모양 문제 발견 시 | — |
+| 옷 밀어내기 이전 단계(자르기) 확인 | 미확인 | 옷끼리 자르기는 게임 규칙(맞춤 순서 V1/V2·FittedTrait·IsFitIgnoringCase·접합 크기 보정)으로 구현했다(2026-11-19). 로브가 안쪽 원피스를 크게 자르는 등 결과를 게임 화면과 비교하지 않았다 | 게임 화면 비교 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
+| 옷 밀어내기 결과 | 미확인 | 게임 NativeMeshPushingJob 을 옮겼다(2026-11-20). 기본 곡선 InOut·tanh·돌출 좌표·경계 본 가중치는 [확인]. 민 정점을 메시 공간으로 되돌릴 때 새 본 가중치의 기본 자세 스키닝 행렬을 쓰고, 메시에 없는 본의 바인드포즈는 첫 본 기준으로 만든다 [추정]. 게임 화면과 비교하지 않았다 | 게임 화면 비교 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
+| 치마 본 보정(SkirtBoneCorrectionInfos 488개 모델·동작별 덮어쓰기 209개) | 미구현 | 게임은 앉기·타임라인 가중치·체형 추가값·본 길이 기준을 섞어 애니메이션 뒤(ModifyTransformJob.ProcessSkirtBoneCorrection)에 건다. 켜는 조건을 아직 해석하지 않았다 | 앉는 모션 관통 발견 시 | — |
+| 도구 장착 본 변위 합성 | 추정 | BodytoolBoneDisplacements(1065개 모델)를 애니메이션 뒤 국소 위치 +·회전 × 로 건다(합성 식 [확인]). 여러 의상이 같은 본을 바꿀 때 게임 규칙을 찾지 못해 가장 큰 변위 하나를 쓴다 | 게임 소비 코드 확인 | — |
+| 본 로컬 크기 차·케이지 변형 | 생략 | BoneLocalScaleDiffInfos 는 1개 모델(남성 머리 목)뿐, CageMorphInfo 는 설치본에 쓰는 모델이 없다 [확인] | 데이터가 늘 때 | — |
 | 머리·옷 물리 | 생략 | 원본 물리 구성 요소를 재현하지 않는다 | — | [FeasibilityReview.md](FeasibilityReview.md) |
 | 게임 전체 공개 판정 | 미확인 | 도감 공개 시각만 쓴다. 다른 공개 참조가 있는지 모른다 | — | [Equipment.md](Equipment.md) |
 

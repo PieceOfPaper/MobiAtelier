@@ -498,6 +498,7 @@ public sealed class CharacterMotion : MonoBehaviour
             else if (!faceBone[i]) b[i].localPosition = p ? view.PosePos[i] : view.BindPos[i];
             // 얼굴 본은 표정(턱·입술·눈썹 이동)이 위치에 있으므로 클립 위치를 쓴다. 머리 크기는 부모 _Head 스케일이 반영한다.
         }
+        view.ApplyLocalOffsets();
         LookAt?.Apply(lookDt, aw);
         foreach (var (dup, main, rel) in parts)
             if (dup && main) dup.localRotation = main.localRotation * rel;

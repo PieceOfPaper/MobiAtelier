@@ -234,10 +234,8 @@ public static class CharacterAssembler
         var boneOwner = new Dictionary<Transform, Def>();
         var poseBase = new Dictionary<Transform, (Vector3 p, Quaternion r)>();
         int partOwnBones = 0;
-        // 몸 자르기 재료: 몸 삼각형의 파일 순서·부위, 의상별 분리면 계획
-        int[][] bodyTriSource = null;
-        Dictionary<int, byte> bodySegments = null;
-        var cutters = new List<Cutter>();
+        // 옷 맞춤 재료: 몸과 .ClothingUnit 이 있는 파츠(조각)의 분리면·렌더러
+        var pieces = new List<FitPiece>();
         // 무기 등 장착점(AttachPointInfo)이 있는 파츠: 프리팹 본을 복제한 루트. 몸 본 계층이 정해진 뒤 장착점 본 아래에 붙인다.
         var tools = new List<(Def d, Transform root)>();
         // 스킨 메시 목록이 빈 장착 파츠(곡괭이 4종 [확인])는 프리팹의 일반 메시(MeshRenderer)를 복제 본 아래에 그린다.
@@ -332,9 +330,9 @@ public static class CharacterAssembler
             else if (tool) { L($"  장착 파츠 프리팹 없음, 본을 만들지 못함: {part.Model}"); Fail(part, "장착 파츠 프리팹이 없어 본을 만들지 못했습니다"); }
             Dictionary<string, SkinnedMeshRenderer> fbxSmr = null;
             var morph = part.Role == PartRole.Body ? MorphMaterials(d) : null;
-            var unit = part.Role == PartRole.Body || (part.Role == PartRole.Costume && !tool) ? ReadClothingUnit(files, d) : null;
-            var cutter = unit != null && part.Role == PartRole.Costume && unit.Separators.Count > 0 ? new Cutter { D = d, Unit = unit } : null;
-            if (cutter != null) cutters.Add(cutter);
+            var unit = part.Role == PartRole.Body || part.Role == PartRole.Hair || (part.Role == PartRole.Costume && !tool) ? ReadClothingUnit(files, d) : null;
+            var piece = unit != null ? NewFitPiece(d, unit, partGo) : null;
+            if (piece != null) pieces.Add(piece);
 
             var list = d.Root.Get("SkinnedMeshList").Arr();
             if (list.Count == 0 && !(tool && prefab && AddPrefabToolMeshes(d, prefab, toolRootT, partGo)))
@@ -349,25 +347,21 @@ public static class CharacterAssembler
                 if (helper)
                 {
                     // 분리면 메시는 그리지 않는다. 분리면을 기본 자세로 옮길 주 본만 기록한다.
-                    if (cutter != null && name.StartsWith("Mesh_SP_", StringComparison.Ordinal) && files.HasResource(smm))
+                    if (piece != null && piece.Unit.Separators.Count > 0 && name.StartsWith("Mesh_SP_", StringComparison.Ordinal) && files.HasResource(smm))
                     {
                         var sm = SmmReader.Read(files.ReadResource(smm), out var sb);
-                        cutter.SeparatorBone[name.Substring("Mesh_SP_".Length)] = DominantBone(sm, sb);
+                        piece.SeparatorBone[name.Substring("Mesh_SP_".Length)] = DominantBone(sm, sb);
                         UnityEngine.Object.DestroyImmediate(sm);
                     }
                     continue;
                 }
                 Mesh mesh; string[] boneNames; bool owned = false;
+                int[][] triSource = null;
                 prefabSmr.TryGetValue(name, out var psmr);
                 if (files.HasResource(smm))
                 {
-                    mesh = SmmReader.Read(files.ReadResource(smm), out boneNames, out var triSource);
+                    mesh = SmmReader.Read(files.ReadResource(smm), out boneNames, out triSource);
                     owned = true;
-                    if (part.Role == PartRole.Body && bodySegments == null && unit != null && unit.Segments.TryGetValue(i, out var bseg))
-                    {
-                        bodyTriSource = triSource;
-                        bodySegments = bseg;
-                    }
                 }
                 else if (psmr && psmr.sharedMesh) { mesh = psmr.sharedMesh; boneNames = BoneNames(psmr); }
                 else
@@ -385,11 +379,11 @@ public static class CharacterAssembler
                     mesh = fsmr.sharedMesh; boneNames = BoneNames(fsmr);
                 }
                 if (owned) view.Owned.Add(mesh);
-                if (cutter != null)
+                if (piece != null)
                 {
                     var bps = mesh.bindposes;
                     for (int b = 0; b < boneNames.Length && b < bps.Length; b++)
-                        if (!cutter.Bindposes.ContainsKey(boneNames[b])) cutter.Bindposes[boneNames[b]] = bps[b];
+                        if (!piece.Bindposes.ContainsKey(boneNames[b])) piece.Bindposes[boneNames[b]] = bps[b];
                 }
 
                 var go2 = new GameObject(name);
@@ -436,6 +430,9 @@ public static class CharacterAssembler
                 // 좌우 눈·눈썹 숨김. 표정 애니메이션이 게임 오브젝트를 켜고 끄므로 렌더러 컴포넌트를 끈다.
                 if (part.Role == PartRole.Eyes) HideEyeSide(smr, name, hideLeftEye, hideRightEye, hideLeftBrow, hideRightBrow);
                 view.Renderers.Add((part.Key, smr));
+                // 옷 맞춤으로 자를 수 있는 렌더러: ClothingUnit 의 그리는 렌더러 목록에 있고 파일 메시(삼각형 순서를 아는 것)일 때.
+                if (piece != null && triSource != null && Array.IndexOf(unit.RendererIndices, i) >= 0)
+                    piece.Meshes.Add(new FitMesh { Index = i, Name = name, Renderer = smr, Full = mesh, TriSource = triSource, Material = ClothFit.MaterialType(list[i].Get("ClothingMaterialType").Str()) });
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body && !view.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
                 if (part.Role == PartRole.Head) view.HeadRenderers.Add(smr);
@@ -654,6 +651,7 @@ public static class CharacterAssembler
             }
         }
 
+        ApplyBodytoolDisplacements(defs, view, root, L);
         foreach (var d in defs) if (d.Part.Role == PartRole.Mouth && !plan.Issues.Exists(i => i.Key == "head" && i.FromBuild && i.IsFailure))
             try { if (!ApplyMouth(bundles, d.Root, view, L)) Fail(d.Part, "입 텍스처를 얼굴에 적용하지 못했습니다"); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "입 텍스처 읽기 실패: " + e.Message); }
@@ -671,32 +669,7 @@ public static class CharacterAssembler
         view.ApplyPlanColors(plan);
         // 몸 가리기는 기본 자세에서 계산한다.
         view.SetPosed(false);
-        if (view.Body && view.BodyFullMesh && cutters.Count > 0)
-        {
-            if (bodySegments == null) L("몸 자르기: 몸 부위 데이터(.ClothingUnit)가 없어 모든 몸 삼각형을 몸통으로 봅니다");
-            var plans = new List<BodyCut.Plan>();
-            foreach (var c in cutters)
-            {
-                var cd = c.D;
-                plans.Add(BodyCut.MakePlan(cd.Part.Key, c.Unit, BodyCut.CutCaseForBody(c.Unit.Slot), id => SeparatorOverride(cd, plan.BodyType, id), sep =>
-                {
-                    // 분리면 메시의 주 본, 없으면 관절 기본 본. 그 본의 (월드 × 바인드포즈)로 의상 바인드 공간 → 기본 자세 월드.
-                    if (!c.SeparatorBone.TryGetValue(sep.Id, out var bone)) bone = JunctionBone(sep.Junction);
-                    var t = bone != null ? BoneFor(cd, bone) : null;
-                    if (t && bone != null && c.Bindposes.TryGetValue(bone, out var bp)) return t.localToWorldMatrix * bp;
-                    L($"  분리면 {cd.Part.Model}/{sep.Id}: 본 {bone ?? "-"}의 바인드포즈를 찾지 못해 좌표를 그대로 씁니다");
-                    return root.transform.localToWorldMatrix;
-                }));
-            }
-            var bm = new Mesh();
-            view.Body.BakeMesh(bm, true);
-            var bw = bm.vertices;
-            UnityEngine.Object.DestroyImmediate(bm);
-            var b2w = view.Body.transform.localToWorldMatrix;
-            for (int v = 0; v < bw.Length; v++) bw[v] = b2w.MultiplyPoint3x4(bw[v]);
-            view.BodyCutMesh = BodyCut.Cut(view.BodyFullMesh, bw, bodyTriSource, bodySegments, plans, L);
-            if (view.BodyCutMesh) view.Owned.Add(view.BodyCutMesh);
-        }
+        FitClothes(files, plan, view, root, pieces, BoneFor, L);
         view.SetBodyCut(true);
         view.SetPosed(true);
         AttachIdle(files, bundles, plan, view, bones, map, poseBase, bind, rawComY, mounts, L);
@@ -1199,13 +1172,158 @@ public static class CharacterAssembler
         return y;
     }
 
-    /// <summary>몸을 자르는 의상: 분리면 데이터, 분리면 Id → 분리면 메시의 주 본, 의상 메시의 본 이름 → 바인드포즈.</summary>
-    sealed class Cutter
+    /// <summary>옷 맞춤 조각(몸·의상): 분리면 데이터, 순서 힌트, 분리면 Id → 분리면 메시의 주 본, 메시의 본 이름 → 바인드포즈, 자를 수 있는 렌더러.</summary>
+    sealed class FitPiece
     {
         public Def D;
         public ClothingUnit Unit;
+        public ClothFit.Hint Hint;
+        public GameObject Go;
         public readonly Dictionary<string, string> SeparatorBone = new Dictionary<string, string>(StringComparer.Ordinal);
         public readonly Dictionary<string, Matrix4x4> Bindposes = new Dictionary<string, Matrix4x4>(StringComparer.Ordinal);
+        public readonly List<FitMesh> Meshes = new List<FitMesh>();
+    }
+
+    /// <summary>조각의 렌더러 하나: 모델 정의의 메시 번호·이름, 렌더러, 원본 메시, 삼각형의 파일 번호, ClothingMaterialType.</summary>
+    sealed class FitMesh
+    {
+        public int Index;
+        public string Name;
+        public SkinnedMeshRenderer Renderer;
+        public Mesh Full;
+        public int[][] TriSource;
+        public int Material;
+    }
+
+    static FitPiece NewFitPiece(Def d, ClothingUnit unit, GameObject go)
+    {
+        var mp = d.Root.Get("ModelPartInfo");
+        var h = new ClothFit.Hint
+        {
+            Name = d.Part.Model,
+            Actor = d.Part.Role == PartRole.Body || d.Root.Get("StageObjectModelType").Str() == "ActorModel",
+            Slot = unit.Slot,
+            UseV1 = mp.Get("UseClothFitOrderPolicyV1") is bool v1 && v1,
+        };
+        var jp = mp.Get("JunctionPointInfo");
+        h.Junction[0] = ClothFit.JunctionSize(jp.Get("WaistSize").Str());
+        h.Junction[1] = ClothFit.JunctionSize(jp.Get("WristSize").Str());
+        h.Junction[2] = ClothFit.JunctionSize(jp.Get("AnkleSize").Str());
+        return new FitPiece { D = d, Unit = unit, Hint = h, Go = go };
+    }
+
+    // StageConstants 의 옷 맞춤 설정(ClothFitOrderPolicySettings·ClothJunctionPointSizeResolverSettings). 설치 폴더마다 한 번 읽는다.
+    static InstallFiles fitSettingsOf;
+    static bool fitForcedV1;
+    static HashSet<string> fitVeryLowAnkleCostumes, fitVeryLowAnkleShoes;
+
+    static void LoadFitSettings(InstallFiles files, Action<string> L)
+    {
+        if (fitSettingsOf == files) return;
+        fitSettingsOf = files;
+        fitForcedV1 = false; fitVeryLowAnkleCostumes = fitVeryLowAnkleShoes = null;
+        try
+        {
+            var sc = files.ReadSjon(StudioCameraData.ConstantsPath);
+            fitForcedV1 = sc.Get("ClothFitOrderPolicySettings").Get("ForcedV1ToUse") is bool b && b;
+            var jr = sc.Get("ClothJunctionPointSizeResolverSettings");
+            HashSet<string> Names(object o)
+            {
+                var set = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var x in o.Arr()) if (x.Str() is string n) set.Add(n);
+                return set;
+            }
+            fitVeryLowAnkleCostumes = Names(jr.Get("VeryLowestAnkleSizeCostumeNames"));
+            fitVeryLowAnkleShoes = Names(jr.Get("VeryLowestAnkleSizeShoeNames"));
+        }
+        catch (Exception e) when (!(e is OutOfMemoryException)) { L?.Invoke("옷 맞춤 설정(StageConstants) 읽기 실패, 기본 규칙으로 맞춥니다: " + e.Message); }
+    }
+
+    /// <summary>
+    /// 옷 맞춤 자르기(게임 NativeMorphableAssetFitter.BuildPlans). 기본 자세에서 계산한다.
+    /// 보이는 조각을 맞춤 순서로 정렬하고, 조각의 렌더러마다 재질 종류에 맞는 자르는 조각들의 평면으로 자른다.
+    /// </summary>
+    static void FitClothes(InstallFiles files, AssemblyPlan plan, CharacterView view, GameObject root, List<FitPiece> pieces,
+                           Func<Def, string, Transform> boneFor, Action<string> L)
+    {
+        LoadFitSettings(files, L);
+        var fit = pieces.FindAll(p => p.Go && p.Go.activeSelf);
+        if (fit.Count < 2) return;
+        ClothFit.ResolveJunctionSizes(fit.ConvertAll(p => p.Hint), fitVeryLowAnkleCostumes, fitVeryLowAnkleShoes);
+        bool v1 = fitForcedV1 || fit.Exists(p => p.Hint.UseV1);
+        ClothFit.Sort(fit, p => p.Hint, v1);
+        string Size(int? v) => v.HasValue ? v.Value.ToString() : "-";
+        L($"옷 맞춤 순서({(v1 ? "V1" : "V2")}): " + string.Join(" → ", fit.ConvertAll(p =>
+            $"{p.D.Part.Model}[{p.Hint.Slot} 허리{Size(p.Hint.Junction[0])} 손목{Size(p.Hint.Junction[1])} 발목{Size(p.Hint.Junction[2])}]")));
+
+        Func<ClothingUnit.Separator, Matrix4x4> ToWorld(FitPiece c) => sep =>
+        {
+            // 분리면 메시의 주 본, 없으면 관절 기본 본. 그 본의 (월드 × 바인드포즈)로 조각 바인드 공간 → 기본 자세 월드.
+            if (!c.SeparatorBone.TryGetValue(sep.Id, out var bone)) bone = JunctionBone(sep.Junction);
+            var t = bone != null ? boneFor(c.D, bone) : null;
+            if (t && bone != null && c.Bindposes.TryGetValue(bone, out var bp)) return t.localToWorldMatrix * bp;
+            L($"  분리면 {c.D.Part.Model}/{sep.Id}: 본 {bone ?? "-"}의 바인드포즈를 찾지 못해 좌표를 그대로 씁니다");
+            return root.transform.localToWorldMatrix;
+        };
+
+        var bm = new Mesh();
+        try
+        {
+            for (int i = 0; i < fit.Count; i++)
+            {
+                var target = fit[i];
+                foreach (var m in target.Meshes)
+                {
+                    if (!m.Renderer || !m.Full) continue;
+                    // FittedTrait: 피부는 다른 모든 조각이, 천·쇠는 순서상 뒤의 조각이 자른다.
+                    var plans = new List<BodyCut.Plan>();
+                    for (int j = m.Material == ClothFit.MatSkin ? 0 : i + 1; j < fit.Count; j++)
+                    {
+                        if (j == i) continue;
+                        var f = fit[j];
+                        if (f.Unit.Separators.Count == 0) continue;
+                        if (m.Material == ClothFit.MatSteel && !ClothFit.HasVeryHighestOnCommonJunction(f.Hint, target.Hint)) continue;
+                        if (ClothFit.IsFitIgnoringCase(m.Name, target.Hint.Slot, f.Hint.Slot)) continue;
+                        var fd = f.D;
+                        var push = new BodyCut.PushOptions { MorphableAssets = fd.Root.Get("MorphableAssets"), TargetSkin = m.Material == ClothFit.MatSkin, FitterSlot = f.Hint.Slot };
+                        plans.Add(BodyCut.MakePlan(fd.Part.Key, f.Unit, ClothFit.CutCase(target.Hint.Slot, f.Hint.Slot), id => SeparatorOverride(fd, plan.BodyType, id), ToWorld(f), push));
+                    }
+                    if (plans.Count == 0) continue;
+                    target.Unit.Segments.TryGetValue(m.Index, out var segments);
+                    if (segments == null) L($"자르기 {target.D.Part.Model}/{m.Name}: 부위 데이터가 없어 모든 삼각형을 몸통으로 봅니다");
+                    bm.Clear();
+                    m.Renderer.BakeMesh(bm, true);
+                    var world = bm.vertices;
+                    var l2w = m.Renderer.transform.localToWorldMatrix;
+                    for (int v = 0; v < world.Length; v++) world[v] = l2w.MultiplyPoint3x4(world[v]);
+                    // 밀기: 메시 본의 기본 자세 스키닝 행렬. 경계 본 가중치의 본이 메시에 없으면 골격에서 찾아 덧붙인다.
+                    var ctx = new BodyCut.PushContext();
+                    var fullBones = m.Renderer.bones;
+                    var bindposes = m.Full.bindposes;
+                    for (int b = 0; b < fullBones.Length; b++)
+                    {
+                        ctx.BoneNames.Add(fullBones[b] ? fullBones[b].name : "");
+                        ctx.Skin.Add(fullBones[b] && b < bindposes.Length ? fullBones[b].localToWorldMatrix * bindposes[b] : Matrix4x4.identity);
+                    }
+                    var owner = target.D;
+                    ctx.NewBone = name => boneFor(owner, name);
+                    var cut = BodyCut.Cut($"{target.D.Part.Model}/{m.Name}", m.Full, world, m.TriSource, segments, plans, L, ctx);
+                    if (!cut) continue;
+                    view.Owned.Add(cut);
+                    Transform[] cutBones = fullBones;
+                    if (ctx.AddedBones.Count > 0)
+                    {
+                        var all = new List<Transform>(fullBones);
+                        all.AddRange(ctx.AddedBones);
+                        cutBones = all.ToArray();
+                        L($"  밀기 본 추가 {target.D.Part.Model}/{m.Name}: " + string.Join(", ", ctx.AddedBones.ConvertAll(t => t.name)));
+                    }
+                    view.CutMeshes.Add(new CharacterView.CutMesh { Renderer = m.Renderer, Full = m.Full, Cut = cut, FullBones = fullBones, CutBones = cutBones });
+                    if (m.Renderer == view.Body) view.BodyCutMesh = cut;
+                }
+            }
+        }
+        finally { UnityEngine.Object.DestroyImmediate(bm); }
     }
 
     static ClothingUnit ReadClothingUnit(InstallFiles files, Def d)
@@ -1273,6 +1391,39 @@ public static class CharacterAssembler
             CloneBones(c, t, byName);
         }
     }
+
+    /// <summary>
+    /// 도구 장착 본 변위(ModelPartInfo.BodytoolBoneDisplacements): 보이는 의상마다 _BodytoolL·_BodytoolR·_Backtool 등에
+    /// 국소 위치·회전(오일러 각, 도) 변화를 준다. 애니메이션 뒤 국소 위치 += 변화, 국소 회전 = 회전 × 변화로 건다
+    /// (게임 ModifyTransformJob.ProcessTransformLocalOffset 과 같은 합성 [확인]). 여러 의상이 같은 본을 바꾸면 가장 큰 변위 하나를 쓴다 [추정: 게임의 합성 규칙은 찾지 못함].
+    /// </summary>
+    static void ApplyBodytoolDisplacements(List<Def> defs, CharacterView view, GameObject root, Action<string> L)
+    {
+        var applied = new List<string>();
+        var best = new Dictionary<int, float>();
+        foreach (var d in defs)
+        {
+            if (d.Part.Role != PartRole.Costume) continue;
+            var go = root.transform.Find(d.Part.Key + ":" + d.Part.Model);
+            if (go && !go.gameObject.activeSelf) continue;
+            foreach (var e in d.Root.Get("ModelPartInfo").Get("BodytoolBoneDisplacements").Arr())
+            {
+                string bone = e.Get("DisplacingBoneName").Str();
+                int i = bone == null ? -1 : Array.FindIndex(view.Bones, b => b && b.name == bone);
+                if (i < 0) continue;
+                var dp = V3Zero(e.Get("DeltaLocalPosition"));
+                var dr = V3Zero(e.Get("DeltaEulerLocalRotation"));
+                if (view.OffsetPos == null) { view.OffsetPos = new Vector3[view.Bones.Length]; view.OffsetRot = new Quaternion[view.Bones.Length]; for (int k = 0; k < view.OffsetRot.Length; k++) view.OffsetRot[k] = Quaternion.identity; }
+                // 본마다 가장 큰 변위 하나(위치 m + 회전 도/100 크기 비교)
+                float size = dp.magnitude + dr.magnitude / 100f;
+                if (!best.TryGetValue(i, out var cur) || size > cur) { best[i] = size; view.OffsetPos[i] = dp; view.OffsetRot[i] = Quaternion.Euler(dr); }
+                applied.Add($"{d.Part.Model}:{bone} {dp} {dr}");
+            }
+        }
+        if (applied.Count > 0) L("도구 장착 본 변위: " + string.Join(", ", applied));
+    }
+
+    static Vector3 V3Zero(object o) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : Vector3.zero; }
 
     static Vector3 V3(object o) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : Vector3.one; }
     static Quaternion Q(object o) { var l = o.Arr(); return l.Count >= 4 ? new Quaternion(l[0].F(), l[1].F(), l[2].F(), l[3].F()) : Quaternion.identity; }

@@ -30,6 +30,10 @@ public sealed class CharacterView : MonoBehaviour
     internal Quaternion[] BindRot, PoseRot;
     internal Vector3[] BindScl, PoseScl;
     internal bool[] HasPose;
+    /// <summary>애니메이션 뒤에 거는 본 국소 오프셋(도구 장착 본 변위). 없으면 null.</summary>
+    internal Vector3[] OffsetPos;
+    internal Quaternion[] OffsetRot;
+    Quaternion?[] offsetApplied;
     public readonly List<(string partKey, SkinnedMeshRenderer renderer)> Renderers = new List<(string, SkinnedMeshRenderer)>();
     public readonly List<DyeBinding> Dyes = new List<DyeBinding>();
     internal readonly List<UnityEngine.Object> Owned = new List<UnityEngine.Object>();
@@ -37,6 +41,14 @@ public sealed class CharacterView : MonoBehaviour
     /// <summary>머리(Head 역할) 메시. 카메라 높이 기준(머리 아래 높이)에 쓴다.</summary>
     internal readonly List<SkinnedMeshRenderer> HeadRenderers = new List<SkinnedMeshRenderer>();
     internal Mesh BodyFullMesh, BodyCutMesh;
+    /// <summary>옷 맞춤으로 자르고 민 렌더러(몸 포함): 원본·자른 메시와 각각의 본 배열(밀기가 본을 덧붙일 수 있다). SetBodyCut 이 함께 바꾼다.</summary>
+    internal sealed class CutMesh
+    {
+        public SkinnedMeshRenderer Renderer;
+        public Mesh Full, Cut;
+        public Transform[] FullBones, CutBones;
+    }
+    internal readonly List<CutMesh> CutMeshes = new List<CutMesh>();
     /// <summary>의상 파츠 안의 피부 조각 재질(원본 셰이더 MMN/CH/Skin_Body). 몸과 같은 몸 UV 를 쓰므로 몸꾸밈을 함께 건다.</summary>
     internal readonly List<Material> CostumeSkinMaterials = new List<Material>();
     public AssemblyPlan Plan;
@@ -78,11 +90,34 @@ public sealed class CharacterView : MonoBehaviour
             Bones[i].localRotation = p ? PoseRot[i] : BindRot[i];
             Bones[i].localScale = p ? PoseScl[i] : BindScl[i];
         }
+        ApplyLocalOffsets();
+    }
+
+    /// <summary>본 국소 오프셋을 현재 국소 값에 더한다(위치 += 오프셋, 회전 = 회전 × 오프셋).</summary>
+    internal void ApplyLocalOffsets()
+    {
+        if (OffsetPos == null) return;
+        if (offsetApplied == null || offsetApplied.Length != OffsetPos.Length) offsetApplied = new Quaternion?[OffsetPos.Length];
+        for (int i = 0; i < Bones.Length && i < OffsetPos.Length; i++)
+        {
+            if (!Bones[i] || (OffsetPos[i] == Vector3.zero && OffsetRot[i] == Quaternion.identity)) continue;
+            Bones[i].localPosition += OffsetPos[i];
+            // 클립이 이 본의 회전을 쓰지 않으면 지난번에 건 회전이 그대로 남아 있다. 그때는 오프셋을 한 번만 건다.
+            var r = Bones[i].localRotation;
+            if (offsetApplied[i] is Quaternion last && Quaternion.Dot(last, r) > 0.999999f) r = last * Quaternion.Inverse(OffsetRot[i]);
+            Bones[i].localRotation = r * OffsetRot[i];
+            offsetApplied[i] = Bones[i].localRotation;
+        }
     }
 
     internal void ApplyBodyMesh()
     {
-        if (Body && BodyCutMesh) Body.sharedMesh = bodyCut ? BodyCutMesh : BodyFullMesh;
+        foreach (var c in CutMeshes)
+        {
+            if (!c.Renderer || !c.Cut) continue;
+            c.Renderer.sharedMesh = bodyCut ? c.Cut : c.Full;
+            c.Renderer.bones = bodyCut ? c.CutBones : c.FullBones;
+        }
     }
 
     public void ApplyBlendShape(string blendShape)

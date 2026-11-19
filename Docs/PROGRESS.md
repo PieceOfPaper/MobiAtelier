@@ -1,10 +1,12 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-19
+> 최종 갱신: 2026-11-20
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
 
+- 옷 밀어내기·도구 장착 본 변위(2026-11-20, Claude Code, 2순위 2번째): 게임 NativeMeshPushingJob·PushVertices·IntersectsPusher·TryGetExtrusion·CreatePusher·SpaceSeparatorParameter.GetDefault 를 디스어셈블해 옮겼다(`ClothingCut.cs` 의 Pusher·Push). 조각마다 자르기 직후 같은 조각이 민다. ClothingUnit 의 돌출 좌표·경계 본 가중치, 모델 정의의 PushCurves·PushIncludeSkin·ExtrusionRatios, 분리면 보정의 Pusher 값을 쓴다. 민 정점에 새 본이 필요하면 렌더러 본에 덧붙인다(`CharacterView.CutMesh`). 티셔츠 밑단 옆 청바지 허리 관통·건틀릿 틈이 사라짐 [확인: 배치 촬영]. 도구 장착 본 변위(BodytoolBoneDisplacements)는 애니메이션 뒤 국소 오프셋으로 건다(`CharacterView.ApplyLocalOffsets`). 정책 시험 60개 통과, Windows 빌드·실행 촬영 정상. 치마 본 보정은 미구현, 물리·얼굴 셰이더는 사용자 결정 대기(아래 다음 할 일).
+- 옷끼리 자르기(2026-11-19, Claude Code, 2순위 1번째): 게임 `NativeMorphableAssetFitter.BuildPlans`·`FittingPolicy`·`ClothFitOrderPolicy(V2)`·`ClothJunctionPointSizeResolver` 를 디스어셈블해 옮겼다(`ClothingCut.cs` 의 `ClothFit`, 조립기 `FitClothes`). 몸과 ClothingUnit 이 있는 파츠를 맞춤 순서로 정렬하고, 렌더러 재질(Skin=모든 조각, Cloth=뒤 조각, Steel=VeryHighest 공통 접합부)에 따라 자른다. 설정은 StageConstants(`ClothFitOrderPolicySettings`·`ClothJunctionPointSizeResolverSettings`). 배치 촬영 10조합: 건틀릿 위 소매 관통 사라짐 [확인], 로브 아래 원피스가 크게 잘림(게임과 같은지 [미확인]). 런타임·에디터 dotnet 빌드 오류 0. 정책 시험 60개는 이번에 돌리지 않았다. 남은 2순위: 옷 밀어내기(Pusher, BuildPlans 의 AddPusher 경로 해석함)·모델 보정 정보, 눈·얼굴 셰이더 조명, 머리·옷 물리.
 - 카메라 쳐다보기 상체 회전(2026-11-19, Claude Code): 사용자 제보(게임 스크린샷: 뒤에서 찍으면 상체를 틀어 봄). 게임이 꾸미기 캐릭터에 쓰는 상수 `Constants/LookAt/CustomizeActor`(허리·가슴·목 20°씩 + 머리 40° + 눈 39°)를 찾아 적용했다. 이전에는 LookAt 시트의 머리·눈(53°)만 써서 53°를 넘으면 정면으로 돌아왔다. 배치 촬영·정책 시험 60개 통과.
 - 의상 자체 연출(2026-11-19, Claude Code): `StageObjectModelTimeline` 시트로 전설 의상 등 90개 모델의 반복·후드 씀 타임라인(이펙트·덧그림)을 재생한다. 타임라인 로더의 중복 제거가 여러 소켓에 붙은 같은 이펙트를 버리던 기존 버그도 고쳤다(소셜 모션에도 해당). 배치 촬영·정책 시험 60개 통과. 앱 움직임·게임 비교는 [미확인].
 - 바로 만들 수 있는 것 4개(2026-11-19, Claude Code): ① 좌우 눈·눈썹·장식 숨김(`HideLeftEye`·`HideAccessory0~2` 등, 안대·모자가 가린 눈·귀장식이 뚫고 나오지 않음). ② 문신 발광·반사(사용자 승인, 몸 식은 원본 Skin_Body 디스어셈블). ③ 환생 눈장식 색 프리셋 6개(의상 › 눈장식 목록, 보상 프리셋 시트 필드 순서 확인). ④ 도구 사용 연출(악기 음표·채집 이펙트). 함께 곡괭이 4종이 조립 실패로 안 보이던 문제를 고쳤다. 배치 촬영·정책 시험 60개 통과. 앱 실조작·게임 비교는 [미확인].
@@ -189,6 +191,7 @@
 9. ~~외형 선택 보관·공개 호환 기본값 대체·부분 복원·ID/숨김 표기·UNITY_EDITOR 제한~~ (2026-11-03 보완·자동 검증). 전체 외형·의상 조합의 육안 검수는 별개다. 최초 초보자 의상은 구현돼 있으며 기존에 저장된 빈 의상은 강제로 채우지 않는다.
 10. 남은 검증·조정: 키·나이 범위·조작 방식, 꾸밈 중첩·색상 연결, 카테고리 묶음·펼침 정책, 의상의 추가 공개 제어 참조. 게임 전체 공개 판정을 해석한 것으로 취급하지 않는다.
 11. 소셜 모션 사용자 확인(`SocialMotion.md` 5장): 목록 열기·검색·선택·■·ESC, 재생 중 의상·성별 변경 이어 재생, 페이드·이펙트 모양. 남은 구현: 어린 외형 소품 크기 보정.
+13. 2순위 남은 것(2026-11-20): ① 치마 본 보정(켜는 조건 해석 필요) ② 눈·얼굴 셰이더 게임 조명 — 게임 스크린샷 비교가 필요 ③ 머리·옷 물리 — 게임은 프리팹의 MagicaCloth 구성 요소를 쓴다. 전체 이식은 큰 작업이라 간이 스프링 본으로 할지 사용자 결정이 필요하다.
 12. 마지막으로 접속한 캐릭터 불러오기와 미지원 항목(도구·무기 오라·세트 효과)을 구현했다. 남은 확인: 앱에서 오라 등급 바꾸기·실행 취소, 세트 연출 화면을 게임과 비교, 오라가 있는 실제 캐시·남성·어린·로브 캐릭터 불러오기 [미확인].
 
 ## 4. 인계 메모
