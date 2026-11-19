@@ -65,6 +65,13 @@ public sealed class BodyTypeData
     public bool UseBlendshape;
 }
 
+/// <summary>환생 눈장식 색 프리셋 하나: 안경 의상과 Slot0~5 염색 색(없으면 null).</summary>
+public sealed class EyeDecoPreset
+{
+    public string Id, DisplayName, CostumeId;
+    public readonly Rgba32?[] DyeColors = new Rgba32?[6];
+}
+
 /// <summary>시선 처리 시트 행 하나(LookAt). 축 이름은 PlusX·MinusX·PlusY·MinusY·PlusZ·MinusZ, 좌표는 Local·ParentLocal.</summary>
 public sealed class LookAtParam
 {
@@ -248,6 +255,9 @@ public sealed class GameData
     public string HairAccessoryColorError;
     /// <summary>시선 처리(LookAt 시트). 읽지 못하면 비우고 LookAtError 에 적는다(카메라 쳐다보기만 쓸 수 없다).</summary>
     public readonly List<LookAtParam> LookAt = new List<LookAtParam>();
+    /// <summary>환생 눈장식 색 프리셋(CharacterCustomizeEyeDeco → CostumeRewardPreset). 읽지 못하면 비운다.</summary>
+    public readonly List<EyeDecoPreset> EyeDecoPresets = new List<EyeDecoPreset>();
+    public string EyeDecoError;
     public string LookAtError;
     /// <summary>생활 도구·악기(시트 순서). 읽지 못하면 비어 있고 ToolError 에 사유가 있다.</summary>
     public readonly Dictionary<string, CostumeData> Tools = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
@@ -371,6 +381,27 @@ public sealed class GameData
                 });
         }
         catch (Exception e) { g.LookAt.Clear(); g.LookAtError = SheetSchemas.LookAt.Sheet + ": " + e.Message; }
+        try
+        {
+            var want = new Dictionary<string, EyeDecoPreset>(StringComparer.Ordinal);
+            foreach (var r in set.Read(SheetSchemas.CharacterCustomizeEyeDeco))
+            {
+                var p = new EyeDecoPreset { Id = r.Str("Id"), DisplayName = r.Str("DisplayName") };
+                string preset = r.Str("Preset");
+                if (p.Id == null || preset == null) continue;
+                g.EyeDecoPresets.Add(p);
+                want[preset] = p;
+            }
+            // 프리셋은 성별 행이 따로 있을 수 있다. 눈장식 6개는 모두 성별 None 한 행이다 [확인]. 첫 행을 쓴다.
+            foreach (var r in set.Read(SheetSchemas.CostumeRewardPreset))
+            {
+                if (!want.TryGetValue(r.Str("GroupId") ?? "", out var p) || p.CostumeId != null) continue;
+                p.CostumeId = r.Str("Costume");
+                for (int i = 0; i < 6; i++) p.DyeColors[i] = r.Color("DyeColor" + i);
+            }
+            g.EyeDecoPresets.RemoveAll(p => p.CostumeId == null || !g.Costumes.ContainsKey(p.CostumeId));
+        }
+        catch (Exception e) { g.EyeDecoPresets.Clear(); g.EyeDecoError = "환생 눈장식: " + e.Message; }
         LoadTools(set, g);
         LoadSetEffects(set, g);
         g.WeaponAura = WeaponAuraData.Load(files);

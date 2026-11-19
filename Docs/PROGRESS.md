@@ -5,6 +5,7 @@
 
 ## 1. 현재 단계
 
+- 바로 만들 수 있는 것 4개(2026-11-19, Claude Code): ① 좌우 눈·눈썹·장식 숨김(`HideLeftEye`·`HideAccessory0~2` 등, 안대·모자가 가린 눈·귀장식이 뚫고 나오지 않음). ② 문신 발광·반사(사용자 승인, 몸 식은 원본 Skin_Body 디스어셈블). ③ 환생 눈장식 색 프리셋 6개(의상 › 눈장식 목록, 보상 프리셋 시트 필드 순서 확인). ④ 도구 사용 연출(악기 음표·채집 이펙트). 함께 곡괭이 4종이 조립 실패로 안 보이던 문제를 고쳤다. 배치 촬영·정책 시험 60개 통과. 앱 실조작·게임 비교는 [미확인].
 - 카메라 쳐다보기(2026-11-19, Claude Code): 사용자 요청으로 보류를 풀고 구현했다. 패널 새 폴드아웃 "연출" › "카메라 쳐다보기"(끔/켬, `lookAtCamera`). LookAt 시트(23행)의 Humanoid 머리·눈 축·각도 제한으로 앱이 근사한다(게임 계산 본문은 못 읽음). 배치 촬영 4외형×7각도·정책 시험 60개 통과. 앱 실조작·게임 비교는 [미확인].
 - 미구현 1순위 4개(2026-11-19, Claude Code): ① 모자 쓰면 헤어가 사라지는 버그 수정 — 원인은 헤어 프리팹이 H1~H5 를 꺼 두는데 조립기가 고른 단계를 켜지 않은 것 [확인: 프리팹]. ② 후드 씀/벗음·모자 덮개 올림/내림 구현(`hoodOn`·`helmetCoverOn`, 의상 › 모자·로브 아래 줄). 프리팹이 쓴·벗은 메시를 모두 켜 둬 겹쳐 그려지던 것도 고쳤다. ③ 헤어 장식 색(`CharacterHairAccessoryColor` 10행, 장식형 헤어만). ④ 소셜 모션 소품 위치 표(`PropTransformDataArr`)의 외형별 위치·회전. 소품 **크기** 보정은 게임 FxScale 식을 못 읽어 하지 않았다(ImplementationGaps). 불러오기의 "지원하지 않는 항목" 3개를 연결했다. 배치 촬영 15조합·정책 시험 60개 통과. 앱 실조작·게임 화면 비교는 [미확인].
 - 무기 오라·세트 효과·불러오기 연결(2026-11-18, Claude Code): 미구현 A 목록을 마쳤다. 오라는 게임 무기 셰이더의 외곽선 패스를 디스어셈블해 `MobiCharacter.shader` 의 `WeaponGradeOutline` 패스로 옮겼다(색은 설치 폴더 StageConstants `WeaponGradeOutlineColorSettings`, 7등급 [확인]). 상태 `weaponAura`, 패널 "무기 오라" 줄(색 편집 경로, 재조립 없음). 세트 효과는 `CostumeSetEffect` 의 활성 연출 5행 [확인]을 보이는 의상으로 판정해 타임라인을 계속 재생한다(`TimelineEffectPlayer`, 소셜 모션 로더 재사용). 불러오기는 `WeaponAuraGrade` 를 넣고 `CostumeSet` 은 다시 판정한다. 얼굴·몸꾸밈 색은 고르지 않기로 확정(사용자: 게임도 못 고름). 배치 촬영(에픽·전설+·신화 외곽선, JUJU 두 세트 연출)·정책 시험 60개 통과·Windows 빌드 실행 확인. 앱 실조작·게임 화면 비교는 [미확인].
@@ -75,6 +76,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-19 | 눈·장식 숨김: `CharacterAssembler.HideEyeSide`·`AccessorySlot`·`plan.HiddenAccessories`, 패널 장식 숨김 안내. 문신 발광: `ApplyTattoo` 발광·반사 값, `MobiCharacter.shader` 문신 발광·반사 식. 환생 눈장식: `SheetSchemas.CharacterCustomizeEyeDeco·CostumeRewardPreset`, `GameData.EyeDecoPresets`, 패널 눈장식 프리셋 항목(`eyedeco:` 키, 착용 염색이 같으면 프리셋 이름 표시). 도구 연출: `plan.ToolStartTimelines·ToolLoopTimelines`, `AttachToolEffects`, `TimelineEffectPlayer.Clock·Suspend`, `CharacterMotion.LoopLength·PlayTime`, `CharacterView.ToolEffects`. 곡괭이: `AddPrefabToolMeshes`. 스모크 `eyeDeco=` 키, 조립 문제 로그, 모션 시점의 도구 연출 맞춤 |
 | 2026-11-19 | 카메라 쳐다보기: 새 파일 `Character/CharacterLookAt.cs`(+ Unity 생성 .meta), `SheetSchemas.LookAt`·`GameData.LookAt`(선택 시트), `AssemblyPlan.LookAtCamera·LookAtTable·LookAtUnavailable`, `CharacterAssembler.AttachLookAt`, `CharacterMotion.Sample` 의 시선 보정 위치, `EditState.lookAtCamera`, 패널 "연출" 폴드아웃·`LookAtRow`(색 편집 경로), 스모크 `look=1`(7각도 머리 촬영과 각도 로그). Unity 배치 컴파일 오류 0, dotnet 빌드 오류 0 |
 | 2026-11-19 | 헤어 단계·후드·모자 덮개: `CharacterAssembler`(후드 의상·모자 판정, `Hide*ByHelmetCover`, 헤어 단계 켜기 `ShownHairLevel`, `CostumeVariantVisible`, `CarryBuildResults` 에 결과 전달), `AssemblyPlan` 요청·결과 필드, `EditState.hoodOn·helmetCoverOn`. 헤어 장식 색: `SheetSchemas.CharacterHairAccessoryColor`(선택 시트), `GameData.HairAccessoryColors`, `appearance.hairAccessoryColor`, 계획 전역 색 `HairAccessory`, 패널 `ColorRow` 의 "기본 색" 항목. 패널 `VariantRow`(후드·모자 덮개). 불러오기 `IsHoodOn`·`IsCapClosed`·염색 18 연결. 소셜 소품 `PropPlacement`. 스모크 `hair=`·`hairAcc=`·`hood=`·`cover=` 키와 머리 근접 촬영. 런타임·에디터 dotnet 빌드 오류 0(기존 경고 3), Unity 배치 컴파일 오류 0 |
 | 2026-11-18 | 무기 오라: `WeaponAuraData`(새 파일, StageConstants 색), `EditState.weaponAura`, `PlanResolver.ResolveWeaponAura`, `CharacterView.ApplyWeaponAura`(무기 메시 자식 외곽선 렌더러, `OutlineFollow`), 셰이더 `WeaponGradeOutline` 패스(일반 재질은 `SetShaderPassEnabled` 로 끔), 전역 `_Global_Weapon_Texture` 를 조립 때 넣음. 세트 효과: `SheetSchemas.CostumeSetEffect`, `GameData.ActivationSets`, `ResolveSetEffect`, `SocialMotionLoader.LoadTimelines`·`TimelineEffectPlayer`(이펙트 갱신을 `ActionMotion.UpdateEffects` 로 옮겨 공유). 패널 "무기 오라"·"세트 효과" 줄, 불러오기 오라 연결, 스모크 `aura=` 키. 정책 시험 카메라 값 수정 |
@@ -186,6 +188,10 @@
 12. 마지막으로 접속한 캐릭터 불러오기와 미지원 항목(도구·무기 오라·세트 효과)을 구현했다. 남은 확인: 앱에서 오라 등급 바꾸기·실행 취소, 세트 연출 화면을 게임과 비교, 오라가 있는 실제 캐시·남성·어린·로브 캐릭터 불러오기 [미확인].
 
 ## 4. 인계 메모
+
+- 함정(2026-11-19): `CharacterAssembler.BuildCore` 는 조립 중 리소스 실패(`Fail`)가 하나라도 있으면 모션·시선·연출을 붙이기 전에 돌아간다(앱은 `BuildValidated` 가 실패 파츠를 빼고 다시 조립한다). 스모크 테스트에서 모션 로그가 "입:" 뒤에 끊기면 이 경우다. 이제 스모크 로그에 "조립 문제" 줄을 남긴다.
+- 셰이더 디스어셈블(2026-11-19): 번들 Shader(ClassId 48)의 compressedBlob 을 offsets·compressedLengths·decompressedLengths 로 LZ4 해제하면 DXBC 가 나온다. `d3dcompiler_47.dll` 의 D3DDisassemble 로 풀린다. 변수 이름표(RDEF)가 지워져 있어 이름으로는 못 찾고, 상수(예: 0.017453)·텍스처 샘플 순서로 위치를 찾는다. 도구는 저장소에 두지 않았다.
+- 확인 요청(2026-11-19): 앱에서 ① 안대(레이어드 아이 밴디지·카마인 에버모어 로즈 패치)·나나미 켄토의 안경 착용 시 눈, ② 모자 + 귀장식(달걀 모자 등)에서 귀장식 줄 안내, ③ 별무리 글리터·운명의 교차 문신의 반짝임, ④ 의상 › 눈장식 목록의 "라운드 글래시스 (세피아)" 등 6개, ⑤ 류트 등 악기 사용 시 음표와 채집 도구 이펙트, 곡괭이 표시.
 
 - 카메라 쳐다보기(2026-11-19): 보정은 `CharacterMotion.Sample` 안에서 파츠 전용 본 동기화 **앞**에 한다. 순서를 바꾸면 머리 전용 본(파츠별 다른 기본 회전)이 시선을 따라가지 않는다. 시험 촬영은 `CharacterLookAt.TargetOverride` 로 대상을 넣고 `SampleAll` 로 바로 맞춘다(dt < 0). 확인 요청: 앱에서 켜고 카메라를 좌우·위아래로 돌릴 때 부드럽게 따라보는지, 53° 넘게 돌리면 정면으로 돌아오는지, 소셜 모션 중 쉬었다가 끝나면 다시 보는지, 실행 취소·재시작 후 유지되는지.
 

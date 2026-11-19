@@ -659,7 +659,17 @@ public sealed class CustomizePanel
         dyes.style.alignItems = Align.Center;
         dyes.style.marginLeft = 76; dyes.style.marginTop = 3;
         dyes.style.display = DisplayStyle.None;
-        var dd = Dropdown(() => CostumeItems(part), it => edit(s => SetCostume(s, part, it.Id)));
+        var dd = Dropdown(() => CostumeItems(part), it => edit(s =>
+        {
+            var preset = EyeDecoPresetOf(it.Id);
+            if (preset == null) { SetCostume(s, part, it.Id); return; }
+            // 환생 눈장식 색: 안경 의상을 입고 프리셋 색으로 염색한다. 이후에는 보통 의상처럼 염색을 바꿀 수 있다.
+            SetCostume(s, part, preset.CostumeId);
+            var slot = s.Costume(part);
+            slot.dyes.Clear();
+            for (int k = 0; k < 6; k++)
+                if (preset.DyeColors[k].HasValue) slot.dyes.Add(new ColorOverride { slot = "Slot" + k, color = ColorOverrides.ToHex(PlanResolver.ToColor(preset.DyeColors[k].Value)) });
+        }));
         refreshers.Add(() =>
         {
             var slot = state.Costume(part);
@@ -684,6 +694,11 @@ public sealed class CustomizePanel
                 lines.Add("다른 의상에 가려져 표시하지 않습니다. 선택과 염색은 유지합니다.");
                 statusColor = AppUI.WarnColor;
             }
+            else if (plan != null && plan.HiddenAccessories.Contains(AssemblyPlan.CostumeKey(part)) && res != null && res.Status == CostumeStatus.Applied)
+            {
+                lines.Add("다른 의상(모자 등)이 이 장식을 숨겨 표시하지 않습니다. 선택과 염색은 유지합니다.");
+                statusColor = AppUI.WarnColor;
+            }
             else if (part == "Hat" && plan != null && plan.HatHiddenByHood && res != null && res.Status == CostumeStatus.Applied)
             {
                 lines.Add("후드를 써서 표시하지 않습니다. 선택과 염색은 유지합니다.");
@@ -702,7 +717,10 @@ public sealed class CustomizePanel
                         lines.Add(i.Message + ".");
                         if (i.IsFailure) { color = AppUI.ErrorColor; statusColor = AppUI.ErrorColor; }
                     }
-            dd.SetValue(resource ? null : ItemKey(slot.IsTool, id), name,
+            var shownPreset = part == "EyeDeco" && !resource ? MatchingEyeDecoPreset(slot) : null;
+            if (shownPreset != null)
+                dd.SetValue(EyeDecoKeyPrefix + shownPreset.Id, shownPreset.DisplayName, "환생 눈장식 색 · " + name, color, EyeDecoSwatches(shownPreset));
+            else dd.SetValue(resource ? null : ItemKey(slot.IsTool, id), name,
                 resource ? "직접 리소스" : slot.IsTool ? ToolSub(row) : null, color);
             SetStatus(status, lines.Count == 0 ? null : string.Join("\n", lines), statusColor);
         });
@@ -1267,6 +1285,47 @@ public sealed class CustomizePanel
         foreach (var c in data.CostumeList) if (c.CostumeType == part) Add(c);
         // 무기 칸은 생활 도구·악기와 택일한다(Equipment.md "도구"). 무기 뒤에 도구 시트 순서로 둔다.
         if (part == "Weapon") foreach (var c in data.ToolList) Add(c);
+        // 환생 눈장식 색 프리셋(Appearance.md): 안경 의상 + 염색 색. 눈장식 끝에 둔다.
+        if (part == "EyeDeco")
+            foreach (var p in data.EyeDecoPresets)
+            {
+                data.Costumes.TryGetValue(p.CostumeId, out var c);
+                if (c != null && Disclosure.IsHidden(c) && !Disclosure.AllowRestricted) continue;
+                bool fits = c != null && PlanResolver.CheckCostume(c, Male, Infant, out _, out _) == CostumeStatus.Applied;
+                items.Add(new DropdownItem { Id = EyeDecoKeyPrefix + p.Id, Name = p.DisplayName ?? p.Id, Sub = "환생 눈장식 색 · " + ItemLabel.Of(p.CostumeId, c?.DisplayName), Dim = !fits, Swatches = EyeDecoSwatches(p) });
+            }
         return items;
+    }
+
+    /// <summary>환생 눈장식 색 프리셋 항목 키. 장면 상태에는 의상 ID 와 염색으로만 저장한다.</summary>
+    const string EyeDecoKeyPrefix = "eyedeco:";
+
+    EyeDecoPreset EyeDecoPresetOf(string key) =>
+        key != null && key.StartsWith(EyeDecoKeyPrefix, StringComparison.Ordinal) ? data.EyeDecoPresets.Find(p => p.Id == key.Substring(EyeDecoKeyPrefix.Length)) : null;
+
+    static Color[] EyeDecoSwatches(EyeDecoPreset p)
+    {
+        var list = new List<Color>();
+        foreach (var c in p.DyeColors) if (c.HasValue && list.Count < 2) list.Add(PlanResolver.ToColor(c.Value));
+        return list.ToArray();
+    }
+
+    /// <summary>입은 눈장식이 프리셋의 의상·염색과 정확히 같으면 그 프리셋(표시용). 색을 하나라도 바꾸면 보통 의상으로 보인다.</summary>
+    EyeDecoPreset MatchingEyeDecoPreset(CostumeSlotState slot)
+    {
+        foreach (var p in data.EyeDecoPresets)
+        {
+            if (p.CostumeId != slot.costumeId || slot.kind != CostumeSlotState.KindCostume) continue;
+            int n = 0;
+            bool same = true;
+            for (int k = 0; k < 6 && same; k++)
+            {
+                string want = p.DyeColors[k].HasValue ? ColorOverrides.ToHex(PlanResolver.ToColor(p.DyeColors[k].Value)) : null;
+                if (want != null) n++;
+                same = string.Equals(want, ColorOverrides.Get(slot.dyes, "Slot" + k), StringComparison.OrdinalIgnoreCase);
+            }
+            if (same && slot.dyes.Count == n) return p;
+        }
+        return null;
     }
 }

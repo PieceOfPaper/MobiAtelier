@@ -725,8 +725,9 @@ public static class SocialMotionLoader
 }
 
 /// <summary>
-/// 클립 없는 스테이지 타임라인(세트 활성 연출)을 캐릭터에 계속 재생한다. 이펙트·덧그림 구간만 켜고 끈다.
-/// 시간은 붙인 때부터 흐르며 되감지 않는다(끝없는 구간은 계속, 끝이 있는 구간은 한 번).
+/// 클립 없는 스테이지 타임라인(세트 활성 연출, 도구 사용 연출)을 캐릭터에 재생한다. 이펙트·덧그림 구간만 켜고 끈다.
+/// 기본 시간은 붙인 때부터 흐르며 되감지 않는다(끝없는 구간은 계속, 끝이 있는 구간은 한 번).
+/// Clock 을 주면 그 시간을 쓴다(음수면 모두 끈다, 시간이 되감기면 구간을 다시 시작한다). Suspend 가 참이면 모두 끈다.
 /// </summary>
 public sealed class TimelineEffectPlayer : MonoBehaviour
 {
@@ -734,6 +735,10 @@ public sealed class TimelineEffectPlayer : MonoBehaviour
     double time;
 
     public ActionMotion Motion => motion;
+    /// <summary>외부 시간(예: 모션 반복 구간 안 위치). null 이면 자체 시간.</summary>
+    public Func<double> Clock;
+    /// <summary>참이면 모든 구간을 끈다(예: 소셜 모션 재생 중).</summary>
+    public Func<bool> Suspend;
 
     public void Play(ActionMotion m)
     {
@@ -743,7 +748,7 @@ public sealed class TimelineEffectPlayer : MonoBehaviour
         Step(false);
     }
 
-    /// <summary>입자를 t 초까지 즉시 진행한다(배치 촬영용).</summary>
+    /// <summary>입자를 t 초까지 즉시 진행한다(배치 촬영용). Clock 이 있으면 Clock 의 시간을 쓴다.</summary>
     public void Simulate(double t)
     {
         time = t;
@@ -760,8 +765,9 @@ public sealed class TimelineEffectPlayer : MonoBehaviour
     void Step(bool simulate)
     {
         if (motion == null) return;
-        motion.UpdateEffects(transform, 0, time, simulate);
-        foreach (var ad in motion.Additives) ad.Set(ad.Active(0, time), time);
+        double t = Suspend != null && Suspend() ? -1 : Clock != null ? Clock() : time;
+        motion.UpdateEffects(transform, 0, t, simulate && t >= 0);
+        foreach (var ad in motion.Additives) ad.Set(t >= 0 && ad.Active(0, t), t);
     }
 
     void OnDestroy()

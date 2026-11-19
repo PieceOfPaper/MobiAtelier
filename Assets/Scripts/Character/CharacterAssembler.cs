@@ -31,6 +31,35 @@ public static class CharacterAssembler
     /// </summary>
     const int HoodHairLevel = 5;
 
+    static readonly int SideClipHideId = Shader.PropertyToID("_SideClipHide");
+
+    /// <summary>모델이 장식 슬롯(Accessory0~2)을 점유하면 그 번호, 아니면 null.</summary>
+    static int? AccessorySlot(Def d)
+    {
+        string slot = d.Root.Get("ModelPartInfo").Get("AppearanceSlot").Str();
+        return slot == "Accessory0" ? 0 : slot == "Accessory1" ? 1 : slot == "Accessory2" ? 2 : (int?)null;
+    }
+
+    /// <summary>
+    /// 좌우 눈·눈썹 숨김(게임 EyeHideUtility.HideRendererForEyeHide·SetShaderPropertyForEyeHide).
+    ///   눈: Mesh_EyeBase_L/R(흰자·속눈썹, 눈알·하이라이트도 이 영역 안에서만 그려진다)를 끈다. 감은 눈 평면은 한쪽이면 _SideClipHide, 양쪽이면 끈다.
+    ///   눈썹: Mesh_EyeBrow 의 _SideClipHide 를 1(왼쪽)·2(오른쪽)로, 양쪽이면 끈다. 3 은 2 와 같아 양쪽 값이 아니다 [확인: 촬영 실험].
+    ///   _L·왼쪽은 캐릭터 기준 왼쪽(정면 사진의 오른쪽)이다 [확인].
+    /// </summary>
+    static void HideEyeSide(SkinnedMeshRenderer smr, string name, bool leftEye, bool rightEye, bool leftBrow, bool rightBrow)
+    {
+        void Side(bool left, bool right)
+        {
+            if (left && right) { smr.enabled = false; return; }
+            if (!left && !right) return;
+            foreach (var m in smr.sharedMaterials) if (m && m.HasProperty(SideClipHideId)) m.SetFloat(SideClipHideId, left ? 1f : 2f);
+        }
+        if (name == "Mesh_EyeBase_L") { if (leftEye) smr.enabled = false; }
+        else if (name == "Mesh_EyeBase_R") { if (rightEye) smr.enabled = false; }
+        else if (name == "Mesh_EyeBasePlane") Side(leftEye, rightEye);
+        else if (name == "Mesh_EyeBrow") Side(leftBrow, rightBrow);
+    }
+
     static bool IsHoodMesh(string name) => name.StartsWith(HoodOn, StringComparison.Ordinal) || name.StartsWith(HoodOff, StringComparison.Ordinal);
 
     static bool HasMesh(Def d, Func<string, bool> match)
@@ -148,6 +177,10 @@ public static class CharacterAssembler
         bool hatShown = hatDef != null && !plan.HatHiddenByHood;
 
         bool hideHair = false, hideHead = false, hideEye = false, hideBeard = false;
+        // 좌우 눈·눈썹(게임 EyeHideUtility): 눈은 Mesh_EyeBase_L/R 렌더러, 한쪽 눈썹은 눈썹 재질 _SideClipHide(1 왼쪽, 2 오른쪽) [확인: 촬영 실험].
+        bool hideLeftEye = false, hideRightEye = false, hideLeftBrow = false, hideRightBrow = false;
+        // 장식 숨김(HideAccessory0~2): 모델 점유 슬롯 Accessory0 얼굴장식·1 눈장식·2 귀장식 [확인: 설치본 모델 정의]. 숨기는 의상 자신은 숨기지 않는다.
+        var accessoryHiders = new List<Def>[3] { new List<Def>(), new List<Def>(), new List<Def>() };
         int hairLevel = 0;
         foreach (var d in defs)
         {
@@ -164,6 +197,11 @@ public static class CharacterAssembler
             hideHead |= Flag("HideHead");
             hideEye |= Flag("HideEye");
             hideBeard |= Flag("HideBeard");
+            hideLeftEye |= Flag("HideLeftEye");
+            hideRightEye |= Flag("HideRightEye");
+            hideLeftBrow |= Flag("HideLeftEyebrow");
+            hideRightBrow |= Flag("HideRightEyebrow");
+            for (int n = 0; n < 3; n++) if (Flag("HideAccessory" + n)) accessoryHiders[n].Add(d);
             foreach (var m in d.Root.Get("SkinnedMeshList").Arr())
             {
                 var match = HelmetLevel.Match(m.Get("MeshName").Str() ?? "");
@@ -202,6 +240,8 @@ public static class CharacterAssembler
         var cutters = new List<Cutter>();
         // 무기 등 장착점(AttachPointInfo)이 있는 파츠: 프리팹 본을 복제한 루트. 몸 본 계층이 정해진 뒤 장착점 본 아래에 붙인다.
         var tools = new List<(Def d, Transform root)>();
+        // 스킨 메시 목록이 빈 장착 파츠(곡괭이 4종 [확인])는 프리팹의 일반 메시(MeshRenderer)를 복제 본 아래에 그린다.
+        var staticToolRenderers = new Dictionary<Def, List<GameObject>>();
 
         void AddBones(Def d)
         {
@@ -265,6 +305,11 @@ public static class CharacterAssembler
             if ((part.Role == PartRole.Hair && hideHair) || (part.Role == PartRole.Head && hideHead) || (part.Role == PartRole.Eyes && hideEye) ||
                 (part.Role == PartRole.Beard && (hideBeard || hideHead)) || (d == hatDef && !hatShown))
                 partGo.SetActive(false);
+            if (part.Role == PartRole.Costume && AccessorySlot(d) is int acc && accessoryHiders[acc].Exists(h => h != d))
+            {
+                partGo.SetActive(false);
+                plan.HiddenAccessories.Add(part.Key);
+            }
             int shownHairLevel = part.Role == PartRole.Hair ? ShownHairLevel(d, hairLevel) : -1;
             if (shownHairLevel >= 0 && shownHairLevel != hairLevel) L($"  헤어 단계 H{hairLevel} 메시가 없어 H{shownHairLevel} 표시: {part.Model}");
 
@@ -275,9 +320,10 @@ public static class CharacterAssembler
             if (prefab) foreach (var r in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (!prefabSmr.ContainsKey(r.name)) prefabSmr[r.name] = r;
             // 무기는 BoneTemplate 이 없고 메시 본(_Sword_Root 등)이 프리팹 안에만 있다. 프리팹 본을 복제해 이 파츠 전용 본으로 쓴다.
             bool tool = part.Role == PartRole.Costume && d.Root.Get("ModelPartInfo").Get("AttachPointInfo").Arr().Count > 0;
+            Transform toolRootT = null;
             if (tool && prefab)
             {
-                var toolRoot = new GameObject("@" + part.Model).transform;
+                var toolRoot = toolRootT = new GameObject("@" + part.Model).transform;
                 toolRoot.SetParent(root.transform, false);
                 if (!partBones.TryGetValue(d, out var own)) partBones[d] = own = new Dictionary<string, Transform>(StringComparer.Ordinal);
                 CloneBones(prefab.transform, toolRoot, own);
@@ -291,7 +337,8 @@ public static class CharacterAssembler
             if (cutter != null) cutters.Add(cutter);
 
             var list = d.Root.Get("SkinnedMeshList").Arr();
-            if (list.Count == 0) Fail(part, "모델의 메시 목록이 비어 있습니다");
+            if (list.Count == 0 && !(tool && prefab && AddPrefabToolMeshes(d, prefab, toolRootT, partGo)))
+                Fail(part, "모델의 메시 목록이 비어 있습니다");
             var byIndex = new Dictionary<int, Material[]>();
             for (int i = 0; i < list.Count; i++)
             {
@@ -386,6 +433,8 @@ public static class CharacterAssembler
                 if (part.Role == PartRole.Hair && lv.Success) go2.SetActive(lv.Groups[1].Value[0] - '0' == shownHairLevel);
                 // 후드·덮개: 프리팹은 쓴·벗은 메시를 모두 켜 둔다 [확인: 로브·원피스·모자 프리팹]. 상태에 맞는 것만 켠다.
                 if (part.Role == PartRole.Costume && CostumeVariantVisible(d, name) is bool variant) go2.SetActive(variant);
+                // 좌우 눈·눈썹 숨김. 표정 애니메이션이 게임 오브젝트를 켜고 끄므로 렌더러 컴포넌트를 끈다.
+                if (part.Role == PartRole.Eyes) HideEyeSide(smr, name, hideLeftEye, hideRightEye, hideLeftBrow, hideRightBrow);
                 view.Renderers.Add((part.Key, smr));
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body && !view.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
@@ -414,6 +463,64 @@ public static class CharacterAssembler
         foreach (var d in defs) if (!IsTexturePart(d.Part.Role))
             try { AddModel(d); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "모델 조립 실패: " + e.Message); }
+        // 모델 정의의 스킨 메시 목록이 빈 장착 파츠(곡괭이 4종 [확인])는 프리팹의 렌더러를 그대로 쓴다.
+        //   SkinnedMeshRenderer: 메시가 프리팹 안에 있다. 본은 이름으로 복제 본에 연결하고 파츠 오브젝트 아래에 둔다(일반 경로와 같은 자리).
+        //   MeshRenderer: 본 없는 SkinnedMeshRenderer 로 만들어 프리팹에서 부모였던 본(복제본) 아래에 같은 로컬 값으로 둔다.
+        bool AddPrefabToolMeshes(Def d, GameObject prefab, Transform toolRoot, GameObject partGo)
+        {
+            if (!toolRoot || !partBones.TryGetValue(d, out var own)) return false;
+            var made = new List<GameObject>();
+            Material[] Mats(Material[] src, int count)
+            {
+                var mats = new Material[Mathf.Max(1, count)];
+                for (int s2 = 0; s2 < mats.Length; s2++) mats[s2] = Convert(src.Length == 0 ? null : src[Mathf.Min(s2, src.Length - 1)], false, out _);
+                return mats;
+            }
+            foreach (var r in prefab.GetComponentsInChildren<Renderer>(true))
+            {
+                GameObject go;
+                SkinnedMeshRenderer smr;
+                if (r is SkinnedMeshRenderer psmr)
+                {
+                    if (!psmr.sharedMesh) continue;
+                    go = new GameObject(psmr.name);
+                    go.transform.SetParent(partGo.transform, false);
+                    smr = go.AddComponent<SkinnedMeshRenderer>();
+                    smr.sharedMesh = psmr.sharedMesh;
+                    var names = BoneNames(psmr);
+                    var bt = new Transform[names.Length];
+                    for (int b = 0; b < bt.Length; b++) bt[b] = BoneFor(d, names[b]) ?? toolRoot;
+                    smr.bones = bt;
+                    smr.rootBone = bt.Length > 0 ? bt[0] : toolRoot;
+                    smr.sharedMaterials = Mats(psmr.sharedMaterials, psmr.sharedMesh.subMeshCount);
+                }
+                else if (r is MeshRenderer mr && mr.GetComponent<MeshFilter>() is MeshFilter mf && mf.sharedMesh)
+                {
+                    var parentT = mr.transform.parent && own.TryGetValue(mr.transform.parent.name, out var pb) ? pb : toolRoot;
+                    go = new GameObject(mr.name);
+                    go.transform.SetParent(parentT, false);
+                    go.transform.localPosition = mr.transform.localPosition;
+                    go.transform.localRotation = mr.transform.localRotation;
+                    go.transform.localScale = mr.transform.localScale;
+                    smr = go.AddComponent<SkinnedMeshRenderer>();
+                    smr.sharedMesh = mf.sharedMesh;
+                    smr.sharedMaterials = Mats(mr.sharedMaterials, mf.sharedMesh.subMeshCount);
+                    staticToolRenderers.TryGetValue(d, out var st);
+                    if (st == null) staticToolRenderers[d] = st = new List<GameObject>();
+                    st.Add(go);
+                }
+                else continue;
+                smr.updateWhenOffscreen = true;
+                smr.receiveShadows = false;
+                go.SetActive(r.gameObject.activeSelf);
+                smr.enabled = r.enabled;
+                view.Renderers.Add((d.Part.Key, smr));
+                made.Add(go);
+            }
+            if (made.Count == 0) return false;
+            L($"  프리팹 메시 장착 파츠: {d.Part.Model} 메시 {made.Count}개(모델 정의 메시 목록 없음)");
+            return true;
+        }
         Transform BoneFor(Def d, string name)
         {
             if (name == null) return null;
@@ -469,6 +576,7 @@ public static class CharacterAssembler
             string partName = d.Part.Key + ":" + d.Part.Model;
             foreach (var (_, r) in view.Renderers)
                 if (r && r.transform.parent && r.transform.parent.name == partName) m.Renderers.Add((r.gameObject, r.gameObject.activeSelf));
+            if (staticToolRenderers.TryGetValue(d, out var statics)) foreach (var go in statics) m.Renderers.Add((go, go.activeSelf));
             foreach (var t in toolRoot.GetComponentsInChildren<Transform>(true))
                 if (t != toolRoot) m.Bones.Add((t, t.localPosition, t.localRotation, t.localScale));
             bool start = plan.Intro != null ? plan.IntroDrawn : plan.WeaponDrawn;
@@ -606,7 +714,11 @@ public static class CharacterAssembler
         }
         AttachSetEffect(files, bundles, plan, view, shader, L);
         AttachLookAt(plan, view, defs.Find(x => x.Part.Role == PartRole.Body), L);
+        AttachToolEffects(files, bundles, plan, view, shader, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
+        if (plan.HiddenAccessories.Count > 0) L("장식 숨김: " + string.Join(", ", plan.HiddenAccessories));
+        if (hideLeftEye || hideRightEye || hideLeftBrow || hideRightBrow)
+            L($"눈 숨김: 왼눈 {hideLeftEye}, 오른눈 {hideRightEye}, 왼눈썹 {hideLeftBrow}, 오른눈썹 {hideRightBrow}");
         if (plan.HasHood || hatDef != null)
             L($"후드·덮개: 후드 {(hoodDef != null ? hoodDef.Part.Model + (plan.HoodOn ? " 씀" : " 벗음") : "없음")}, 모자 {(hatDef == null ? "없음" : hatShown ? "표시" : "후드로 숨김")}, 덮개 {(plan.HasHelmetCover ? (plan.HelmetCoverOn ? "내림" : "올림") : "없음")}");
         return view;
@@ -639,6 +751,37 @@ public static class CharacterAssembler
         if (la == null) { plan.LookAtUnavailable = why; L("시선: " + why); return; }
         motion.LookAt = la;
         L($"시선: 그룹 {group}, {la.Describe()}, {(plan.LookAtCamera ? "켬" : "끔")}");
+    }
+
+    /// <summary>
+    /// 도구 사용 연출(Equipment.md "도구"): 연주·채집 동작의 스테이지 타임라인 이펙트·덧그림을 모션 시간에 맞춰 재생한다.
+    ///   시작 타임라인(악기 음표 FX_Song_Play_Loop 등)은 사용을 시작한 때부터 흐르는 시간, 반복 클립 타임라인은 반복 구간 안 위치.
+    ///   소셜 모션 중에는 끈다(행동이 도구를 넣는다). 소리·소품(채집 대상)·손 IK 는 쓰지 않는다. 읽지 못하면 연출만 뺀다.
+    /// </summary>
+    static void AttachToolEffects(InstallFiles files, BundleCache bundles, AssemblyPlan plan, CharacterView view, Shader shader, Action<string> L)
+    {
+        if (!plan.WeaponIsTool || !plan.WeaponDrawn) return;
+        if (plan.ToolStartTimelines.Count + plan.ToolLoopTimelines.Count == 0) { L("도구 연출: 타임라인 없음"); return; }
+        var motion = view.GetComponent<CharacterMotion>();
+        if (!motion) return;
+        void Add(List<string> names, bool loop)
+        {
+            if (names.Count == 0) return;
+            try
+            {
+                var m = SocialMotionLoader.LoadTimelines(files, bundles, view, shader, names, L);
+                if (m.Effects.Count + m.Additives.Count == 0) { m.Dispose(); L($"도구 연출({(loop ? "반복" : "시작")}): 이펙트 없음 [{string.Join(", ", names)}]"); return; }
+                var p = view.gameObject.AddComponent<TimelineEffectPlayer>();
+                p.Suspend = () => motion.CurrentAction != null;
+                if (loop) p.Clock = () => motion.PlayTime < motion.IntroLength ? -1 : motion.PlayTime - motion.IntroLength;
+                p.Play(m);
+                view.ToolEffects.Add(p);
+                L($"도구 연출({(loop ? "반복" : "시작")}): [{string.Join(", ", names)}] 이펙트 {m.Effects.Count}, 덧그림 {m.Additives.Count}");
+            }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { L("도구 연출 읽기 실패: " + e.Message); }
+        }
+        Add(plan.ToolStartTimelines, false);
+        Add(plan.ToolLoopTimelines, true);
     }
 
     /// <summary>
@@ -738,6 +881,7 @@ public static class CharacterAssembler
             to.HasHood = from.HasHood; to.HoodOn = from.HoodOn; to.HatHiddenByHood = from.HatHiddenByHood;
             to.HasHelmetCover = from.HasHelmetCover; to.HelmetCoverOn = from.HelmetCoverOn; to.HairLevel = from.HairLevel;
             to.LookAtUnavailable = from.LookAtUnavailable;
+            to.HiddenAccessories.Clear(); to.HiddenAccessories.AddRange(from.HiddenAccessories);
         }
         CheckDyes(to, view);
     }
@@ -940,6 +1084,9 @@ public static class CharacterAssembler
         var scalePos = st.Count >= 4 ? new Vector4(st[0].F(), st[1].F(), st[2].F(), st[3].F()) : new Vector4(1, 1, 0, 0);
         string slot = def.Get("ModelPartInfo").Get("AppearanceSlot").Str();
         bool scar = slot == "FaceScar" || slot == "BodyScar";
+        string emPath = info.Get("TattooEmissionTextureAssetPathToLoad").Str();
+        var emission = string.IsNullOrEmpty(emPath) ? null : bundles.LoadAsset<Texture2D>(BundleCache.AssetRoot + emPath);
+        if (!string.IsNullOrEmpty(emPath) && !emission) log?.Invoke("꾸밈 발광 텍스처 없음: " + emPath);
         int applied = 0, costumeSkin = 0;
         var targets = new List<Material>();
         foreach (var (key, r) in view.Renderers)
@@ -957,9 +1104,18 @@ public static class CharacterAssembler
             if (m.HasProperty("_TattooPushStrength")) m.SetFloat("_TattooPushStrength", info.Get("PushStrength").F());
             if (m.HasProperty("_IsScarMode")) m.SetFloat("_IsScarMode", scar ? 1 : 0);
             if (m.HasProperty("_TattooOn")) m.SetFloat("_TattooOn", 1);
+            // 발광·반사(TextureInfo). 얼굴은 원본 셰이더, 몸은 앱 셰이더(원본 식)가 같은 이름으로 받는다. 발광맵이 없으면 발광 0.
+            if (m.HasProperty("_TattooEmissionMap"))
+            {
+                m.SetTexture("_TattooEmissionMap", emission ? emission : Texture2D.blackTexture);
+                m.SetFloat("_TattooEmissionIntensity", emission ? info.Get("TattooEmissionIntensity").F() : 0f);
+            }
+            if (m.HasProperty("_IsEnableTattooEmissionAtNight")) m.SetFloat("_IsEnableTattooEmissionAtNight", info.Get("IsEnableTattooEmissionAtNight").F());
+            if (m.HasProperty("_TattooSpecula")) m.SetFloat("_TattooSpecula", info.Get("TattooSpecula").F());
+            if (m.HasProperty("_TattooSpeculaIntensity")) m.SetFloat("_TattooSpeculaIntensity", info.Get("TattooSpeculaIntensity").F());
             applied++;
         }
-        log?.Invoke($"꾸밈({host}): {tex.name} {slot}, 크기·위치 {scalePos}, 머티리얼 {applied}개(의상 피부 {costumeSkin}개)" + (applied == 0 ? " (_TattooMap 없음)" : ""));
+        log?.Invoke($"꾸밈({host}): {tex.name} {slot}, 크기·위치 {scalePos}, 발광 {(emission ? emission.name + " × " + info.Get("TattooEmissionIntensity").F() : "없음")}, 반사 {info.Get("TattooSpecula").F()}/{info.Get("TattooSpeculaIntensity").F()}, 머티리얼 {applied}개(의상 피부 {costumeSkin}개)" + (applied == 0 ? " (_TattooMap 없음)" : ""));
         return applied > 0;
     }
 

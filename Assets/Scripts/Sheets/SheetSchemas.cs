@@ -147,6 +147,21 @@ public static class SheetSchemas
         "Id:K(CharacterEyeColorSheet)",
         "DisplayName:S _:S _:U _:U HideOnCustomize:U ColorCode:C");
 
+    /// <summary>환생 눈장식(Appearance.md). 6행 [확인]. 보상 프리셋(CostumeRewardPreset)으로 안경 의상과 염색 색을 가리킨다. 시작에 필요하지 않다.</summary>
+    public static readonly SheetSchema CharacterCustomizeEyeDeco = new SheetSchema("CharacterCustomizeEyeDeco",
+        "Id:K(CharacterCustomizeEyeDecoSheet)",
+        "DisplayName:S Preset:K(CostumeRewardPresetSheetGroup) MaleIconPath:S FemaleIconPath:S");
+
+    /// <summary>
+    /// 패션 보상 프리셋(GroupId + 성별 → CommonRewardCostume). 4,196행 [확인].
+    /// 행: 성별, 의상 ID, 등급, 기본색 사용·무작위 색(bool 2), 염색 재질 0~5, 염색 색 0~5(Slot0~5), 만료 종류·시간대·날짜, 아이템 덮어쓰기 ID
+    /// [확인: 설치본 전 행 크기 일치, 게임 CommonRewardCostume 생성자 인자 순서].
+    /// </summary>
+    public static readonly SheetSchema CostumeRewardPreset = new SheetSchema("CostumeRewardPreset",
+        "GroupId:K(CostumeRewardPresetSheetGroup)",
+        @"Gender:E Costume:K(CostumeSheet) Rarity:E _:U _:U _:E _:E _:E _:E _:E _:E
+          DyeColor0:C DyeColor1:C DyeColor2:C DyeColor3:C DyeColor4:C DyeColor5:C _:E _:E _:S _:K");
+
     /// <summary>
     /// 시선 처리(카메라 쳐다보기, StudioFeatureReview.md). 그룹(몸 모델 정의의 LookAtGroupName)·본·이동 상태별 각도 제한과 본 축. 시작에 필요하지 않다.
     /// 설치본 23행 [확인]. 플레이어 몸은 Humanoid 그룹이다.

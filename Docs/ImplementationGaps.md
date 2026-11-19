@@ -18,9 +18,8 @@
 
 | 항목 | 구분 | 이유·현재 상태 | 다시 볼 조건 | 문서 |
 |---|---|---|---|---|
-| 문신 발광·반사 | 생략 → 미구현 | 처음에는 기본 머티리얼 값(0)만 보고 빼었다. 일부 문신은 모델 정의(`TextureInfo`)에 발광 세기·발광 텍스처·반사 값이 있다 [확인: 달의 인장·별무리 글리터·새벽 바다의 인도·티어스 오브 쥬얼·운명의 교차] | 사용자 승인 후 구현. "밤에만 발광" 문신은 낮 상태(발광 없음)로 두는 것을 제안한다 | [Appearance.md](Appearance.md) |
+| 문신 밤 상태 | 생략 | 앱은 낮으로 본다. "밤에만 발광" 문신은 발광하지 않는다(공개 문신은 모두 발광 세기 0) | 밤 배경·시간 기능 도입 시 | [Appearance.md](Appearance.md) |
 | 어두운 피부의 문신 밝기 | 미확인 | 원본 식대로 피부색을 곱해 매우 흐리다. 게임 화면과 비교하지 않았다 | 게임 화면 비교 | [Appearance.md](Appearance.md) |
-| 환생 눈장식 색 프리셋 | 미구현 | 눈장식 6개 후보의 보상 프리셋 색 슬롯 대응을 검증하지 않았다. 안경 모델은 의상 › 눈장식으로 고를 수 있다 | 색 필드 순서 검증 | [Appearance.md](Appearance.md) |
 | 손바닥 색(ColorCode_Palm) | 미확인 | 연결을 확인하지 못해 원본 값을 유지한다 | 연결 확인 | [Appearance.md](Appearance.md) |
 | 게임 기본 헤어 장식 색 | 생략 | 장식 색을 고르지 않으면 모델의 원래 색이다. 꾸미기 기본값 시트(CharacterCustomizeDefaultAppearance의 HairAccessoryColor)는 읽지 않는다 | 게임 첫 화면 색과 다를 때 | [Appearance.md](Appearance.md) |
 | 입 색 | 보류 | 사용자 결정(2026-11-01) | — | [Appearance.md](Appearance.md) |
@@ -31,14 +30,13 @@
 
 | 항목 | 구분 | 이유·현재 상태 | 다시 볼 조건 | 문서 |
 |---|---|---|---|---|
-| 도구 사용 동작의 타임라인(소품·이펙트) | 생략 | 연주·채집 동작의 클립만 재생한다. 행동별 스테이지 타임라인(음표 이펙트 등)·음 길이별 타격 동작(Strike)·연주 소리·채집 대상(물고기·광석)은 붙이지 않는다 | 소셜 모션처럼 연출이 필요할 때 | [WeaponPose.md](WeaponPose.md) |
+| 도구 사용 동작의 소품·손 IK·소리 | 생략 | 이펙트·덧그림은 붙인다(2026-11-19). 타임라인의 소품(채집 대상 물고기·광석 등)·손 IK(플루트 등 3구간)·소리, 음 길이별 타격 동작(Strike)은 붙이지 않는다 | 연출이 더 필요할 때 | [Equipment.md](Equipment.md) "도구" |
 | 무기·도구 동시 표시 | 생략 | 무기 칸 하나에 무기·도구 중 하나만 둔다(사용자 결정). 불러오기는 무기 우선 | — | [LastCharacterImport.md](LastCharacterImport.md) |
 | 신화 오라 추가 연출 | 생략 | 무기 오라는 등급 외곽선만 그린다. 신화 등급의 `Mythic_Aura_Show` 버프(프라이빗 시어터 "신화의 기운 표시")는 연결 방식을 조사하지 않았다 | 신화 연출 요청 시 | [Equipment.md](Equipment.md) "무기 오라" |
 | 세트 공명(Resonance) | 생략 | 세트 효과는 활성 연출만 재생한다. 공명 2종(DragonLegendary·HarvestLegendary, 범위 3·허용 로브)의 오라 타임라인은 여러 캐릭터가 모이는 조건으로 보여 붙이지 않았다 [추정] | 조건 확인 시 | [Equipment.md](Equipment.md) "세트 효과" |
 | 세트 연출의 소품·IK·셰이더 값·숨김 트랙 | 생략 | 세트 활성 타임라인은 이펙트·덧그림 트랙만 재생한다. 설치본 활성 연출 5종에는 다른 트랙이 없다 [확인] | 새 세트에 다른 트랙이 생길 때 | [Equipment.md](Equipment.md) "세트 효과" |
 | 의상 자체 이펙트(전설 의상 FX 등) | 미확인 | 의상 FX 프리팹이 있으나 앱은 붙이지 않는다. 연결 방식을 조사하지 않았다 | 요청 시 | — |
 | 후드 규칙의 추정값 | 미확인 | 후드 헤어 단계 5, 후드를 쓰면 모자 숨김, 후드 의상은 로브 우선은 데이터로 정했다. 게임 메서드 본문을 읽지 못했다 | 게임 화면 비교 | [Equipment.md](Equipment.md) "후드·모자 덮개" |
-| 좌우 눈·눈썹·장식 숨김 필드 | 미구현 | `HideLeftEye`·`HideRightEye`·`HideLeftEyebrow`·`HideRightEyebrow`·`HideAccessory0~2`(평소·`ByHelmetCover`)를 적용하지 않는다. HideEye 없이 좌우 필드만 있는 의상은 눈을 가리지 않는다 | — | [Equipment.md](Equipment.md) "후드·모자 덮개" |
 | 로브 착용 표시(IsRobeWeared) | 미확인 | 불러오기에서 읽지 않는다. 로브를 입었는데 이 값이 거짓인 경우의 의미를 확인하지 않았다 | 실제 캐시 확인 | [LastCharacterImport.md](LastCharacterImport.md) |
 | 무기 표시 전용 옵션 | 보류 | 무기를 미장착하면 숨길 수 있다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 무기 장착점 보정값 | 생략 | 모델 정의 `MeshVisibleStateOverrides`(22개)·`TransformOverrides`(1개)를 적용하지 않았다 | 손·무기 위치 문제 발견 시 | [WeaponPose.md](WeaponPose.md) 4장 |

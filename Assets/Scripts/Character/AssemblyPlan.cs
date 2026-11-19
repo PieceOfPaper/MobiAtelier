@@ -172,6 +172,14 @@ public sealed class AssemblyPlan
     public bool HatHiddenByHood;
     /// <summary>표시한 헤어 단계(Mesh_Hair_*_H0~H5).</summary>
     public int HairLevel;
+    /// <summary>다른 의상의 HideAccessory0~2 로 숨긴 장식 파츠 키(costume:EarDeco 등). 조립기가 채운다.</summary>
+    public readonly List<string> HiddenAccessories = new List<string>();
+
+    /// <summary>
+    /// 도구 사용 연출(Equipment.md "도구"): 사용 동작의 스테이지 타임라인 이름. Start 는 사용을 시작한 때부터 계속 흐르는 시간,
+    /// Loop 는 반복 클립 안 위치로 재생한다. 이펙트·덧그림만 쓴다(소리·소품·채집 대상은 쓰지 않는다).
+    /// </summary>
+    public readonly List<string> ToolStartTimelines = new List<string>(), ToolLoopTimelines = new List<string>();
 
     /// <summary>카메라 쳐다보기 요청(EditState.lookAtCamera). 조립된 캐릭터의 CharacterLookAt 이 매 프레임 view.Plan 에서 읽는다.</summary>
     public bool LookAtCamera;
@@ -446,6 +454,20 @@ public static class PlanResolver
         plan.StanceCondition = action + " " + row.Condition;
         string start = string.IsNullOrEmpty(row.StartClip) ? null : BundleCache.AssetRoot + row.StartClip;
         if (start != null && files.HasAsset(start)) { plan.Intro = start; plan.IntroDrawn = true; }
+        // 연출 타임라인: 행동 시트(ActionStageTimeline)의 시작·반복 + 각 클립의 타임라인(StageTimeline 시트).
+        var tl = data.ActionTimeline("Player" + folder, action, Facts(plan, data, null, false));
+        void AddAll(List<string> to, IEnumerable<string> names) { if (names != null) foreach (var n in names) if (!string.IsNullOrEmpty(n) && !to.Contains(n)) to.Add(n); }
+        AddAll(plan.ToolStartTimelines, tl?.Start);
+        if (plan.Intro != null) AddAll(plan.ToolStartTimelines, ClipTimelineNames(data, plan.Intro));
+        AddAll(plan.ToolLoopTimelines, tl?.Loop);
+        AddAll(plan.ToolLoopTimelines, ClipTimelineNames(data, loop));
+    }
+
+    static string[] ClipTimelineNames(GameData data, string clipPath)
+    {
+        string name = clipPath.Substring(clipPath.LastIndexOf('/') + 1);
+        if (name.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
+        return data.ClipTimelines.TryGetValue(name, out var t) ? t : null;
     }
 
     static void ResolvePose(AssemblyPlan plan, GameData data, InstallFiles files, string folder, string stance)

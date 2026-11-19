@@ -289,6 +289,7 @@ public static class InstallSmokeTest
                 //   beard=ID, faceDeco=ID, bodyDeco=ID, skin=CharacterSkinColor.Id : 꾸밈·피부색(Appearance.md). 꾸밈이 있으면 얼굴·등 근접 사진도 찍는다.
                 //   hair=CharacterHair.GroupId, hairAcc=CharacterHairAccessoryColor.Id, hood=1, cover=1 : 헤어·장식 색·후드 씀·모자 덮개 내림(Equipment.md "후드·모자 덮개").
                 //     이 키가 있으면 머리 근접(앞·옆) 사진도 찍는다.
+                //   eyeDeco=CharacterCustomizeEyeDeco.Id : 환생 눈장식 색 프리셋(안경 + 염색).
                 //   look=1 : 카메라 쳐다보기. 카메라를 여러 각도(정면·좌우·위·아래·제한 밖)에 두고 그 위치를 쳐다보게 한 머리 근접 사진을 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
@@ -330,6 +331,15 @@ public static class InstallSmokeTest
                             else if (k == "hood") { s.hoodOn = v == "1"; headShots = true; }
                             else if (k == "cover") { s.helmetCoverOn = v == "1"; headShots = true; }
                             else if (k == "look") s.lookAtCamera = v == "1";
+                            else if (k == "eyeDeco" && data.EyeDecoPresets.Find(x => x.Id == v) is EyeDecoPreset ep)
+                            {
+                                // 환생 눈장식 색 프리셋: 안경 의상 + Slot0~5 염색(패널과 같은 처리). 머리 근접 사진도 찍는다.
+                                var es = new CostumeSlotState { part = "EyeDeco", costumeId = ep.CostumeId };
+                                for (int q = 0; q < 6; q++)
+                                    if (ep.DyeColors[q].HasValue) es.dyes.Add(new ColorOverride { slot = "Slot" + q, color = ColorOverrides.ToHex(PlanResolver.ToColor(ep.DyeColors[q].Value)) });
+                                s.costumes.Add(es);
+                                headShots = true;
+                            }
                             else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
@@ -350,6 +360,7 @@ public static class InstallSmokeTest
                         foreach (var n in plan.Notes) log.AppendLine("  참고: " + n);
                         log.AppendLine($"  자세: 꺼냄 {plan.WeaponDrawn}, 직업 {plan.StanceJob}, 조건 {plan.StanceCondition}, 클립 {plan.Idle}, 도입 {plan.Intro}, 도입 무기 구간 {plan.IntroToolSpans.Count}");
                         var view = CharacterAssembler.Build(files, bundles, plan, shader, log);
+                        foreach (var iss in plan.Issues) if (iss.FromBuild) log.AppendLine("  조립 문제: " + iss.Describe());
                         void Detail(string t)
                         {
                             var arm = view.FindBone("_L Forearm"); var foot = view.FindBone("_L Foot");
@@ -414,6 +425,8 @@ public static class InstallSmokeTest
                             {
                                 if (!float.TryParse(ts, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float t)) continue;
                                 om.SampleAll(t);
+                                // 도구 사용 연출: 모션과 같은 시점으로 맞춘다(시작 타임라인은 t, 반복은 반복 구간 안 위치).
+                                foreach (var tp in view.ToolEffects) if (tp) tp.Simulate(t);
                                 Capture(cam, view, Path.Combine(outDir, $"{tag}_t{ts}_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
                                 var act = om.CurrentAction;
                                 if (act != null)

@@ -142,6 +142,10 @@ public sealed class CharacterMotion : MonoBehaviour
     public AnimationClip Clip => segments.Length > 0 ? segments[segments.Length - 1].Body : null;
     /// <summary>도입 구간 길이(초). 없으면 0.</summary>
     public float IntroLength => hasIntro ? segments[0].Length : 0f;
+    /// <summary>반복 구간 길이(초). 구간이 없으면 0.</summary>
+    public float LoopLength => segments.Length > 0 ? segments[segments.Length - 1].Length : 0f;
+    /// <summary>재생 시간(초). 도입 구간 뒤에는 반복 구간 안으로 감긴다(도입 길이 + 반복 안 위치).</summary>
+    public double PlayTime => time;
     /// <summary>재생 중인 소셜 모션(끝나는 페이드 중이면 null).</summary>
     public ActionMotion CurrentAction => action != null && !actionEnding ? action : null;
     /// <summary>소셜 모션 시작 뒤 지난 시간(초).</summary>
@@ -376,6 +380,7 @@ public sealed class CharacterMotion : MonoBehaviour
     public void SampleAll(double t)
     {
         lookDt = -1f;
+        time = t;
         if (action != null) { actionTime = t; actionWeight = 1f; actionEnding = false; }
         simulateEffects = true;
         Sample(t);

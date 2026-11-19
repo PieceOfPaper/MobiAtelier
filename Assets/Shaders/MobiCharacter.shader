@@ -14,7 +14,10 @@
 //   uv' = 회전(_TattooMapRotation 도, 중심 0.5)( uv / s + (1 - 1/s) * 0.5 - p * 0.1 ),  _TattooMapScalePosition = (s.x, s.y, p.x, p.y)
 //   문신: t.rgb * (_DyeColor1 * 0.7 + 0.3)          (_DyeColor1 = 피부색)
 //   흉터(_IsScarMode = 1): 텍스처를 HSV 로 바꿔 명도를 피부 밝기에 맞추고 피부색 쪽으로 물들인다.
-//   albedo = lerp(albedo * _TintColor, 꾸밈색, t.a). 원본의 문신 발광·반사(_TattooEmission*, _TattooSpecula*)는 옮기지 않았다.
+//   albedo = lerp(albedo * _TintColor, 꾸밈색, t.a).
+//   문신(흉터 아님)의 발광·반사(2026-11-19 디스어셈블 확인): 꾸밈색 += 발광맵(같은 uv).rgb × _TattooEmissionIntensity × (1 − 낮 × _IsEnableTattooEmissionAtNight)
+//     + (_TattooSpecula ≥ 0.01 ? pow(max(N·V, 0), _TattooSpecula) × _TattooSpeculaIntensity : 0).  V = 카메라 쪽 방향. 조명 전에 알베도에 더한다.
+//     원본의 낮 값은 전역 셰이더 값이다. 앱은 낮(1)으로 본다 — "밤에만 발광" 문신은 발광하지 않는다 [추정: 전역 값의 뜻].
 // 무기 오라(WeaponGradeOutline 패스, Equipment.md "무기 오라"): 원본 MMN/CH/Weapon 의 TwoPassOutline 패스를 옮겼다(2026-11-18 디스어셈블 확인).
 //   정점: 월드 위치 + 월드 법선 × 0.007, 앞면 컬링·깊이 쓰기 없음·알파 블렌드.
 //   _WeaponGradeColor.w = 등급 번호(Rarity). 8·9(전설+·전설++): sin(|uv − 0.5| × 12 − 2t)를 BlendMin~Max 로 smoothstep 해 두 색을 섞는다.
@@ -39,6 +42,11 @@ Shader "MobiAtelier/Character"
         _TattooMapScalePosition ("Tattoo Scale Position", Vector) = (1,1,0,0)
         _TattooMapRotation ("Tattoo Rotation", Float) = 0
         _IsScarMode ("Is Scar Mode", Float) = 0
+        _TattooEmissionMap ("Tattoo Emission Map", 2D) = "black" {}
+        _TattooEmissionIntensity ("Tattoo Emission Intensity", Float) = 0
+        _IsEnableTattooEmissionAtNight ("Tattoo Emission At Night Only", Float) = 0
+        _TattooSpecula ("Tattoo Specular Power", Float) = 0
+        _TattooSpeculaIntensity ("Tattoo Specular Intensity", Float) = 0
         _Alpha ("Alpha", Range(0,1)) = 1
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
         [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Src Blend", Float) = 1
@@ -58,6 +66,7 @@ Shader "MobiAtelier/Character"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
         TEXTURE2D(_TattooMap); SAMPLER(sampler_TattooMap);
+        TEXTURE2D(_TattooEmissionMap);
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
             float _IsDyable;
@@ -65,6 +74,7 @@ Shader "MobiAtelier/Character"
             float _AlbedoOnly, _UseTexAlpha, _Alpha, _Cull, _SrcBlend, _DstBlend, _ZWrite;
             float4 _TattooMapScalePosition;
             float _TattooOn, _TattooMapRotation, _IsScarMode;
+            float _TattooEmissionIntensity, _IsEnableTattooEmissionAtNight, _TattooSpecula, _TattooSpeculaIntensity;
             float4 _WeaponGradeColor, _WeaponGradeColor2;
             float _OutlineColorBlendMin, _OutlineColorBlendMax;
         CBUFFER_END
@@ -126,7 +136,7 @@ Shader "MobiAtelier/Character"
                 return c * (skin * y + (1.0 - y));
             }
 
-            float4 Tattoo (float2 uv)
+            float4 Tattoo (float2 uv, float ndv)
             {
                 float2 sc = _TattooMapScalePosition.xy;
                 float2 u = uv / sc + (1.0 - 1.0 / sc) * 0.5 - _TattooMapScalePosition.zw * 0.1 - 0.5;
@@ -134,7 +144,10 @@ Shader "MobiAtelier/Character"
                 sincos(_TattooMapRotation * 0.0174533, sn, cs);
                 u = float2(dot(u, float2(cs, sn)), dot(u, float2(-sn, cs))) + 0.5;
                 float4 t = SAMPLE_TEXTURE2D(_TattooMap, sampler_TattooMap, u);
-                t.rgb = (_IsScarMode > 0.5) ? ScarColor(t.rgb) : t.rgb * (_DyeColor1.rgb * 0.7 + 0.3);
+                if (_IsScarMode > 0.5) { t.rgb = ScarColor(t.rgb); return t; }
+                float spec = _TattooSpecula >= 0.01 ? pow(max(ndv, 0.0), _TattooSpecula) * _TattooSpeculaIntensity : 0.0;
+                float3 em = SAMPLE_TEXTURE2D(_TattooEmissionMap, sampler_TattooMap, u).rgb * _TattooEmissionIntensity * (1.0 - _IsEnableTattooEmissionAtNight);
+                t.rgb = t.rgb * (_DyeColor1.rgb * 0.7 + 0.3) + em + spec;
                 return t;
             }
 
@@ -145,7 +158,8 @@ Shader "MobiAtelier/Character"
                 albedo *= _TintColor.rgb;
                 if (_TattooOn > 0.5)
                 {
-                    float4 t = Tattoo(i.uv);
+                    float ndv = dot(normalize(i.normalWS) * (front ? 1.0 : -1.0), normalize(GetWorldSpaceViewDir(i.positionWS)));
+                    float4 t = Tattoo(i.uv, ndv);
                     albedo = lerp(albedo, t.rgb, saturate(t.a));
                 }
                 float alpha = _Alpha * lerp(1.0, s.a, step(0.5, _UseTexAlpha));
