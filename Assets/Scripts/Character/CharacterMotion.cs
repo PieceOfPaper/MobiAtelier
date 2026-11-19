@@ -11,6 +11,7 @@
 // 소셜 모션(SocialMotion.md): 기본 모션 위에 행동(시작 → 반복) 층을 페이드로 섞는다. 기본 모션은 아래에서 계속 흐른다.
 //       행동 중 무기는 넣은 위치로 옮기고 HideWeapon 행동은 숨긴다. 소품(Prop·PropAnimation)과 이펙트(Effect) 구간을 같은 시간으로 켜고 끈다.
 //       손 IK(IKControl)는 본 후처리 뒤에 팔 두 본(위팔·아래팔)을 돌려 손바닥을 목표로 옮긴다. 손 방향(월드)은 클립 값을 유지한다.
+// 시선(카메라 쳐다보기): 본 위치·스케일을 되돌린 직후, 파츠 전용 본을 맞추기 전에 CharacterLookAt 이 머리·눈 회전을 보정한다.
 //       덧그림(AdditiveRenderer)·셰이더 값(ShaderProperty)·숨김(ObjectVisibility)은 구간 동안 렌더러에 적용하고 끝나면 되돌린다.
 //       시작 클립만 있는 행동은 끝나면 페이드 아웃하고 ActionFinished 를 알린다.
 using System;
@@ -367,8 +368,14 @@ public sealed class CharacterMotion : MonoBehaviour
     public void Sample(double t) => Sample(t, fallbackLength > 0 ? t % fallbackLength : t);
 
     /// <summary>시험 촬영용: 기본 모션과 소셜 모션(있으면 섞지 않고 전부)을 <paramref name="t"/>초 시점으로 평가한다. 이펙트도 그 시점까지 시뮬레이션한다.</summary>
+    /// <summary>카메라 쳐다보기. 조립기가 붙인다. 없으면 시선 보정을 하지 않는다.</summary>
+    internal CharacterLookAt LookAt;
+    /// <summary>시선이 따라갈 프레임 시간. 음수면 바로 목표로 둔다(조립 직후·시험 촬영).</summary>
+    float lookDt = -1f;
+
     public void SampleAll(double t)
     {
+        lookDt = -1f;
         if (action != null) { actionTime = t; actionWeight = 1f; actionEnding = false; }
         simulateEffects = true;
         Sample(t);
@@ -486,6 +493,7 @@ public sealed class CharacterMotion : MonoBehaviour
             else if (!faceBone[i]) b[i].localPosition = p ? view.PosePos[i] : view.BindPos[i];
             // 얼굴 본은 표정(턱·입술·눈썹 이동)이 위치에 있으므로 클립 위치를 쓴다. 머리 크기는 부모 _Head 스케일이 반영한다.
         }
+        LookAt?.Apply(lookDt, aw);
         foreach (var (dup, main, rel) in parts)
             if (dup && main) dup.localRotation = main.localRotation * rel;
         if (actOn)
@@ -622,7 +630,9 @@ public sealed class CharacterMotion : MonoBehaviour
             }
             else actionWeight -= action.FadeOut > 0 ? dt / action.FadeOut : 1f;
         }
+        lookDt = dt;
         Sample(time, faceTime);
+        lookDt = 0f;
         if (action != null && actionEnding && actionWeight <= 0f)
         {
             ClearAction(true);

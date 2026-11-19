@@ -32,6 +32,7 @@ public sealed class CustomizePanel
     {
         ("appearance", "외형", true),
         ("costume", "의상", true),
+        ("staging", "연출", true),
         ("background", "배경", false),
     };
 
@@ -383,6 +384,7 @@ public sealed class CustomizePanel
         }
         WeaponPoseRows(wear);
 
+        LookAtRow(Section("staging"));
         BackgroundRow(Section("background"));
 
         Refresh(state, plan);
@@ -732,6 +734,30 @@ public sealed class CustomizePanel
             SetStatus(status, note?.Invoke(), AppUI.Sub);
         });
         parent.Add(row);
+    }
+
+    /// <summary>
+    /// 카메라 쳐다보기(StudioFeatureReview.md): 머리·눈이 각도 제한 안에서 카메라를 따라본다.
+    /// 모델이 그대로라 다시 조립하지 않는다(색 편집 경로). 쓸 수 없으면 이유를 보이고 고르지 못하게 하지 않는다(값은 보존).
+    /// </summary>
+    void LookAtRow(VisualElement parent)
+    {
+        const string Off = "off", On = "on";
+        var status = StatusLabel();
+        var dd = Dropdown(() => new List<DropdownItem>
+        {
+            new DropdownItem { Id = Off, Name = "끔" },
+            new DropdownItem { Id = On, Name = "켬", Sub = "머리·눈이 카메라를 따라봄" },
+        }, it => editColors(s => s.lookAtCamera = it.Id == On));
+        refreshers.Add(() =>
+        {
+            bool on = state.lookAtCamera;
+            dd.SetValue(on ? On : Off, on ? "켬" : "끔", null);
+            string why = plan?.LookAtUnavailable;
+            SetStatus(status, why != null ? why + ". 시선을 보정하지 않습니다." : on ? "좌우로 너무 돌아가면 정면을 봅니다. 소셜 모션 중에는 쉽니다." : null,
+                why != null ? AppUI.WarnColor : AppUI.Sub);
+        });
+        parent.Add(Row("카메라 쳐다보기", dd, status));
     }
 
     // ------------------------------------------------------------ 무기 자세 (WeaponPose.md)

@@ -147,6 +147,14 @@ public static class SheetSchemas
         "Id:K(CharacterEyeColorSheet)",
         "DisplayName:S _:S _:U _:U HideOnCustomize:U ColorCode:C");
 
+    /// <summary>
+    /// 시선 처리(카메라 쳐다보기, StudioFeatureReview.md). 그룹(몸 모델 정의의 LookAtGroupName)·본·이동 상태별 각도 제한과 본 축. 시작에 필요하지 않다.
+    /// 설치본 23행 [확인]. 플레이어 몸은 Humanoid 그룹이다.
+    /// </summary>
+    public static readonly SheetSchema LookAt = new SheetSchema("LookAt",
+        "LookAtGroupName:S TargetBoneName:S LookAtMovingState:E",
+        "IsEye:U YawMax:N PitchMin:N PitchMax:N ForwardAxis:E UpAxis:E RightAxis:E ParentForwardAxis:E YawForwardAxisCoordinate:E");
+
     /// <summary>헤어 장식 색(HairType Accessory 헤어의 HairAccessory 염색 슬롯). 시작에 필요하지 않다. 읽지 못하면 목록만 비운다.</summary>
     public static readonly SheetSchema CharacterHairAccessoryColor = new SheetSchema("CharacterHairAccessoryColor",
         "Id:K(CharacterHairAccessoryColorSheet)",

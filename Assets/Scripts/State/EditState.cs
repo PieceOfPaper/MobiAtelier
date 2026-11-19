@@ -32,6 +32,11 @@ public class EditState
     public bool hoodOn;
     /// <summary>모자 덮개를 내림(게임 캐시 IsCapClosed). 표시 중인 모자에 덮개 메시(Mesh_HelmetCover_On/Off)가 있을 때만 쓴다. 기본은 올림.</summary>
     public bool helmetCoverOn;
+    /// <summary>
+    /// 카메라 쳐다보기(StudioFeatureReview.md "카메라 쳐다보기"). 켜면 머리·눈이 각도 제한 안에서 카메라를 따라본다. 기본은 끔.
+    /// 모델을 바꾸지 않으므로 다시 조립하지 않는다. 매 프레임 본 회전은 저장하지 않는다.
+    /// </summary>
+    public bool lookAtCamera;
 
     public CostumeSlotState Costume(string part)
     {

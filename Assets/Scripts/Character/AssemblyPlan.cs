@@ -173,6 +173,13 @@ public sealed class AssemblyPlan
     /// <summary>표시한 헤어 단계(Mesh_Hair_*_H0~H5).</summary>
     public int HairLevel;
 
+    /// <summary>카메라 쳐다보기 요청(EditState.lookAtCamera). 조립된 캐릭터의 CharacterLookAt 이 매 프레임 view.Plan 에서 읽는다.</summary>
+    public bool LookAtCamera;
+    /// <summary>시선 처리 시트 전체(GameData.LookAt). 조립기가 몸 모델의 LookAtGroupName 으로 고른다.</summary>
+    public List<LookAtParam> LookAtTable;
+    /// <summary>시선을 쓸 수 없는 이유(조립기가 채운다). null 이면 쓸 수 있다.</summary>
+    public string LookAtUnavailable;
+
     public static string CostumeKey(string part) => "costume:" + part;
 }
 
@@ -258,6 +265,8 @@ public static class PlanResolver
         ResolveCostumes(plan, state, data, files, failedModels);
         plan.HoodRequested = state.hoodOn;
         plan.HelmetCoverRequested = state.helmetCoverOn;
+        plan.LookAtCamera = state.lookAtCamera;
+        plan.LookAtTable = data.LookAt;
 
         string prefix = plan.Infant ? "HC" : plan.Male ? "HM" : "HF";
         string variant = plan.BodyType == "Muscular" ? "Muscle" : plan.BodyType;

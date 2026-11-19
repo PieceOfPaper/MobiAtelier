@@ -605,6 +605,7 @@ public static class CharacterAssembler
               $"텍스처 {(Shader.GetGlobalTexture(WeaponTextureId) ? Shader.GetGlobalTexture(WeaponTextureId).name : "없음")}, 원본 [{string.Join(", ", shaders)}]");
         }
         AttachSetEffect(files, bundles, plan, view, shader, L);
+        AttachLookAt(plan, view, defs.Find(x => x.Part.Role == PartRole.Body), L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         if (plan.HasHood || hatDef != null)
             L($"후드·덮개: 후드 {(hoodDef != null ? hoodDef.Part.Model + (plan.HoodOn ? " 씀" : " 벗음") : "없음")}, 모자 {(hatDef == null ? "없음" : hatShown ? "표시" : "후드로 숨김")}, 덮개 {(plan.HasHelmetCover ? (plan.HelmetCoverOn ? "내림" : "올림") : "없음")}");
@@ -623,6 +624,21 @@ public static class CharacterAssembler
         catch (Exception e) when (!(e is OutOfMemoryException)) { L?.Invoke("무기 외곽선 텍스처 읽기 실패: " + e.Message); }
         if (tex) Shader.SetGlobalTexture(WeaponTextureId, tex);
         else L?.Invoke("무기 외곽선 텍스처 없음: " + WeaponTexturePath);
+    }
+
+    /// <summary>
+    /// 카메라 쳐다보기(StudioFeatureReview.md). 몸 모델의 LookAtGroupName(플레이어는 Humanoid)으로 시선 설정을 골라 붙인다.
+    /// 켜고 끄기는 조립과 관계없이 view.Plan.LookAtCamera 로 정하므로 쓸 수 있으면 항상 붙인다. 쓸 수 없으면 이유를 계획에 남긴다.
+    /// </summary>
+    static void AttachLookAt(AssemblyPlan plan, CharacterView view, Def body, Action<string> L)
+    {
+        var motion = view.GetComponent<CharacterMotion>();
+        string group = body?.Root.Get("ActorModelInfo").Get("LookAtGroupName").Str();
+        if (!motion) { plan.LookAtUnavailable = "기본 모션이 없어 시선을 보정할 수 없습니다"; L("시선: " + plan.LookAtUnavailable); return; }
+        var la = CharacterLookAt.Attach(view, plan.LookAtTable, group, out string why);
+        if (la == null) { plan.LookAtUnavailable = why; L("시선: " + why); return; }
+        motion.LookAt = la;
+        L($"시선: 그룹 {group}, {la.Describe()}, {(plan.LookAtCamera ? "켬" : "끔")}");
     }
 
     /// <summary>
@@ -721,6 +737,7 @@ public static class CharacterAssembler
             // 후드·덮개 결과도 조립 때 정해진다(색 편집은 다시 조립하지 않고 요청 값도 바꾸지 않는다).
             to.HasHood = from.HasHood; to.HoodOn = from.HoodOn; to.HatHiddenByHood = from.HatHiddenByHood;
             to.HasHelmetCover = from.HasHelmetCover; to.HelmetCoverOn = from.HelmetCoverOn; to.HairLevel = from.HairLevel;
+            to.LookAtUnavailable = from.LookAtUnavailable;
         }
         CheckDyes(to, view);
     }

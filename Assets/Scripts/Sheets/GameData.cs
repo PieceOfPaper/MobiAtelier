@@ -65,6 +65,14 @@ public sealed class BodyTypeData
     public bool UseBlendshape;
 }
 
+/// <summary>시선 처리 시트 행 하나(LookAt). 축 이름은 PlusX·MinusX·PlusY·MinusY·PlusZ·MinusZ, 좌표는 Local·ParentLocal.</summary>
+public sealed class LookAtParam
+{
+    public string Group, Bone, MovingState, ForwardAxis, UpAxis, RightAxis, ParentForwardAxis, YawCoordinate;
+    public bool IsEye;
+    public float YawMax, PitchMin, PitchMax;
+}
+
 public sealed class ColorData
 {
     public string Id, DisplayName, Type;
@@ -238,6 +246,9 @@ public sealed class GameData
     /// <summary>헤어 장식 색(CharacterHairAccessoryColor). 시작에 필요하지 않다. 읽지 못하면 비우고 HairAccessoryColorError 에 적는다.</summary>
     public readonly Dictionary<string, ColorData> HairAccessoryColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public string HairAccessoryColorError;
+    /// <summary>시선 처리(LookAt 시트). 읽지 못하면 비우고 LookAtError 에 적는다(카메라 쳐다보기만 쓸 수 없다).</summary>
+    public readonly List<LookAtParam> LookAt = new List<LookAtParam>();
+    public string LookAtError;
     /// <summary>생활 도구·악기(시트 순서). 읽지 못하면 비어 있고 ToolError 에 사유가 있다.</summary>
     public readonly Dictionary<string, CostumeData> Tools = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
     public readonly List<CostumeData> ToolList = new List<CostumeData>();
@@ -348,6 +359,18 @@ public sealed class GameData
         try { Colors(set.Read(SheetSchemas.CharacterHairAccessoryColor), g.HairAccessoryColors, "ColorCode", null, null); }
         catch (Exception e) { g.HairAccessoryColors.Clear(); g.HairAccessoryColorError = SheetSchemas.CharacterHairAccessoryColor.Sheet + ": " + e.Message; }
         LoadDecorations(set, g);
+        try
+        {
+            foreach (var r in set.Read(SheetSchemas.LookAt))
+                g.LookAt.Add(new LookAtParam
+                {
+                    Group = r.Str("LookAtGroupName"), Bone = r.Str("TargetBoneName"), MovingState = r.Str("LookAtMovingState"),
+                    IsEye = r.Bool("IsEye"), YawMax = (float)r.Num("YawMax"), PitchMin = (float)r.Num("PitchMin"), PitchMax = (float)r.Num("PitchMax"),
+                    ForwardAxis = r.Str("ForwardAxis"), UpAxis = r.Str("UpAxis"), RightAxis = r.Str("RightAxis"),
+                    ParentForwardAxis = r.Str("ParentForwardAxis"), YawCoordinate = r.Str("YawForwardAxisCoordinate"),
+                });
+        }
+        catch (Exception e) { g.LookAt.Clear(); g.LookAtError = SheetSchemas.LookAt.Sheet + ": " + e.Message; }
         LoadTools(set, g);
         LoadSetEffects(set, g);
         g.WeaponAura = WeaponAuraData.Load(files);

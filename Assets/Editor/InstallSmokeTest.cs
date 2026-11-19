@@ -289,6 +289,7 @@ public static class InstallSmokeTest
                 //   beard=ID, faceDeco=ID, bodyDeco=ID, skin=CharacterSkinColor.Id : 꾸밈·피부색(Appearance.md). 꾸밈이 있으면 얼굴·등 근접 사진도 찍는다.
                 //   hair=CharacterHair.GroupId, hairAcc=CharacterHairAccessoryColor.Id, hood=1, cover=1 : 헤어·장식 색·후드 씀·모자 덮개 내림(Equipment.md "후드·모자 덮개").
                 //     이 키가 있으면 머리 근접(앞·옆) 사진도 찍는다.
+                //   look=1 : 카메라 쳐다보기. 카메라를 여러 각도(정면·좌우·위·아래·제한 밖)에 두고 그 위치를 쳐다보게 한 머리 근접 사진을 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
                 if (outfit != null)
@@ -328,6 +329,7 @@ public static class InstallSmokeTest
                             else if (k == "hairAcc") { s.appearance.hairAccessoryColor = v; headShots = true; }
                             else if (k == "hood") { s.hoodOn = v == "1"; headShots = true; }
                             else if (k == "cover") { s.helmetCoverOn = v == "1"; headShots = true; }
+                            else if (k == "look") s.lookAtCamera = v == "1";
                             else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
@@ -379,6 +381,22 @@ public static class InstallSmokeTest
                             else if (spine) Capture(cam, view, Path.Combine(outDir, tag + "_weapon.png"), 20, 5, 1.4f, spine.position, 768, 768);
                         }
                         var om = view.GetComponent<CharacterMotion>();
+                        var look = view.GetComponent<CharacterLookAt>();
+                        if (s.lookAtCamera && om && look && view.FindBone("_Head") is Transform lh)
+                        {
+                            // (이름, 카메라 좌우 각, 상하 각): 180 이 정면. 상하 +는 위에서 내려다본다.
+                            foreach (var (n, yaw, pitch) in new[] { ("front", 180f, 5f), ("left40", 140f, 5f), ("right40", 220f, 5f), ("left75", 105f, 5f),
+                                         ("above", 180f, 35f), ("below", 180f, -25f), ("behind", 20f, 5f) })
+                            {
+                                var pivot = lh.position + new Vector3(0, 0.05f, 0);
+                                var camPos = pivot + Quaternion.Euler(pitch, yaw, 0) * new Vector3(0, 0, -0.9f);
+                                look.TargetOverride = () => camPos;
+                                om.SampleAll(0);
+                                Capture(cam, view, Path.Combine(outDir, $"{tag}_look_{n}.png"), yaw, pitch, 0.9f, pivot, 768, 768);
+                                log.AppendLine($"  시선 {n}: {look.LastState}");
+                            }
+                            look.TargetOverride = null;
+                        }
                         if (om && social != null)
                         {
                             var sa = data.SocialActions.Find(x => x.Id == social);
