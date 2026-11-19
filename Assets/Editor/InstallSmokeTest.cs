@@ -287,6 +287,8 @@ public static class InstallSmokeTest
                 //   aura=Rarity(Elite·Epic·Legendary·Unique·Legendary2·Legendary3·Mythic) : 무기 오라. 무기 근접 사진도 찍는다.
                 //   세트 활성 연출이 판정되면 1.5초까지 진행한 뒤 찍는다(Equipment.md "세트 효과").
                 //   beard=ID, faceDeco=ID, bodyDeco=ID, skin=CharacterSkinColor.Id : 꾸밈·피부색(Appearance.md). 꾸밈이 있으면 얼굴·등 근접 사진도 찍는다.
+                //   hair=CharacterHair.GroupId, hairAcc=CharacterHairAccessoryColor.Id, hood=1, cover=1 : 헤어·장식 색·후드 씀·모자 덮개 내림(Equipment.md "후드·모자 덮개").
+                //     이 키가 있으면 머리 근접(앞·옆) 사진도 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
                 if (outfit != null)
@@ -300,6 +302,7 @@ public static class InstallSmokeTest
                         string tag = colon > 0 ? entry.Substring(0, colon).Trim() : "outfit";
                         var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
                         string prevStance = null, introClip = null, loopClip = null, social = null, socialAct = null;
+                        bool headShots = false;
                         foreach (var kv in entry.Substring(colon + 1).Split(','))
                         {
                             var p = kv.Split('=');
@@ -321,6 +324,10 @@ public static class InstallSmokeTest
                             else if (k == "bodyDeco") s.appearance.bodyDeco = v;
                             else if (k == "skin") s.appearance.skinColor = v;
                             else if (k == "aura") s.weaponAura = v;
+                            else if (k == "hair") { s.appearance.hair = v; headShots = true; }
+                            else if (k == "hairAcc") { s.appearance.hairAccessoryColor = v; headShots = true; }
+                            else if (k == "hood") { s.hoodOn = v == "1"; headShots = true; }
+                            else if (k == "cover") { s.helmetCoverOn = v == "1"; headShots = true; }
                             else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
@@ -348,6 +355,11 @@ public static class InstallSmokeTest
                             if (arm) Capture(cam, view, Path.Combine(outDir, t + "_arm.png"), 120, 5, 0.75f, arm.position, 768, 768);
                             if (foot) Capture(cam, view, Path.Combine(outDir, t + "_foot.png"), 150, 15, 0.6f, foot.position + new Vector3(0, -0.03f, 0), 768, 768);
                             var a = s.appearance;
+                            if (headShots && view.FindBone("_Head") is Transform hh)
+                            {
+                                Capture(cam, view, Path.Combine(outDir, t + "_head.png"), 180, 5, 0.7f, hh.position + new Vector3(0, 0.05f, 0), 768, 768);
+                                Capture(cam, view, Path.Combine(outDir, t + "_head_side.png"), 120, 5, 0.7f, hh.position + new Vector3(0, 0.05f, 0), 768, 768);
+                            }
                             if (!string.IsNullOrEmpty(a.beard) || !string.IsNullOrEmpty(a.faceDeco) || !string.IsNullOrEmpty(a.bodyDeco))
                             {
                                 var head = view.FindBone("_Head");

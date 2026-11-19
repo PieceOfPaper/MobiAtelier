@@ -5,6 +5,7 @@
 //   BodyParts·Clothes·Accessories: [{ ModelParts: [모델 이름], DyeSlots: { DyeSlot 번호: RGBA } }],
 //   Tools: { ToolIndex 번호: 같은 형식 } (-1 무기, 1~8 생활 도구, 9 악기, 10 연금 도구),
 //   WeaponAuraGrade, IsRobeWeared·IsHoodOn·IsCapClosed·IsWeaponHidden, CostumeSet([번호, 시트 ID]).
+//   IsHoodOn → hoodOn, IsCapClosed → helmetCoverOn(모자 덮개 내림) [추정: 게임 의상 옵션 IsHoodOn·IsHelmetCoverOn 두 값과 짝].
 // 시트 ID 가 있으면 그대로 쓰고, 모델 이름·원색만 있으면 시트를 거꾸로 찾는다(AGENTS.md 역방향 조회).
 // 찾지 못한 부위는 장착하지 않고 Failed 에, 아틀리에가 아직 지원하지 않는 항목은 Unsupported 에 적는다.
 // 캐릭터 ID 등 계정 정보는 읽지도 저장하지도 않는다.
@@ -88,14 +89,19 @@ public static class LastCharacterImport
             var dyes = part.Get("DyeSlots");
             if (FindGroup(data.Hairs, model) != null)
             {
-                // 헤어 색: Hair(7)·Hair1(17) → 가장 가까운 헤어 색 행. 헤어 장식 색(18)은 다루지 않는다.
+                // 헤어 색: Hair(7)·Hair1(17) → 가장 가까운 헤어 색 행. 헤어 장식 색(18)은 장식형 헤어일 때만 가장 가까운 장식 색 행.
                 if (TryColor(dyes.Get(DyeHair), out var h1))
                 {
                     bool two = TryColor(dyes.Get(DyeHair1), out var h2);
                     if (!two) h2 = h1;
                     a.hairColor = Nearest(data.HairColors, c => Dist(c.Color1, h1) + Dist(c.Type == "TwoColor" ? c.Color2 : c.Color1, h2), "헤어 색상", r);
                 }
-                if (TryColor(dyes.Get(DyeHairAccessory), out _) && !r.Unsupported.Contains("헤어 장식 색")) r.Unsupported.Add("헤어 장식 색");
+                var hairRow = GameData.Resolve(data.Hairs, a.hair, a.bodyType ?? "Default");
+                if (hairRow != null && hairRow.HairType == "Accessory" && TryColor(dyes.Get(DyeHairAccessory), out var acc))
+                {
+                    if (data.HairAccessoryColors.Count == 0) r.Failed.Add(("헤어 장식 색", "장식 색 시트를 읽지 못함"));
+                    else a.hairAccessoryColor = Nearest(data.HairAccessoryColors, c => Dist(c.Color1, acc), "헤어 장식 색", r);
+                }
                 continue;
             }
             // 머리 모델은 HeadType 으로 이미 정해진다.
@@ -193,8 +199,9 @@ public static class LastCharacterImport
             if (data.WeaponAura.Find(aura) != null) s.weaponAura = aura;
             else if (WeaponAuraData.IndexOf(aura) < 0) r.Failed.Add(("무기 오라", "알 수 없는 등급입니다: " + aura));
         }
-        if (d.Get("IsCapClosed").B() && s.Costume("Hat") != null) r.Unsupported.Add("모자 접힘 상태");
-        if (d.Get("IsHoodOn").B()) r.Unsupported.Add("후드 씀 상태");
+        // 후드·모자 덮개: 값만 옮긴다. 후드·덮개 메시가 없는 의상이면 조립할 때 쓰지 않는다(Equipment.md "후드·모자 덮개").
+        s.hoodOn = d.Get("IsHoodOn").B();
+        s.helmetCoverOn = d.Get("IsCapClosed").B();
 
         // 배경은 현재 선택을 유지한다. 카메라는 기본 구도로 맞춘다.
         s.background = current?.background;

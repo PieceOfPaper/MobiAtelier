@@ -1,6 +1,6 @@
 # 미구현·생략 목록
 
-> 정리일: 2026-11-18
+> 정리일: 2026-11-19
 > 구현하지 않았거나 일부러 빼거나 보류한 항목을 한곳에 모은 목록이다. 세부 근거와 확정·제안·미정 상태는 링크한 기획서가 기준이다. 이 문서는 목록과 링크만 가진다.
 > 구현 중에 원본 기능을 옮기지 않거나 생략하면 여기에 한 줄을 추가한다(`AGENTS.md` 7장). 구현하면 줄을 지우고 해당 기획서에 기록한다.
 
@@ -22,7 +22,7 @@
 | 어두운 피부의 문신 밝기 | 미확인 | 원본 식대로 피부색을 곱해 매우 흐리다. 게임 화면과 비교하지 않았다 | 게임 화면 비교 | [Appearance.md](Appearance.md) |
 | 환생 눈장식 색 프리셋 | 미구현 | 눈장식 6개 후보의 보상 프리셋 색 슬롯 대응을 검증하지 않았다. 안경 모델은 의상 › 눈장식으로 고를 수 있다 | 색 필드 순서 검증 | [Appearance.md](Appearance.md) |
 | 손바닥 색(ColorCode_Palm) | 미확인 | 연결을 확인하지 못해 원본 값을 유지한다 | 연결 확인 | [Appearance.md](Appearance.md) |
-| 헤어 장식 색(DyeSlot HairAccessory) | 미구현 | 헤어의 장식(브릿지 등) 색 칸을 편집·적용하지 않는다. 불러오기는 "지원하지 않는 항목"으로 안내한다 | — | [LastCharacterImport.md](LastCharacterImport.md) |
+| 게임 기본 헤어 장식 색 | 생략 | 장식 색을 고르지 않으면 모델의 원래 색이다. 꾸미기 기본값 시트(CharacterCustomizeDefaultAppearance의 HairAccessoryColor)는 읽지 않는다 | 게임 첫 화면 색과 다를 때 | [Appearance.md](Appearance.md) |
 | 입 색 | 보류 | 사용자 결정(2026-11-01) | — | [Appearance.md](Appearance.md) |
 | 나이 범위·키 직접 입력 | 결정 대기 | 나이는 프리셋에 나오는 값만 후보다 | 사용자 결정 | [Appearance.md](Appearance.md) |
 | 눈·얼굴 셰이더의 게임 조명 재현 | 미구현 | 앱은 단순 툰 조명 근사다 | — | [PROGRESS.md](PROGRESS.md) 3장 |
@@ -37,8 +37,9 @@
 | 세트 공명(Resonance) | 생략 | 세트 효과는 활성 연출만 재생한다. 공명 2종(DragonLegendary·HarvestLegendary, 범위 3·허용 로브)의 오라 타임라인은 여러 캐릭터가 모이는 조건으로 보여 붙이지 않았다 [추정] | 조건 확인 시 | [Equipment.md](Equipment.md) "세트 효과" |
 | 세트 연출의 소품·IK·셰이더 값·숨김 트랙 | 생략 | 세트 활성 타임라인은 이펙트·덧그림 트랙만 재생한다. 설치본 활성 연출 5종에는 다른 트랙이 없다 [확인] | 새 세트에 다른 트랙이 생길 때 | [Equipment.md](Equipment.md) "세트 효과" |
 | 의상 자체 이펙트(전설 의상 FX 등) | 미확인 | 의상 FX 프리팹이 있으나 앱은 붙이지 않는다. 연결 방식을 조사하지 않았다 | 요청 시 | — |
-| 모자 착용 시 헤어 처리 | 미구현 | 모자를 쓰면 헤어가 모두 사라진다. 헬멧 덮개 메시(`Mesh_HelmetCover_On/Off`)·`…ByHelmetCover` 숨김 규칙·모자 접힘(IsCapClosed)을 쓰지 않는다 [확인: 코드 검색] | — | [PROGRESS.md](PROGRESS.md) 3장 |
-| 후드·로브 상태 | 미구현 | 게임의 후드 씀/벗음·로브 착용 상태를 다루지 않는다. 불러오기는 후드 씀·모자 접힘을 "지원하지 않는 항목"으로 안내한다 | — | [LastCharacterImport.md](LastCharacterImport.md) |
+| 후드 규칙의 추정값 | 미확인 | 후드 헤어 단계 5, 후드를 쓰면 모자 숨김, 후드 의상은 로브 우선은 데이터로 정했다. 게임 메서드 본문을 읽지 못했다 | 게임 화면 비교 | [Equipment.md](Equipment.md) "후드·모자 덮개" |
+| 좌우 눈·눈썹·장식 숨김 필드 | 미구현 | `HideLeftEye`·`HideRightEye`·`HideLeftEyebrow`·`HideRightEyebrow`·`HideAccessory0~2`(평소·`ByHelmetCover`)를 적용하지 않는다. HideEye 없이 좌우 필드만 있는 의상은 눈을 가리지 않는다 | — | [Equipment.md](Equipment.md) "후드·모자 덮개" |
+| 로브 착용 표시(IsRobeWeared) | 미확인 | 불러오기에서 읽지 않는다. 로브를 입었는데 이 값이 거짓인 경우의 의미를 확인하지 않았다 | 실제 캐시 확인 | [LastCharacterImport.md](LastCharacterImport.md) |
 | 무기 표시 전용 옵션 | 보류 | 무기를 미장착하면 숨길 수 있다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 무기 장착점 보정값 | 생략 | 모델 정의 `MeshVisibleStateOverrides`(22개)·`TransformOverrides`(1개)를 적용하지 않았다 | 손·무기 위치 문제 발견 시 | [WeaponPose.md](WeaponPose.md) 4장 |
 | 옷끼리 자르기 | 생략 | 몸 자르기만 게임 규칙(`.ClothingUnit.bytes`)으로 한다. 상의를 하의로 자르기(CutTopWithBottom) 등 의상→의상 자르기, 의상 피부 조각 자르기, 자르기 제외 규칙(IsFitIgnoringCase·HasVeryHighestOnCommonJunction)을 옮기지 않았다 | 옷끼리 관통·겹침 문제 발견 시 | [FeasibilityReview.md](FeasibilityReview.md) 4.5 |
@@ -53,7 +54,7 @@
 |---|---|---|---|---|
 | 소셜 모션 소리·발자국 이펙트 | 보류 | 사용자 결정. 앱에 소리 재생 기능이 없다 | 소리 기능 도입 시 | [SocialMotion.md](SocialMotion.md) 6장 |
 | 2인 소셜 모션 | 생략 | 사용자 결정 | — | [SocialMotion.md](SocialMotion.md) |
-| 어린 외형 소품 크기 보정 | 미구현 | — | — | [PROGRESS.md](PROGRESS.md) 3장 |
+| 소품 크기 보정(ScaleSensitivity) | 미확인 | 소품 위치 표(PropTransformDataArr)의 외형별 위치·회전은 쓴다(2026-11-19). 크기 보정 값(DefaultScaleSensitivity·행별 ScaleSensitivity, 기준 PropScaleSource FxScale·ActorScale)은 게임 FxScale 계산식(HeightInfo 기반)을 읽지 못해 쓰지 않는다. 소품은 붙은 본의 크기를 그대로 따른다 | 계산식 확인 | [SocialMotion.md](SocialMotion.md) |
 | 카메라 쳐다보기(시선)·행동 연출 | 보류 | 데이터·실재생 검증 후 도입한다 | 검증 완료 | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 표정 단독 선택 | 보류 | — | — | [WindowAndCustomizationUI.md](WindowAndCustomizationUI.md) |
 

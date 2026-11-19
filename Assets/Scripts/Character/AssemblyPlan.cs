@@ -108,7 +108,7 @@ public sealed class AssemblyPlan
     static readonly Dictionary<string, string> Labels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         { "body", "몸" }, { "head", "얼굴형" }, { "hair", "헤어스타일" }, { "eyes", "눈 모양" }, { "mouth", "입 모양" },
-        { "skinColor", "피부색" }, { "hairColor", "헤어 색상" }, { "eyeColor", "눈 색상" },
+        { "skinColor", "피부색" }, { "hairColor", "헤어 색상" }, { "eyeColor", "눈 색상" }, { "hairAccessoryColor", "헤어 장식 색" },
         { "beard", "수염" }, { "faceDeco", "얼굴꾸밈" }, { "bodyDeco", "몸꾸밈" },
         { "Hat", "모자" }, { "Top", "상의" }, { "Bottom", "하의" }, { "Robe", "로브" }, { "Gloves", "장갑" },
         { "Shoes", "신발" }, { "EarDeco", "귀장식" }, { "EyeDeco", "눈장식" }, { "FaceDeco", "얼굴장식" }, { "Weapon", "무기" },
@@ -160,6 +160,18 @@ public sealed class AssemblyPlan
     public CostumeSetEffectData SetEffect;
     /// <summary>세트 활성 연출 스테이지 타임라인 이름(성별·연령별). 없으면 null.</summary>
     public string SetEffectTimeline;
+
+    // 후드·모자 덮개(Equipment.md "후드·모자 덮개"). 요청은 상태에서, 결과는 조립기가 모델 정의를 읽고 채운다.
+    /// <summary>상태의 요청(EditState.hoodOn·helmetCoverOn).</summary>
+    public bool HoodRequested, HelmetCoverRequested;
+    /// <summary>표시 중인 의상에 후드 메시가 있다 / 표시 중인 모자에 덮개 메시가 있다(후드로 모자를 숨기면 false).</summary>
+    public bool HasHood, HasHelmetCover;
+    /// <summary>실제로 쓴 상태.</summary>
+    public bool HoodOn, HelmetCoverOn;
+    /// <summary>후드를 써서 모자를 표시하지 않는다.</summary>
+    public bool HatHiddenByHood;
+    /// <summary>표시한 헤어 단계(Mesh_Hair_*_H0~H5).</summary>
+    public int HairLevel;
 
     public static string CostumeKey(string part) => "costume:" + part;
 }
@@ -234,6 +246,9 @@ public static class PlanResolver
             ? (hairColor != null && hairColor.Type == "TwoColor" ? hairColor.Color2 : hairColor?.Color1) : null);
         Global("Eye", eyeColor?.Color1);
         Global("Mouth", mouthColor?.Color1);
+        // 헤어 장식 색: 장식형 헤어(HairType Accessory)의 HairAccessory 염색 슬롯. 비어 있으면 모델 원래 색이다.
+        if (hair.HairType == "Accessory")
+            Global("HairAccessory", SheetColor(plan, "hairAccessoryColor", data.HairAccessoryColors, a.hairAccessoryColor, null)?.Color1);
 
         // 꾸밈: 필수가 아니므로 표시할 수 없으면 대체하지 않고 출력만 하지 않는다(선택은 보관, Appearance.md).
         Optional(plan, files, a.age, "beard", PartRole.Beard, a.beard, data.Beards, failedModels);
@@ -241,6 +256,8 @@ public static class PlanResolver
         Optional(plan, files, a.age, "bodyDeco", PartRole.BodyDeco, a.bodyDeco, data.BodyDecos, failedModels);
 
         ResolveCostumes(plan, state, data, files, failedModels);
+        plan.HoodRequested = state.hoodOn;
+        plan.HelmetCoverRequested = state.helmetCoverOn;
 
         string prefix = plan.Infant ? "HC" : plan.Male ? "HM" : "HF";
         string variant = plan.BodyType == "Muscular" ? "Muscle" : plan.BodyType;

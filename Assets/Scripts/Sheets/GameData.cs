@@ -235,6 +235,9 @@ public sealed class GameData
     public readonly Dictionary<string, ColorData> HairColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> EyeColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
     public readonly Dictionary<string, ColorData> MouthColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
+    /// <summary>헤어 장식 색(CharacterHairAccessoryColor). 시작에 필요하지 않다. 읽지 못하면 비우고 HairAccessoryColorError 에 적는다.</summary>
+    public readonly Dictionary<string, ColorData> HairAccessoryColors = new Dictionary<string, ColorData>(StringComparer.Ordinal);
+    public string HairAccessoryColorError;
     /// <summary>생활 도구·악기(시트 순서). 읽지 못하면 비어 있고 ToolError 에 사유가 있다.</summary>
     public readonly Dictionary<string, CostumeData> Tools = new Dictionary<string, CostumeData>(StringComparer.Ordinal);
     public readonly List<CostumeData> ToolList = new List<CostumeData>();
@@ -342,6 +345,8 @@ public sealed class GameData
         Colors(set.Read(SheetSchemas.CharacterHairColor), g.HairColors, "ColorCode1", "ColorCode2", "HairColorType");
         Colors(set.Read(SheetSchemas.CharacterEyeColor), g.EyeColors, "ColorCode", null, null);
         Colors(set.Read(SheetSchemas.CharacterMouthColor), g.MouthColors, "ColorCode", null, null);
+        try { Colors(set.Read(SheetSchemas.CharacterHairAccessoryColor), g.HairAccessoryColors, "ColorCode", null, null); }
+        catch (Exception e) { g.HairAccessoryColors.Clear(); g.HairAccessoryColorError = SheetSchemas.CharacterHairAccessoryColor.Sheet + ": " + e.Message; }
         LoadDecorations(set, g);
         LoadTools(set, g);
         LoadSetEffects(set, g);

@@ -1,6 +1,6 @@
 # 마지막으로 접속한 캐릭터 불러오기
 
-> 정리일: 2026-11-18
+> 정리일: 2026-11-19
 > 사용자 결정(2026-11-12)을 기준으로 한다. 확정·제안·미정 표기를 유지한다.
 > 목적: 점검 중처럼 게임에 접속할 수 없을 때도 내 캐릭터를 아틀리에에서 바로 열어 본다.
 
@@ -39,10 +39,11 @@
 | Gender·Age·HeightModifier | 값 | 그대로 |
 | BodyType·HeadType·HairType | [번호, 시트 ID] | 시트 ID 그대로 |
 | SkinColor | RGBA | 가장 가까운 피부색 행 |
-| BodyParts | 모델 이름 + 염색 | 헤어(색: 7 Hair, 17 Hair1 → 가장 가까운 헤어 색 행), 눈(색: 8 Eye → 눈 색 행), 입, 수염, 얼굴꾸밈, 몸꾸밈을 시트에서 거꾸로 찾는다. 머리 모델은 HeadType으로 이미 정해진다 |
+| BodyParts | 모델 이름 + 염색 | 헤어(색: 7 Hair, 17 Hair1 → 가장 가까운 헤어 색 행, 장식형 헤어는 18 HairAccessory → 가장 가까운 장식 색 행), 눈(색: 8 Eye → 눈 색 행), 입, 수염, 얼굴꾸밈, 몸꾸밈을 시트에서 거꾸로 찾는다. 머리 모델은 HeadType으로 이미 정해진다 |
 | Clothes·Accessories | 모델 이름 + 염색 0~5 | 패션장비 거꾸로 찾기, 염색 Slot0~5(시트 기본색과 같으면 기록하지 않음) |
 | Tools[-1]·1~10 | 무기·도구 모델 + 염색 | 의상 › 무기 칸 하나. 아래 "무기·도구" 규칙. IsWeaponHidden이면 무기·도구 모두 장착하지 않음 |
 | CombatJobAnimationCondition | 직업 ID | 무기 자세 직업. 자세는 넣음 |
+| IsHoodOn·IsCapClosed | bool | `hoodOn`(후드 씀)·`helmetCoverOn`(모자 덮개 내림). 후드·덮개 메시가 없는 의상이면 조립할 때 쓰지 않는다 [추정: IsCapClosed = 덮개 내림] (2026-11-19) |
 | 그 밖 | — | 4장 |
 
 - 염색 번호는 게임 DyeSlot 열거형이다: 0~5 Slot0~5, 6 Skin, 7 Hair, 8 Eye, 9 Eyebrow, 10 Mouth, 13 Beard, 14 FaceTattoo, 15 BodyTattoo, 17 Hair1, 18 HairAccessory.
@@ -76,6 +77,7 @@
 
 - 피부·헤어·눈 색은 시트 색 중 RGB 거리가 가장 가까운 행을 고른다. 일반 빌드는 꾸미기 숨김 색을 제외한다. 정확히 같지 않으면 "가장 가까운 색으로 고른 항목"에 적는다.
 - 헤어 색은 Hair와 Hair1의 거리 합으로 고른다(한 가지 색 행은 두 영역 모두 첫 색과 비교).
+- 헤어 장식 색은 헤어가 장식형(HairType Accessory)일 때만 고른다. 다른 헤어의 18번 값은 쓰지 않는다.
 
 ### 무기 오라·세트 효과 (2026-11-18 구현)
 
@@ -87,11 +89,7 @@
 
 아직 아틀리에에 기능이 없어 불러오지 않는다. 안내에 이름만 적는다. 목록과 계획은 [미구현·생략 목록](ImplementationGaps.md)이 기준이다.
 
-| 캐시 | 안내 이름 |
-|---|---|
-| 염색 18 HairAccessory | 헤어 장식 색 |
-| IsCapClosed(모자 착용) | 모자 접힘 상태 |
-| IsHoodOn | 후드 씀 상태 |
+- 2026-11-19에 헤어 장식 색·후드·모자 덮개를 구현해 지금은 안내할 항목이 없다. `IsRobeWeared`는 읽지 않는다([미구현·생략 목록](ImplementationGaps.md)).
 
 ## 5. 검증
 

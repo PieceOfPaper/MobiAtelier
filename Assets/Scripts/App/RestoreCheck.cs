@@ -67,6 +67,7 @@ public static class RestoreCheck
             case "skinColor": if (data.SkinColors.TryGetValue(sub.shown ?? "", out var c1)) name = c1.DisplayName; break;
             case "hairColor": if (data.HairColors.TryGetValue(sub.shown ?? "", out var c2)) name = c2.DisplayName; break;
             case "eyeColor": if (data.EyeColors.TryGetValue(sub.shown ?? "", out var c3)) name = c3.DisplayName; break;
+            case "hairAccessoryColor": if (data.HairAccessoryColors.TryGetValue(sub.shown ?? "", out var c4)) name = c4.DisplayName; break;
         }
         return "기본값 " + ItemLabel.Of(sub.shown, name);
     }

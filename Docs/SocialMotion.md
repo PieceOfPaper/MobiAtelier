@@ -1,6 +1,6 @@
 # 소셜 모션 미리보기
 
-> 정리일: 2026-11-03
+> 정리일: 2026-11-19
 
 게임 "모션" 메뉴의 행동(화남, 춤 등)을 캐릭터에 재생해 보는 보기 도구다. 꾸미기 값이 아니며 저장하지 않는다.
 데이터 근거와 첫 재생 시험은 [스튜디오 기능 검토](StudioFeatureReview.md) 3장에 있다.
@@ -71,7 +71,8 @@
 | ShaderProperty | 6구간, 2개 | 대상 렌더러에 MaterialPropertyBlock 으로 값을 덮고 구간이 끝나면 지운다. 앱 캐릭터 셰이더에 없는 속성(_OverrideColor·_HalftoneClip)은 보이는 변화가 없다 |
 
 - 쓰지 않는 트랙: 소리(6장), 무기 넣음 ToolState(18구간, 앉기. 소셜 모션은 이미 모든 행동에서 무기를 넣는다). 행동을 읽을 때 안 쓴 트랙 수를 로그에 남긴다.
-- 소품 크기 보정(`DefaultScaleSensitivity`)과 소품 위치 표(`PropTransformDataArr`)는 아직 쓰지 않는다. 어린 외형에서 소품 크기가 게임과 다를 수 있다.
+- 소품 위치 표(`PropTransformDataArr`, 2026-11-19 구현): 성별(None은 공통)·나이·체형이 모두 맞는 행의 `LocalOffset`·`LocalRotation`을 Default 위치·회전 대신 쓴다. 성별이 정확히 맞는 행이 먼저다. 표는 10~17세 행을 가지며 설치본 51구간에 있다 [확인]. 맞는 행이 없으면 Default다(예: 스케치북 어린 외형 표는 13세 행만 있다).
+- 소품 크기 보정(`DefaultScaleSensitivity`·행별 `ScaleSensitivity`, 기준 `PropScaleSource` FxScale·ActorScale)은 쓰지 않는다. 게임 FxScale 계산식을 읽지 못했다 [미확인]. 소품은 붙은 본의 크기를 그대로 따르므로 어린 외형에서 크기가 게임과 다를 수 있다.
 
 ## 5. 확인 상태 (2026-11-03)
 

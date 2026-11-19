@@ -25,6 +25,13 @@ public class EditState
     /// 비어 있으면 없음. 무기(도구 제외)를 착용했을 때만 표시한다. 외곽선이 없는 등급·모르는 값은 표시하지 않고 값은 그대로 둔다.
     /// </summary>
     public string weaponAura;
+    /// <summary>
+    /// 후드를 씀(Equipment.md "후드·모자 덮개"). 표시 중인 로브(없으면 다른 의상)에 후드 메시(Mesh_Hood_On/Off)가 있을 때만 쓴다.
+    /// 후드를 쓰면 모자를 표시하지 않고 헤어는 후드 단계(H5)로 바꾼다. 필드가 없는 이전 파일은 벗음으로 읽는다.
+    /// </summary>
+    public bool hoodOn;
+    /// <summary>모자 덮개를 내림(게임 캐시 IsCapClosed). 표시 중인 모자에 덮개 메시(Mesh_HelmetCover_On/Off)가 있을 때만 쓴다. 기본은 올림.</summary>
+    public bool helmetCoverOn;
 
     public CostumeSlotState Costume(string part)
     {
@@ -53,6 +60,8 @@ public class AppearanceState
     /// <summary>CharacterMouth.GroupId</summary>
     public string mouth;
     public string skinColor, hairColor, eyeColor, mouthColor;
+    /// <summary>CharacterHairAccessoryColor.Id. 장식형 헤어(HairType Accessory)에만 쓴다. 비어 있으면 헤어 모델의 원래 장식 색이다.</summary>
+    public string hairAccessoryColor;
     /// <summary>꾸밈 하나씩(CharacterBeard·CharacterFaceTattoo·CharacterBodyTattoo.Id). 비어 있으면 없음. 표시할 수 없어도 선택은 보관한다.</summary>
     public string beard, faceDeco, bodyDeco;
     /// <summary>외형 색 슬롯(Skin, Hair, Hair1, Eye, Mouth)의 사용자 지정 색. 없으면 색상 시트 값을 쓴다.</summary>

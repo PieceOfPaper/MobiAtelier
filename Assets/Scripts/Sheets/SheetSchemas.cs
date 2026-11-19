@@ -147,6 +147,11 @@ public static class SheetSchemas
         "Id:K(CharacterEyeColorSheet)",
         "DisplayName:S _:S _:U _:U HideOnCustomize:U ColorCode:C");
 
+    /// <summary>헤어 장식 색(HairType Accessory 헤어의 HairAccessory 염색 슬롯). 시작에 필요하지 않다. 읽지 못하면 목록만 비운다.</summary>
+    public static readonly SheetSchema CharacterHairAccessoryColor = new SheetSchema("CharacterHairAccessoryColor",
+        "Id:K(CharacterHairAccessoryColorSheet)",
+        "DisplayName:S _:S _:U _:U HideOnCustomize:U ColorCode:C");
+
     public static readonly SheetSchema CharacterMouthColor = new SheetSchema("CharacterMouthColor",
         "Id:K(CharacterMouthColorSheet)",
         "DisplayName:S _:S ColorCode:C");

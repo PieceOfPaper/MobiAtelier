@@ -23,6 +23,40 @@ public static class CharacterAssembler
     static readonly string[] HelperPrefix = { "Mesh_BP_", "Mesh_SP_", "Cage_" };
     static readonly Regex HelmetLevel = new Regex(@"^Mesh_Helmet_\d+_C(\d)$");
     static readonly Regex HairLevel = new Regex(@"^Mesh_Hair_.*_H(\d)$");
+    const string HoodOn = "Mesh_Hood_On", HoodOffPressed = "Mesh_Hood_Off_Pressed", HoodOff = "Mesh_Hood_Off";
+    const string HelmetCoverOn = "Mesh_HelmetCover_On", HelmetCoverOff = "Mesh_HelmetCover_Off";
+    /// <summary>
+    /// 후드를 쓴 헤어 단계(게임 StageObjectCostumeVariantsComponent.hairLevelOnHood). 값은 정적 생성자 안이라 읽지 못했다.
+    /// 후드를 쓴 채 구운 NPC 모델이 헤어 H5(H0 과 함께)만 가져 5로 본다 [추정].
+    /// </summary>
+    const int HoodHairLevel = 5;
+
+    static bool IsHoodMesh(string name) => name.StartsWith(HoodOn, StringComparison.Ordinal) || name.StartsWith(HoodOff, StringComparison.Ordinal);
+
+    static bool HasMesh(Def d, Func<string, bool> match)
+    {
+        foreach (var m in d.Root.Get("SkinnedMeshList").Arr()) if (match(m.Get("MeshName").Str() ?? "")) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 헤어 모델에서 실제로 보일 단계. 원하는 단계 메시가 없으면 그보다 낮은 가장 가까운 단계, 그것도 없으면 가장 낮은 단계.
+    /// 헤어 213개는 H0~H5 를 모두 갖는다 [확인: 설치본 모델 정의]. 일부만 가진 헤어를 위한 대비다.
+    /// </summary>
+    static int ShownHairLevel(Def hair, int wanted)
+    {
+        int below = -1, lowest = int.MaxValue;
+        foreach (var m in hair.Root.Get("SkinnedMeshList").Arr())
+        {
+            var lv = HairLevel.Match(m.Get("MeshName").Str() ?? "");
+            if (!lv.Success) continue;
+            int n = lv.Groups[1].Value[0] - '0';
+            if (n == wanted) return n;
+            if (n < wanted && n > below) below = n;
+            lowest = Math.Min(lowest, n);
+        }
+        return below >= 0 ? below : lowest == int.MaxValue ? wanted : lowest;
+    }
 
     sealed class Def
     {
@@ -96,24 +130,61 @@ public static class CharacterAssembler
             try { defs.Add(new Def { Part = p, Path = path, Dir = path.Substring(0, path.LastIndexOf('/') + 1), Root = files.ReadSjon(path) }); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(p, "모델 정의 읽기 실패: " + e.Message); }
         }
+        // 후드·모자 덮개(Equipment.md "후드·모자 덮개", 게임 StageObjectCostumeVariantsComponent·CostumeVisibleSetter).
+        //   후드: 표시 중인 로브, 없으면 다른 의상 중 Mesh_Hood_On/Off 가 있는 첫 파츠 하나. 쓰면 모자를 숨기고 헤어는 HoodHairLevel [추정].
+        //   덮개: 모자의 Mesh_HelmetCover_On/Off. 내리면 Hide*ByHelmetCover 숨김 규칙을 더한다.
+        Def hoodDef = null, hatDef = null;
+        foreach (var d in defs)
+        {
+            if (d.Part.Role != PartRole.Costume) continue;
+            if (d.Part.Key == AssemblyPlan.CostumeKey("Hat")) hatDef = d;
+            if (HasMesh(d, IsHoodMesh) && (hoodDef == null || d.Part.Key == AssemblyPlan.CostumeKey("Robe"))) hoodDef = d;
+        }
+        plan.HasHood = hoodDef != null;
+        plan.HoodOn = plan.HasHood && plan.HoodRequested;
+        plan.HatHiddenByHood = plan.HoodOn && hatDef != null;
+        plan.HasHelmetCover = hatDef != null && !plan.HatHiddenByHood && HasMesh(hatDef, n => n.StartsWith(HelmetCoverOn, StringComparison.Ordinal));
+        plan.HelmetCoverOn = plan.HasHelmetCover && plan.HelmetCoverRequested;
+        bool hatShown = hatDef != null && !plan.HatHiddenByHood;
+
         bool hideHair = false, hideHead = false, hideEye = false, hideBeard = false;
         int hairLevel = 0;
         foreach (var d in defs)
         {
             if (d.Part.Role != PartRole.Costume) continue;
             var info = d.Root.Get("ModelPartInfo");
-            hideHair |= info.Get("HideHair").B();
-            hideHead |= info.Get("HideHead").B();
-            hideEye |= info.Get("HideEye").B();
-            hideBeard |= info.Get("HideBeard").B();
             // 치마 등 옷 모양 조건(Action·AnimationStateSet 의 Clothing:ShortSkirt 등). 앉기 같은 모션이 옷에 맞는 클립을 고른다.
             string clothing = info.Get("ClothingCondition").Str();
             if (!string.IsNullOrEmpty(clothing) && clothing != "None") plan.Clothing = clothing;
+            // 후드로 숨긴 모자는 숨김 규칙·헤어 단계를 쓰지 않는다.
+            if (d == hatDef && !hatShown) continue;
+            bool cover = d == hatDef && plan.HelmetCoverOn;
+            bool Flag(string name) => info.Get(name).B() || (cover && info.Get(name + "ByHelmetCover").B());
+            hideHair |= Flag("HideHair");
+            hideHead |= Flag("HideHead");
+            hideEye |= Flag("HideEye");
+            hideBeard |= Flag("HideBeard");
             foreach (var m in d.Root.Get("SkinnedMeshList").Arr())
             {
                 var match = HelmetLevel.Match(m.Get("MeshName").Str() ?? "");
                 if (match.Success) hairLevel = Math.Max(hairLevel, match.Groups[1].Value[0] - '0');
             }
+        }
+        if (plan.HoodOn) hairLevel = Math.Max(hairLevel, HoodHairLevel);
+        plan.HairLevel = hairLevel;
+
+        // 후드·덮개 메시 하나를 켤지. 해당하지 않는 메시는 null(프리팹 값 유지).
+        bool? CostumeVariantVisible(Def d, string name)
+        {
+            if (name.StartsWith(HelmetCoverOn, StringComparison.Ordinal)) return d == hatDef ? plan.HelmetCoverOn : (bool?)null;
+            if (name.StartsWith(HelmetCoverOff, StringComparison.Ordinal)) return d == hatDef ? !plan.HelmetCoverOn : (bool?)null;
+            if (!IsHoodMesh(name)) return null;
+            bool on = d == hoodDef && plan.HoodOn;
+            if (name.StartsWith(HoodOn, StringComparison.Ordinal)) return on;
+            // 벗은 후드: 모자를 쓰면 눌린 후드(있으면), 아니면 보통 후드.
+            bool pressed = hatShown && HasMesh(d, n => n.StartsWith(HoodOffPressed, StringComparison.Ordinal));
+            if (name.StartsWith(HoodOffPressed, StringComparison.Ordinal)) return !on && pressed;
+            return !on && !pressed;
         }
 
         var bones = new List<Transform>();
@@ -192,8 +263,10 @@ public static class CharacterAssembler
             partGo.transform.SetParent(root.transform, false);
             // 수염은 머리에 붙으므로 머리를 가리는 의상에서도 숨긴다.
             if ((part.Role == PartRole.Hair && hideHair) || (part.Role == PartRole.Head && hideHead) || (part.Role == PartRole.Eyes && hideEye) ||
-                (part.Role == PartRole.Beard && (hideBeard || hideHead)))
+                (part.Role == PartRole.Beard && (hideBeard || hideHead)) || (d == hatDef && !hatShown))
                 partGo.SetActive(false);
+            int shownHairLevel = part.Role == PartRole.Hair ? ShownHairLevel(d, hairLevel) : -1;
+            if (shownHairLevel >= 0 && shownHairLevel != hairLevel) L($"  헤어 단계 H{hairLevel} 메시가 없어 H{shownHairLevel} 표시: {part.Model}");
 
             string prefabPath = BundleCache.AssetRoot + d.Root.Get("AssetPathToLoad").Str();
             var prefab = bundles.LoadAsset<GameObject>(prefabPath);
@@ -308,8 +381,11 @@ public static class CharacterAssembler
 
                 // 프리팹의 켜짐·꺼짐을 그대로 따른다(예: 눈의 Mesh_EyeBasePlane 은 감은 눈 평면이라 기본으로 꺼져 있다).
                 if (psmr) { go2.SetActive(psmr.gameObject.activeSelf); smr.enabled = psmr.enabled; }
+                // 헤어 단계: 프리팹은 H0 만 켜 두고 H1~H5 를 꺼 둔다 [확인: 헤어 프리팹]. 고른 단계만 켜고 나머지는 끈다.
                 var lv = HairLevel.Match(name);
-                if (part.Role == PartRole.Hair && lv.Success && lv.Groups[1].Value[0] - '0' != hairLevel) go2.SetActive(false);
+                if (part.Role == PartRole.Hair && lv.Success) go2.SetActive(lv.Groups[1].Value[0] - '0' == shownHairLevel);
+                // 후드·덮개: 프리팹은 쓴·벗은 메시를 모두 켜 둔다 [확인: 로브·원피스·모자 프리팹]. 상태에 맞는 것만 켠다.
+                if (part.Role == PartRole.Costume && CostumeVariantVisible(d, name) is bool variant) go2.SetActive(variant);
                 view.Renderers.Add((part.Key, smr));
                 byIndex[i] = subMats;
                 if (part.Role == PartRole.Body && !view.Body) { view.Body = smr; view.BodyFullMesh = mesh; }
@@ -530,6 +606,8 @@ public static class CharacterAssembler
         }
         AttachSetEffect(files, bundles, plan, view, shader, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
+        if (plan.HasHood || hatDef != null)
+            L($"후드·덮개: 후드 {(hoodDef != null ? hoodDef.Part.Model + (plan.HoodOn ? " 씀" : " 벗음") : "없음")}, 모자 {(hatDef == null ? "없음" : hatShown ? "표시" : "후드로 숨김")}, 덮개 {(plan.HasHelmetCover ? (plan.HelmetCoverOn ? "내림" : "올림") : "없음")}");
         return view;
     }
 
@@ -640,6 +718,9 @@ public static class CharacterAssembler
         {
             foreach (var i in from.Issues) if (i.FromBuild && i.Kind != IssueKind.DyeUnresolved && !to.Issues.Exists(x => x.Same(i))) to.Issues.Add(i);
             to.Clothing = from.Clothing;
+            // 후드·덮개 결과도 조립 때 정해진다(색 편집은 다시 조립하지 않고 요청 값도 바꾸지 않는다).
+            to.HasHood = from.HasHood; to.HoodOn = from.HoodOn; to.HatHiddenByHood = from.HatHiddenByHood;
+            to.HasHelmetCover = from.HasHelmetCover; to.HelmetCoverOn = from.HelmetCoverOn; to.HairLevel = from.HairLevel;
         }
         CheckDyes(to, view);
     }

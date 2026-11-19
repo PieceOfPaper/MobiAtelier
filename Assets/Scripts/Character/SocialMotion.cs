@@ -547,16 +547,37 @@ public static class SocialMotionLoader
         var go = UnityEngine.Object.Instantiate(prefab, bone, false);
         go.name = prefab.name;
         go.SetActive(false);
-        var rot = Quaternion.Euler(CharacterAssembler.Vec(p.Get("DefaultLocalRotation"), Vector3.zero));
-        go.transform.localPosition = CharacterAssembler.Vec(p.Get("DefaultLocalOffset"), Vector3.zero);
+        var place = PropPlacement(p, view.Plan);
+        var rot = Quaternion.Euler(CharacterAssembler.Vec(place.Get("LocalRotation") ?? p.Get("DefaultLocalRotation"), Vector3.zero));
+        go.transform.localPosition = CharacterAssembler.Vec(place.Get("LocalOffset") ?? p.Get("DefaultLocalOffset"), Vector3.zero);
         go.transform.localRotation = rot;
         ConvertMaterials(go, shader, a.Owned);
-        log?.Invoke($"  소품 [{seg}] {begin:F2}~{(inf ? "끝없음" : end.ToString("F2"))}s {asset} → {bone.name}");
+        log?.Invoke($"  소품 [{seg}] {begin:F2}~{(inf ? "끝없음" : end.ToString("F2"))}s {asset} → {bone.name}{(place != null ? $" (외형별 위치 {place.Get("Gender").Str()} {place.Get("Age").I()}세 {place.Get("BodyType").Str()})" : "")}");
         a.Props.Add(new ActionProp
         {
             Segment = seg, Begin = begin, End = end, Infinite = inf, Key = p.Get("PropKey").Str() ?? "", Go = go, Rotation = rot,
             FollowRotation = !(p.Get("FollowAttachBoneRotation") is bool f) || f, OnGround = p.Get("SetOnGround").B(),
         });
+    }
+
+    /// <summary>
+    /// 소품 위치 표(PropTransformDataArr)에서 현재 외형의 행. 성별(None 은 공통)·나이·체형이 모두 맞는 행이며, 성별이 정확히 맞는 행을 먼저 쓴다.
+    /// 맞는 행이 없으면 null(Default 위치·회전). 표는 10~17세 행을 가진다 [확인: 설치본 타임라인 51구간].
+    /// 행의 ScaleSensitivity·DefaultScaleSensitivity(크기 보정)는 게임 FxScale 계산식을 확인하지 못해 쓰지 않는다(ImplementationGaps.md).
+    /// </summary>
+    static object PropPlacement(object p, AssemblyPlan plan)
+    {
+        if (plan == null) return null;
+        string gender = plan.Male ? "Male" : "Female";
+        object common = null;
+        foreach (var t in p.Get("PropTransformDataArr").Arr())
+        {
+            if (t.Get("Age").I() != plan.Age || t.Get("BodyType").Str() != plan.BodyType) continue;
+            string g = t.Get("Gender").Str();
+            if (g == gender) return t;
+            if (g == "None" && common == null) common = t;
+        }
+        return common;
     }
 
     static void AddEffect(BundleCache bundles, CharacterView view, ActionMotion a, int seg, object p, float begin, float end, bool inf, Action<string> log)

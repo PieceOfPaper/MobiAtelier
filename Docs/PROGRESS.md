@@ -1,10 +1,11 @@
 # 진행 상황
 
-> 최종 갱신: 2026-11-18
+> 최종 갱신: 2026-11-19
 > Codex와 Claude Code가 번갈아 작업하며 공유하는 인계 문서다. 작업 단위가 끝날 때마다 갱신한다(`AGENTS.md` 8장).
 
 ## 1. 현재 단계
 
+- 미구현 1순위 4개(2026-11-19, Claude Code): ① 모자 쓰면 헤어가 사라지는 버그 수정 — 원인은 헤어 프리팹이 H1~H5 를 꺼 두는데 조립기가 고른 단계를 켜지 않은 것 [확인: 프리팹]. ② 후드 씀/벗음·모자 덮개 올림/내림 구현(`hoodOn`·`helmetCoverOn`, 의상 › 모자·로브 아래 줄). 프리팹이 쓴·벗은 메시를 모두 켜 둬 겹쳐 그려지던 것도 고쳤다. ③ 헤어 장식 색(`CharacterHairAccessoryColor` 10행, 장식형 헤어만). ④ 소셜 모션 소품 위치 표(`PropTransformDataArr`)의 외형별 위치·회전. 소품 **크기** 보정은 게임 FxScale 식을 못 읽어 하지 않았다(ImplementationGaps). 불러오기의 "지원하지 않는 항목" 3개를 연결했다. 배치 촬영 15조합·정책 시험 60개 통과. 앱 실조작·게임 화면 비교는 [미확인].
 - 무기 오라·세트 효과·불러오기 연결(2026-11-18, Claude Code): 미구현 A 목록을 마쳤다. 오라는 게임 무기 셰이더의 외곽선 패스를 디스어셈블해 `MobiCharacter.shader` 의 `WeaponGradeOutline` 패스로 옮겼다(색은 설치 폴더 StageConstants `WeaponGradeOutlineColorSettings`, 7등급 [확인]). 상태 `weaponAura`, 패널 "무기 오라" 줄(색 편집 경로, 재조립 없음). 세트 효과는 `CostumeSetEffect` 의 활성 연출 5행 [확인]을 보이는 의상으로 판정해 타임라인을 계속 재생한다(`TimelineEffectPlayer`, 소셜 모션 로더 재사용). 불러오기는 `WeaponAuraGrade` 를 넣고 `CostumeSet` 은 다시 판정한다. 얼굴·몸꾸밈 색은 고르지 않기로 확정(사용자: 게임도 못 고름). 배치 촬영(에픽·전설+·신화 외곽선, JUJU 두 세트 연출)·정책 시험 60개 통과·Windows 빌드 실행 확인. 앱 실조작·게임 화면 비교는 [미확인].
 - 정책 시험 실패 4개 수정(2026-11-18): 원인은 시험이 넣은 카메라 거리 4가 새 카메라 최대 거리(3, 키에 따라 줄어듦)를 넘어, 실행 취소로 키가 바뀌면 게임 규칙대로 다시 잘린 것 [확인]. 코드는 그대로 두고 시험 값을 범위 안(거리 2)으로 고쳤다.
 
@@ -73,6 +74,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-19 | 헤어 단계·후드·모자 덮개: `CharacterAssembler`(후드 의상·모자 판정, `Hide*ByHelmetCover`, 헤어 단계 켜기 `ShownHairLevel`, `CostumeVariantVisible`, `CarryBuildResults` 에 결과 전달), `AssemblyPlan` 요청·결과 필드, `EditState.hoodOn·helmetCoverOn`. 헤어 장식 색: `SheetSchemas.CharacterHairAccessoryColor`(선택 시트), `GameData.HairAccessoryColors`, `appearance.hairAccessoryColor`, 계획 전역 색 `HairAccessory`, 패널 `ColorRow` 의 "기본 색" 항목. 패널 `VariantRow`(후드·모자 덮개). 불러오기 `IsHoodOn`·`IsCapClosed`·염색 18 연결. 소셜 소품 `PropPlacement`. 스모크 `hair=`·`hairAcc=`·`hood=`·`cover=` 키와 머리 근접 촬영. 런타임·에디터 dotnet 빌드 오류 0(기존 경고 3), Unity 배치 컴파일 오류 0 |
 | 2026-11-18 | 무기 오라: `WeaponAuraData`(새 파일, StageConstants 색), `EditState.weaponAura`, `PlanResolver.ResolveWeaponAura`, `CharacterView.ApplyWeaponAura`(무기 메시 자식 외곽선 렌더러, `OutlineFollow`), 셰이더 `WeaponGradeOutline` 패스(일반 재질은 `SetShaderPassEnabled` 로 끔), 전역 `_Global_Weapon_Texture` 를 조립 때 넣음. 세트 효과: `SheetSchemas.CostumeSetEffect`, `GameData.ActivationSets`, `ResolveSetEffect`, `SocialMotionLoader.LoadTimelines`·`TimelineEffectPlayer`(이펙트 갱신을 `ActionMotion.UpdateEffects` 로 옮겨 공유). 패널 "무기 오라"·"세트 효과" 줄, 불러오기 오라 연결, 스모크 `aura=` 키. 정책 시험 카메라 값 수정 |
 | 2026-11-17 | 도구: `SheetSchemas` EquipmentTool·EquipmentToolType·Instrument, `GameData.Tools/ToolList/LoadTools/LinkGatheringActions`, `CostumeSlotState.KindTool·Row()`, `PlanResolver.ResolveToolUse`·`WeaponIsTool`, 루트 장착 도구 넣음 숨김(`CharacterAssembler.Mount`), 패널 무기 목록·도구 자세, 불러오기 도구 역조회(무기 우선·건너뛴 도구 한 줄 안내). 런타임·에디터 dotnet 빌드 오류 0, 정책 시험 실패 4개는 변경 전과 같음(아래 인계 메모) |
 | 2026-11-15 | 에디터 전용 프리 카메라: 화각 버튼 아래 버튼(`#if UNITY_EDITOR`, 빌드 제외). `CameraController.SetFreeMode` 는 각도·거리·높이 제한을 무시하고 따로 움직이며 저장·자동 저장에 남기지 않고, 끄면 켜기 전 시점으로 돌아간다. 런타임 dotnet 빌드(에디터·비에디터 정의) 오류 0. 에디터 플레이 확인 전 |
@@ -169,7 +171,7 @@
 0. 스튜디오 배경의 실패 처리·복원 안내·표기 보완과 실제 조작 검증. 배경은 꾸미기 이력에 포함하고 코디 초기화 시 유지한다(2026-11-03). 조명 방향·원본 재현은 확인 대기다.
 1. 사용자 확인: 에디터 Play·빌드에서 마우스 조작(카메라, 팝업 버튼, 폴더 선택 대화상자). 아래 4장의 확인 요청 참고.
 2. 사용자 확인: 꾸미기 창 1차(4장 확인 요청 4). 문제 수정.
-   - 발견한 문제: 모자 착용 시 헤어가 모두 사라짐. (무기 장착점은 2026-11-03 구현)
+   - 발견한 문제: 모자 착용 시 헤어가 모두 사라짐 → 2026-11-19 수정. (무기 장착점은 2026-11-03 구현)
 3. 사용자 확인: 색 적용(4장 확인 요청 5). 문제 수정.
 4. ~~새 UI 구현·UI 연출~~ (2026-11-03 구현). 사용자 조작 확인 후 문제 수정(4장 확인 요청 7). 연출 시간은 체감에 따라 `UIAnim`의 Fast·Normal·Slow, 패널 `SlideSeconds`로 조정한다.
 5. ~~시스템 메뉴·ESC·경로 적용 후 재시작·부분 복원 안내~~ (2026-11-03 구현). 사라진 염색 파트는 실제 조립 뒤 검사하도록 보완했다. 다른 설치 경로로 실제 재시작 시험은 남아 있다.
@@ -182,6 +184,9 @@
 12. 마지막으로 접속한 캐릭터 불러오기와 미지원 항목(도구·무기 오라·세트 효과)을 구현했다. 남은 확인: 앱에서 오라 등급 바꾸기·실행 취소, 세트 연출 화면을 게임과 비교, 오라가 있는 실제 캐시·남성·어린·로브 캐릭터 불러오기 [미확인].
 
 ## 4. 인계 메모
+
+- 헤어 단계·후드(2026-11-19): 게임 `StageObjectCostumeVariantsComponent`·`CostumeVisibleSetter` 는 선언만 있고 본문을 못 읽었다. 후드 헤어 단계 5·후드를 쓰면 모자 숨김·로브 우선은 추정이다(Equipment.md "후드·모자 덮개"). 게임에서 후드+모자 화면을 보면 먼저 맞춰 본다. 후드·덮개 결과(`HasHood` 등)는 조립기가 채우므로 색 편집 경로는 `CarryBuildResults` 로 넘긴다. 새 조립 결과 필드를 더하면 거기에도 넣어야 패널 줄이 사라지지 않는다.
+- 확인 요청(2026-11-19): 앱에서 ① 모자(C1~C5)를 쓰면 헤어가 보이는지, ② 로브·원피스 후드 씀/벗음 줄과 모자 숨김 안내, ③ 기사 투구·노블리스 아너 바이저의 덮개 올림/내림, ④ 브레이드 트윈테일·러블리 트윈리본 롱헤어의 "헤어 장식 색" 줄, ⑤ 실행 취소·자동 저장 후 재시작에서 후드·덮개·장식 색이 유지되는지.
 
 - 무기 오라(2026-11-18): 외곽선 재질은 `MobiCharacter` 셰이더 복사본에서 외곽선 패스(LightMode `SRPDefaultUnlit`)만 켠 것이다. 다른 캐릭터 재질은 `ConvertMaterial` 이 이 패스를 끄고, 셰이더도 등급 번호(`_WeaponGradeColor.w`) 4 미만이면 삼각형을 모은다. `ApplyPlanColors` 가 조립 중에도 불리므로 외곽선은 셰이더를 넘긴 뒤(조립 끝) 한 번만 만든다. 이 순서를 바꾸면 색이 0으로 남아 안 보인다(실제로 겪음). 원본 식대로라 외곽선은 희미하고 노이즈로 반짝인다(알파 평균 약 0.05).
 - 세트 효과(2026-11-18): 시각 연출이 있는 세트는 설치본 5행뿐이다(JUJU 콜라보 4 + EmptyTimeline 1). 나머지 256행은 능력치만 있다. 에픽·전설 행은 의상·연출이 같아 시트 순서 첫 행(에픽)을 고르고 이름의 "(에픽)"을 뗀다.

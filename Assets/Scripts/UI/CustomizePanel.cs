@@ -348,6 +348,15 @@ public sealed class CustomizePanel
             () => state.appearance.hair, (s, id) => s.appearance.hair = id, id => GameData.Resolve(data.Hairs, id, HairVariant()));
         ColorRow(look, "헤어 색상", "hairColor", () => data.HairColors, () => state.appearance.hairColor, new[] { "Hair", "Hair1" }, HairColorIssue,
             (s, id) => s.appearance.hairColor = id);
+        // 헤어 장식 색: 장식형 헤어(리본·머리끈 등, HairType Accessory)일 때만 보인다. 비우면 모델 원래 색이다.
+        var accessoryRow = ColorRow(look, "헤어 장식 색", "hairAccessoryColor", () => data.HairAccessoryColors, () => state.appearance.hairAccessoryColor,
+            new[] { "HairAccessory" }, null, (s, id) => s.appearance.hairAccessoryColor = id, "기본 색");
+        refreshers.Add(() =>
+        {
+            var hair = GameData.Resolve(data.Hairs, state.appearance.hair, HairVariant());
+            bool shown = hair != null && hair.HairType == "Accessory" && data.HairAccessoryColors.Count > 0;
+            accessoryRow.style.display = shown ? DisplayStyle.Flex : DisplayStyle.None;
+        });
         AppearanceRow(look, "눈 모양", "eyes", () => GroupItems(data.Eyes, state.appearance.eyes, HeadVariant, "Head_00"),
             () => state.appearance.eyes, (s, id) => s.appearance.eyes = id, id => GameData.Resolve(data.Eyes, id, HeadVariant(), "Head_00"));
         ColorRow(look, "눈 색상", "eyeColor", () => data.EyeColors, () => state.appearance.eyeColor, new[] { "Eye" }, null,
@@ -363,7 +372,15 @@ public sealed class CustomizePanel
             () => state.appearance.bodyDeco, (s, id) => s.appearance.bodyDeco = id, id => Deco(data.BodyDecos, id));
 
         var wear = Section("costume");
-        foreach (var (part, label) in CostumeParts) CostumeRow(wear, part, label);
+        foreach (var (part, label) in CostumeParts)
+        {
+            CostumeRow(wear, part, label);
+            // 모자 덮개는 모자 아래, 후드는 로브 아래에 둔다. 표시 중인 의상에 해당 메시가 있을 때만 보인다.
+            if (part == "Hat") VariantRow(wear, "모자 덮개", "올림", "내림", () => plan?.HasHelmetCover ?? false,
+                () => state.helmetCoverOn, (s, on) => s.helmetCoverOn = on, null);
+            else if (part == "Robe") VariantRow(wear, "후드", "벗음", "씀", () => plan?.HasHood ?? false,
+                () => state.hoodOn, (s, on) => s.hoodOn = on, () => plan != null && plan.HatHiddenByHood ? "후드를 쓰면 모자를 표시하지 않습니다." : null);
+        }
         WeaponPoseRows(wear);
 
         BackgroundRow(Section("background"));
@@ -665,6 +682,11 @@ public sealed class CustomizePanel
                 lines.Add("다른 의상에 가려져 표시하지 않습니다. 선택과 염색은 유지합니다.");
                 statusColor = AppUI.WarnColor;
             }
+            else if (part == "Hat" && plan != null && plan.HatHiddenByHood && res != null && res.Status == CostumeStatus.Applied)
+            {
+                lines.Add("후드를 써서 표시하지 않습니다. 선택과 염색은 유지합니다.");
+                statusColor = AppUI.WarnColor;
+            }
             else if (res != null && res.Status != CostumeStatus.Applied)
             {
                 color = AppUI.ErrorColor;
@@ -685,6 +707,31 @@ public sealed class CustomizePanel
         var box = Row(label, dd, status);
         box.Add(dyes);
         parent.Add(box);
+    }
+
+    /// <summary>
+    /// 의상 상태 하나(후드 씀/벗음, 모자 덮개 올림/내림). 다시 조립한다(메시 표시·헤어 단계가 바뀐다).
+    /// 해당 메시가 있는 의상을 표시할 때만 줄을 보인다. 값은 의상을 바꿔도 유지한다.
+    /// </summary>
+    void VariantRow(VisualElement parent, string label, string offName, string onName, Func<bool> available,
+        Func<bool> current, Action<EditState, bool> set, Func<string> note)
+    {
+        const string Off = "off", On = "on";
+        var status = StatusLabel();
+        var dd = Dropdown(() => new List<DropdownItem>
+        {
+            new DropdownItem { Id = Off, Name = offName },
+            new DropdownItem { Id = On, Name = onName },
+        }, it => edit(s => set(s, it.Id == On)));
+        var row = Row(label, dd, status);
+        refreshers.Add(() =>
+        {
+            row.style.display = available() ? DisplayStyle.Flex : DisplayStyle.None;
+            bool on = current();
+            dd.SetValue(on ? On : Off, on ? onName : offName, null);
+            SetStatus(status, note?.Invoke(), AppUI.Sub);
+        });
+        parent.Add(row);
     }
 
     // ------------------------------------------------------------ 무기 자세 (WeaponPose.md)
@@ -920,11 +967,17 @@ public sealed class CustomizePanel
     /// <summary>
     /// 색 시트 행을 고르는 줄. 고르면 해당 외형 색 슬롯의 사용자 지정 색(예전 JSON 에 있을 수 있음)을 지운다.
     /// </summary>
-    void ColorRow(VisualElement parent, string label, string key, Func<Dictionary<string, ColorData>> map, Func<string> current, string[] slots,
-        Func<ColorData, string> mismatch, Action<EditState, string> set)
+    /// <param name="noneName">주면 목록 맨 앞에 "선택 없음(모델 원래 색)" 항목을 이 이름으로 둔다.</param>
+    VisualElement ColorRow(VisualElement parent, string label, string key, Func<Dictionary<string, ColorData>> map, Func<string> current, string[] slots,
+        Func<ColorData, string> mismatch, Action<EditState, string> set, string noneName = null)
     {
         var status = StatusLabel();
-        var dd = Dropdown(() => ColorItems(map(), current(), mismatch), it => editColors(s =>
+        var dd = Dropdown(() =>
+        {
+            var items = ColorItems(map(), current(), mismatch);
+            if (noneName != null) items.Insert(0, new DropdownItem { Id = null, Name = noneName, Sub = "모델 원래 색" });
+            return items;
+        }, it => editColors(s =>
         {
             set(s, it.Id);
             foreach (var sl in slots) ColorOverrides.Set(s.appearance.colors, sl, null);
@@ -945,10 +998,12 @@ public sealed class CustomizePanel
             var (planText, error) = PlanStatus(key);
             string problem = planText ?? (c != null ? mismatch?.Invoke(c) : null);
             string sub = SubstituteSub(key) ?? (c != null ? ColorHex(c) : null);
-            dd.SetValue(id, c != null ? ColorLabel(c) : id ?? "(없음)", sub, error ? AppUI.ErrorColor : (Color?)null, c != null ? Swatches(c) : null);
+            dd.SetValue(id, c != null ? ColorLabel(c) : id ?? noneName ?? "(없음)", sub, error ? AppUI.ErrorColor : (Color?)null, c != null ? Swatches(c) : null);
             SetStatus(status, problem, error ? AppUI.ErrorColor : AppUI.WarnColor);
         });
-        parent.Add(Row(label, dd, status));
+        var row = Row(label, dd, status);
+        parent.Add(row);
+        return row;
     }
 
     static string ColorLabel(ColorData c) => ItemLabel.Of(c.Id, c.DisplayName, c.HideOnCustomize);
