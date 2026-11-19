@@ -757,7 +757,7 @@ public static class CharacterAssembler
         var motion = view.GetComponent<CharacterMotion>();
         string group = body?.Root.Get("ActorModelInfo").Get("LookAtGroupName").Str();
         if (!motion) { plan.LookAtUnavailable = "기본 모션이 없어 시선을 보정할 수 없습니다"; L("시선: " + plan.LookAtUnavailable); return; }
-        var la = CharacterLookAt.Attach(view, plan.LookAtTable, group, out string why);
+        var la = CharacterLookAt.Attach(view, plan.LookAtTable, plan.CustomizeLookAt, group, out string why);
         if (la == null) { plan.LookAtUnavailable = why; L("시선: " + why); return; }
         motion.LookAt = la;
         L($"시선: 그룹 {group}, {la.Describe()}, {(plan.LookAtCamera ? "켬" : "끔")}");

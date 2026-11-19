@@ -190,6 +190,8 @@ public sealed class AssemblyPlan
     public bool LookAtCamera;
     /// <summary>시선 처리 시트 전체(GameData.LookAt). 조립기가 몸 모델의 LookAtGroupName 으로 고른다.</summary>
     public List<LookAtParam> LookAtTable;
+    /// <summary>꾸미기 캐릭터 전용 시선 본(GameData.CustomizeLookAt). 비어 있으면 LookAt 시트만 쓴다.</summary>
+    public List<LookAtParam> CustomizeLookAt;
     /// <summary>시선을 쓸 수 없는 이유(조립기가 채운다). null 이면 쓸 수 있다.</summary>
     public string LookAtUnavailable;
 
@@ -280,6 +282,7 @@ public static class PlanResolver
         plan.HelmetCoverRequested = state.helmetCoverOn;
         plan.LookAtCamera = state.lookAtCamera;
         plan.LookAtTable = data.LookAt;
+        plan.CustomizeLookAt = data.CustomizeLookAt;
         plan.ModelTimelines = data.ModelTimelines;
 
         string prefix = plan.Infant ? "HC" : plan.Male ? "HM" : "HF";

@@ -261,6 +261,11 @@ public sealed class GameData
     public string HairAccessoryColorError;
     /// <summary>시선 처리(LookAt 시트). 읽지 못하면 비우고 LookAtError 에 적는다(카메라 쳐다보기만 쓸 수 없다).</summary>
     public readonly List<LookAtParam> LookAt = new List<LookAtParam>();
+    /// <summary>
+    /// 꾸미기 캐릭터 전용 시선 본(Constants/LookAt/CustomizeActor, 게임 CustomizeActorLookAtParameterComponent) [확인: 설치본].
+    /// _Spine·_Spine1·_Neck(각 좌우 20°)·_Head(40°, 상하 −19~28°)·눈(39°, ±2°). 축은 없어 LookAt 시트(Humanoid)에서 가져온다. 읽지 못하면 비운다.
+    /// </summary>
+    public readonly List<LookAtParam> CustomizeLookAt = new List<LookAtParam>();
     /// <summary>환생 눈장식 색 프리셋(CharacterCustomizeEyeDeco → CostumeRewardPreset). 읽지 못하면 비운다.</summary>
     public readonly List<EyeDecoPreset> EyeDecoPresets = new List<EyeDecoPreset>();
     /// <summary>모델 이름 → 연출 타임라인. 조건 태그가 없는 행만 담는다. 읽지 못하면 비운다.</summary>
@@ -390,6 +395,22 @@ public sealed class GameData
                 });
         }
         catch (Exception e) { g.LookAt.Clear(); g.LookAtError = SheetSchemas.LookAt.Sheet + ": " + e.Message; }
+        try
+        {
+            const string path = "Constants/LookAt/CustomizeActor.sjon.bin";
+            if (files.HasResource(path))
+                foreach (var grp in files.ReadSjon(path).Get("groups").Arr())
+                {
+                    foreach (var b in grp.Get("bones").Arr())
+                        g.CustomizeLookAt.Add(new LookAtParam
+                        {
+                            Group = "CustomizeActor", Bone = b.Get("name").Str(), MovingState = "Stand", IsEye = b.Get("isEye").B(),
+                            YawMax = b.Get("yawMax").F(), PitchMin = b.Get("pitchMin").F(), PitchMax = b.Get("pitchMax").F(), YawCoordinate = b.Get("coord").Str(),
+                        });
+                    break;
+                }
+        }
+        catch (Exception e) { g.CustomizeLookAt.Clear(); g.LookAtError = (g.LookAtError == null ? "" : g.LookAtError + " / ") + "CustomizeActor 시선 상수: " + e.Message; }
         try
         {
             var want = new Dictionary<string, EyeDecoPreset>(StringComparer.Ordinal);

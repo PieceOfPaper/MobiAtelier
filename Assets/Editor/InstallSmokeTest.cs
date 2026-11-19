@@ -399,13 +399,23 @@ public static class InstallSmokeTest
                         {
                             // (이름, 카메라 좌우 각, 상하 각): 180 이 정면. 상하 +는 위에서 내려다본다.
                             foreach (var (n, yaw, pitch) in new[] { ("front", 180f, 5f), ("left40", 140f, 5f), ("right40", 220f, 5f), ("left75", 105f, 5f),
-                                         ("above", 180f, 35f), ("below", 180f, -25f), ("behind", 20f, 5f) })
+                                         ("left100", 80f, 5f), ("left130", 50f, 5f), ("above", 180f, 35f), ("below", 180f, -25f), ("behind", 20f, 5f) })
                             {
                                 var pivot = lh.position + new Vector3(0, 0.05f, 0);
                                 var camPos = pivot + Quaternion.Euler(pitch, yaw, 0) * new Vector3(0, 0, -0.9f);
                                 look.TargetOverride = () => camPos;
                                 om.SampleAll(0);
                                 Capture(cam, view, Path.Combine(outDir, $"{tag}_look_{n}.png"), yaw, pitch, 0.9f, pivot, 768, 768);
+                                log.AppendLine($"  시선 {n}: {look.LastState}");
+                            }
+                            // 전신: 뒤쪽 비스듬한 카메라(게임 스튜디오 스크린샷과 비교용).
+                            foreach (var (n, yaw) in new[] { ("full_back130", 50f), ("full_back160", 20f) })
+                            {
+                                var pivot = new Vector3(0, 0.85f, 0);
+                                var camPos = pivot + Quaternion.Euler(8f, yaw, 0) * new Vector3(0, 0, -3.2f);
+                                look.TargetOverride = () => camPos;
+                                om.SampleAll(0);
+                                Capture(cam, view, Path.Combine(outDir, $"{tag}_look_{n}.png"), yaw, 8f, 3.2f, pivot);
                                 log.AppendLine($"  시선 {n}: {look.LastState}");
                             }
                             look.TargetOverride = null;

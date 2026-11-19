@@ -53,7 +53,7 @@
 | 소셜 모션 소리·발자국 이펙트 | 보류 | 사용자 결정. 앱에 소리 재생 기능이 없다 | 소리 기능 도입 시 | [SocialMotion.md](SocialMotion.md) 6장 |
 | 2인 소셜 모션 | 생략 | 사용자 결정 | — | [SocialMotion.md](SocialMotion.md) |
 | 소품 크기 보정(ScaleSensitivity) | 미확인 | 소품 위치 표(PropTransformDataArr)의 외형별 위치·회전은 쓴다(2026-11-19). 크기 보정 값(DefaultScaleSensitivity·행별 ScaleSensitivity, 기준 PropScaleSource FxScale·ActorScale)은 게임 FxScale 계산식(HeightInfo 기반)을 읽지 못해 쓰지 않는다. 소품은 붙은 본의 크기를 그대로 따른다 | 계산식 확인 | [SocialMotion.md](SocialMotion.md) |
-| 카메라 쳐다보기의 게임 계산식 | 근사 | 게임 시선 계산(LookAtProcessCalculator·LookAtCameraHelper) 본문을 읽지 못해 LookAt 시트의 축·각도 제한으로 근사했다. 좌우 YawMax 비율 분배, 상하 부호, 제한 밖이면 정면, 따라가는 시간 0.2초, 대상은 카메라 위치(높이 보정 없음)는 추정·임의값이다. 머리 좌우 기준 좌표(YawForwardAxisCoordinate ParentLocal)는 쓰지 않고 머리 자세 기준으로 잰다 | 게임 화면 비교 | [StudioFeatureReview.md](StudioFeatureReview.md) 2장 |
+| 카메라 쳐다보기의 게임 계산식 | 근사 | 게임 시선 계산(LookAtProcessCalculator·LookAtCameraHelper) 본문을 읽지 못했다. 본·각도는 꾸미기 전용 상수(허리·가슴·목·머리·눈)를 쓰고, 좌우 YawMax 비율 분배, 눈 본 회전 비율(13/39), 상하 부호, 제한(139°) 밖이면 정면, 따라가는 시간 0.2초, 대상은 카메라 위치(높이 보정 없음)는 추정·임의값이다. 본별 좌우 기준 좌표(ParentLocal·Local)는 쓰지 않고 몸 정면 기준으로 잰다 | 게임 화면 비교 | [StudioFeatureReview.md](StudioFeatureReview.md) 2장 |
 | 행동 연출(스튜디오 "행동") | 보류 | 소셜 모션으로 대신한다. 시선 잠금 타임라인(LookAtOverride)은 읽지 않고 행동 중에는 시선을 쉰다 | — | [StudioFeatureReview.md](StudioFeatureReview.md) |
 | 표정 단독 선택 | 보류 | — | — | [WindowAndCustomizationUI.md](WindowAndCustomizationUI.md) |
 
