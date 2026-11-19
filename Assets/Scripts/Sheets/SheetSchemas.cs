@@ -147,6 +147,14 @@ public static class SheetSchemas
         "Id:K(CharacterEyeColorSheet)",
         "DisplayName:S _:S _:U _:U HideOnCustomize:U ColorCode:C");
 
+    /// <summary>
+    /// 모델별 연출 타임라인(Equipment.md "의상 자체 연출"). 240행 [확인]. 전설 의상·오브젝트 머리 모자 등 의상 모델 90개가 있다.
+    /// 행: 조건 태그, 태그 우선순위, 반복·끝·후드 씀 타임라인, 스텔라그램 타임라인(최신 행 끝에 추가된 문자열) [확인: 설치본 전 행 크기 일치].
+    /// </summary>
+    public static readonly SheetSchema StageObjectModelTimeline = new SheetSchema("StageObjectModelTimeline",
+        "ModelName:S",
+        "Tag:S Priority:I Loop:S End:S HoodOn:S Stellagram:S");
+
     /// <summary>환생 눈장식(Appearance.md). 6행 [확인]. 보상 프리셋(CostumeRewardPreset)으로 안경 의상과 염색 색을 가리킨다. 시작에 필요하지 않다.</summary>
     public static readonly SheetSchema CharacterCustomizeEyeDeco = new SheetSchema("CharacterCustomizeEyeDeco",
         "Id:K(CharacterCustomizeEyeDecoSheet)",

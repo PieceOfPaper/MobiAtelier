@@ -181,6 +181,11 @@ public sealed class AssemblyPlan
     /// </summary>
     public readonly List<string> ToolStartTimelines = new List<string>(), ToolLoopTimelines = new List<string>();
 
+    /// <summary>모델별 연출 타임라인 표(GameData.ModelTimelines). 조립기가 보이는 의상 모델로 고른다.</summary>
+    public Dictionary<string, ModelTimelineData> ModelTimelines;
+    /// <summary>재생 중인 의상 연출(진단·표시용): 파츠 키 → 타임라인 이름. 조립기가 채운다.</summary>
+    public readonly List<(string part, string timeline)> CostumeEffects = new List<(string, string)>();
+
     /// <summary>카메라 쳐다보기 요청(EditState.lookAtCamera). 조립된 캐릭터의 CharacterLookAt 이 매 프레임 view.Plan 에서 읽는다.</summary>
     public bool LookAtCamera;
     /// <summary>시선 처리 시트 전체(GameData.LookAt). 조립기가 몸 모델의 LookAtGroupName 으로 고른다.</summary>
@@ -275,6 +280,7 @@ public static class PlanResolver
         plan.HelmetCoverRequested = state.helmetCoverOn;
         plan.LookAtCamera = state.lookAtCamera;
         plan.LookAtTable = data.LookAt;
+        plan.ModelTimelines = data.ModelTimelines;
 
         string prefix = plan.Infant ? "HC" : plan.Male ? "HM" : "HF";
         string variant = plan.BodyType == "Muscular" ? "Muscle" : plan.BodyType;

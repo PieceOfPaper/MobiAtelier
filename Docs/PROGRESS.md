@@ -5,6 +5,7 @@
 
 ## 1. 현재 단계
 
+- 의상 자체 연출(2026-11-19, Claude Code): `StageObjectModelTimeline` 시트로 전설 의상 등 90개 모델의 반복·후드 씀 타임라인(이펙트·덧그림)을 재생한다. 타임라인 로더의 중복 제거가 여러 소켓에 붙은 같은 이펙트를 버리던 기존 버그도 고쳤다(소셜 모션에도 해당). 배치 촬영·정책 시험 60개 통과. 앱 움직임·게임 비교는 [미확인].
 - 바로 만들 수 있는 것 4개(2026-11-19, Claude Code): ① 좌우 눈·눈썹·장식 숨김(`HideLeftEye`·`HideAccessory0~2` 등, 안대·모자가 가린 눈·귀장식이 뚫고 나오지 않음). ② 문신 발광·반사(사용자 승인, 몸 식은 원본 Skin_Body 디스어셈블). ③ 환생 눈장식 색 프리셋 6개(의상 › 눈장식 목록, 보상 프리셋 시트 필드 순서 확인). ④ 도구 사용 연출(악기 음표·채집 이펙트). 함께 곡괭이 4종이 조립 실패로 안 보이던 문제를 고쳤다. 배치 촬영·정책 시험 60개 통과. 앱 실조작·게임 비교는 [미확인].
 - 카메라 쳐다보기(2026-11-19, Claude Code): 사용자 요청으로 보류를 풀고 구현했다. 패널 새 폴드아웃 "연출" › "카메라 쳐다보기"(끔/켬, `lookAtCamera`). LookAt 시트(23행)의 Humanoid 머리·눈 축·각도 제한으로 앱이 근사한다(게임 계산 본문은 못 읽음). 배치 촬영 4외형×7각도·정책 시험 60개 통과. 앱 실조작·게임 비교는 [미확인].
 - 미구현 1순위 4개(2026-11-19, Claude Code): ① 모자 쓰면 헤어가 사라지는 버그 수정 — 원인은 헤어 프리팹이 H1~H5 를 꺼 두는데 조립기가 고른 단계를 켜지 않은 것 [확인: 프리팹]. ② 후드 씀/벗음·모자 덮개 올림/내림 구현(`hoodOn`·`helmetCoverOn`, 의상 › 모자·로브 아래 줄). 프리팹이 쓴·벗은 메시를 모두 켜 둬 겹쳐 그려지던 것도 고쳤다. ③ 헤어 장식 색(`CharacterHairAccessoryColor` 10행, 장식형 헤어만). ④ 소셜 모션 소품 위치 표(`PropTransformDataArr`)의 외형별 위치·회전. 소품 **크기** 보정은 게임 FxScale 식을 못 읽어 하지 않았다(ImplementationGaps). 불러오기의 "지원하지 않는 항목" 3개를 연결했다. 배치 촬영 15조합·정책 시험 60개 통과. 앱 실조작·게임 화면 비교는 [미확인].
@@ -76,6 +77,7 @@
 
 | 날짜 | 내용 |
 |---|---|
+| 2026-11-19 | 의상 자체 연출: `SheetSchemas.StageObjectModelTimeline`, `GameData.ModelTimelines`, `plan.ModelTimelines·CostumeEffects`, `CharacterAssembler.AttachCostumeEffects`(보이는 의상만, 후드 씀 연출), `CharacterView.CostumeEffects`. `SocialMotionLoader` 중복 제거 키에 붙는 자리(`PlacementKey`) 추가. 스모크 촬영 전 의상 연출 1.5초 진행 |
 | 2026-11-19 | 눈·장식 숨김: `CharacterAssembler.HideEyeSide`·`AccessorySlot`·`plan.HiddenAccessories`, 패널 장식 숨김 안내. 문신 발광: `ApplyTattoo` 발광·반사 값, `MobiCharacter.shader` 문신 발광·반사 식. 환생 눈장식: `SheetSchemas.CharacterCustomizeEyeDeco·CostumeRewardPreset`, `GameData.EyeDecoPresets`, 패널 눈장식 프리셋 항목(`eyedeco:` 키, 착용 염색이 같으면 프리셋 이름 표시). 도구 연출: `plan.ToolStartTimelines·ToolLoopTimelines`, `AttachToolEffects`, `TimelineEffectPlayer.Clock·Suspend`, `CharacterMotion.LoopLength·PlayTime`, `CharacterView.ToolEffects`. 곡괭이: `AddPrefabToolMeshes`. 스모크 `eyeDeco=` 키, 조립 문제 로그, 모션 시점의 도구 연출 맞춤 |
 | 2026-11-19 | 카메라 쳐다보기: 새 파일 `Character/CharacterLookAt.cs`(+ Unity 생성 .meta), `SheetSchemas.LookAt`·`GameData.LookAt`(선택 시트), `AssemblyPlan.LookAtCamera·LookAtTable·LookAtUnavailable`, `CharacterAssembler.AttachLookAt`, `CharacterMotion.Sample` 의 시선 보정 위치, `EditState.lookAtCamera`, 패널 "연출" 폴드아웃·`LookAtRow`(색 편집 경로), 스모크 `look=1`(7각도 머리 촬영과 각도 로그). Unity 배치 컴파일 오류 0, dotnet 빌드 오류 0 |
 | 2026-11-19 | 헤어 단계·후드·모자 덮개: `CharacterAssembler`(후드 의상·모자 판정, `Hide*ByHelmetCover`, 헤어 단계 켜기 `ShownHairLevel`, `CostumeVariantVisible`, `CarryBuildResults` 에 결과 전달), `AssemblyPlan` 요청·결과 필드, `EditState.hoodOn·helmetCoverOn`. 헤어 장식 색: `SheetSchemas.CharacterHairAccessoryColor`(선택 시트), `GameData.HairAccessoryColors`, `appearance.hairAccessoryColor`, 계획 전역 색 `HairAccessory`, 패널 `ColorRow` 의 "기본 색" 항목. 패널 `VariantRow`(후드·모자 덮개). 불러오기 `IsHoodOn`·`IsCapClosed`·염색 18 연결. 소셜 소품 `PropPlacement`. 스모크 `hair=`·`hairAcc=`·`hood=`·`cover=` 키와 머리 근접 촬영. 런타임·에디터 dotnet 빌드 오류 0(기존 경고 3), Unity 배치 컴파일 오류 0 |

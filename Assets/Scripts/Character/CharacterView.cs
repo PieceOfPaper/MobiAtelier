@@ -48,6 +48,8 @@ public sealed class CharacterView : MonoBehaviour
     internal TimelineEffectPlayer SetEffect;
     /// <summary>도구 사용 연출 재생기(시작·반복). 없으면 비어 있다.</summary>
     public readonly List<TimelineEffectPlayer> ToolEffects = new List<TimelineEffectPlayer>();
+    /// <summary>의상 자체 연출 재생기. 없으면 null.</summary>
+    public TimelineEffectPlayer CostumeEffects;
 
     readonly List<GameObject> outlineObjects = new List<GameObject>();
     readonly List<(Material material, bool enabled)> outlineMaterials = new List<(Material, bool)>();

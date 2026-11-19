@@ -382,6 +382,8 @@ public static class InstallSmokeTest
                         }
                         var setFx = view.GetComponent<TimelineEffectPlayer>();
                         if (setFx) setFx.Simulate(1.5);
+                        // 의상 자체 연출도 1.5초까지 진행한 뒤 찍는다.
+                        if (view.CostumeEffects) view.CostumeEffects.Simulate(1.5);
                         Detail(tag);
                         if (!string.IsNullOrEmpty(s.weaponAura))
                         {

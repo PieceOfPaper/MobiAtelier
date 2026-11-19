@@ -471,7 +471,9 @@ public static class SocialMotionLoader
                 float begin = iv.Get("BeginTime").F(), end = iv.Get("EndTime").F();
                 bool inf = iv.Get("IsInfinite").B();
                 string asset = p.Get("AssetPath").Str() ?? p.Get("PrefabPathGroups").Get("Default").Get("Lod0").Str() ?? p.Get("MaterialPath").Str();
-                if (!string.IsNullOrEmpty(asset) && !seen.Add($"{seg}|{type}|{asset}|{begin:F2}")) continue;
+                // 같은 타임라인이 여러 목록(행동 시트·클립 시트)에 겹쳐 나오는 구간만 건너뛴다.
+                // 같은 프리팹을 다른 본·위치에 붙인 구간(양손·양쪽 날개 등)은 서로 다른 구간이다(2026-11-19 수정).
+                if (!string.IsNullOrEmpty(asset) && !seen.Add($"{seg}|{type}|{asset}|{begin:F2}|{PlacementKey(p)}")) continue;
                 if (type == "Prop") AddProp(bundles, view, shader, a, seg, p, begin, end, inf, log);
                 else if (type == "PropAnimation") anims.Add((p.Get("PropKey").Str() ?? "", begin, end, inf, p.Get("AnimationClipPath").Str()));
                 else if (type == "Effect") fxs.Add((p, begin, end, inf));
@@ -534,6 +536,15 @@ public static class SocialMotionLoader
             prop.Clips.Add((seg, begin, end, inf, clip));
         }
         foreach (var (p, begin, end, inf) in fxs) AddEffect(bundles, view, a, seg, p, begin, end, inf, log);
+    }
+
+    /// <summary>구간이 붙는 자리(위치 기준 본·소품, 위치·회전 오프셋, 대상 렌더러). 중복 판정에 쓴다.</summary>
+    static string PlacementKey(object p)
+    {
+        string V(object o) { var l = o.Arr(); return l.Count == 0 ? "" : string.Join(",", l.ConvertAll(x => x.F().ToString("F3"))); }
+        var names = p.Get("TargetRendererNames").Arr().ConvertAll(x => x.Str());
+        return string.Join("|", p.Get("PosRefBoneName").Str(), p.Get("PosRefPropInfo").Get("PropKey").Str(), p.Get("PosRefPropInfo").Get("BoneName").Str(),
+            p.Get("AttachBoneName").Str(), V(p.Get("LocalOffset")), V(p.Get("LocalRotation")), V(p.Get("DefaultLocalOffset")), string.Join(",", names));
     }
 
     static void AddProp(BundleCache bundles, CharacterView view, Shader shader, ActionMotion a, int seg, object p, float begin, float end, bool inf, Action<string> log)

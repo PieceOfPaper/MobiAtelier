@@ -65,6 +65,12 @@ public sealed class BodyTypeData
     public bool UseBlendshape;
 }
 
+/// <summary>모델별 연출 타임라인(StageObjectModelTimeline). 빈 문자열은 없음.</summary>
+public sealed class ModelTimelineData
+{
+    public string Model, Loop, End, HoodOn, Stellagram;
+}
+
 /// <summary>환생 눈장식 색 프리셋 하나: 안경 의상과 Slot0~5 염색 색(없으면 null).</summary>
 public sealed class EyeDecoPreset
 {
@@ -257,6 +263,9 @@ public sealed class GameData
     public readonly List<LookAtParam> LookAt = new List<LookAtParam>();
     /// <summary>환생 눈장식 색 프리셋(CharacterCustomizeEyeDeco → CostumeRewardPreset). 읽지 못하면 비운다.</summary>
     public readonly List<EyeDecoPreset> EyeDecoPresets = new List<EyeDecoPreset>();
+    /// <summary>모델 이름 → 연출 타임라인. 조건 태그가 없는 행만 담는다. 읽지 못하면 비운다.</summary>
+    public readonly Dictionary<string, ModelTimelineData> ModelTimelines = new Dictionary<string, ModelTimelineData>(StringComparer.Ordinal);
+    public string ModelTimelineError;
     public string EyeDecoError;
     public string LookAtError;
     /// <summary>생활 도구·악기(시트 순서). 읽지 못하면 비어 있고 ToolError 에 사유가 있다.</summary>
@@ -402,6 +411,20 @@ public sealed class GameData
             g.EyeDecoPresets.RemoveAll(p => p.CostumeId == null || !g.Costumes.ContainsKey(p.CostumeId));
         }
         catch (Exception e) { g.EyeDecoPresets.Clear(); g.EyeDecoError = "환생 눈장식: " + e.Message; }
+        try
+        {
+            // 조건 태그 행(예: 특정 상황용 덮어쓰기)은 설치본 의상 모델에 없다 [확인]. 태그 없는 행만 쓴다.
+            foreach (var r in set.Read(SheetSchemas.StageObjectModelTimeline))
+            {
+                string model = r.Str("ModelName");
+                if (string.IsNullOrEmpty(model) || !string.IsNullOrEmpty(r.Str("Tag")) || g.ModelTimelines.ContainsKey(model)) continue;
+                g.ModelTimelines[model] = new ModelTimelineData
+                {
+                    Model = model, Loop = r.Str("Loop"), End = r.Str("End"), HoodOn = r.Str("HoodOn"), Stellagram = r.Str("Stellagram"),
+                };
+            }
+        }
+        catch (Exception e) { g.ModelTimelines.Clear(); g.ModelTimelineError = SheetSchemas.StageObjectModelTimeline.Sheet + ": " + e.Message; }
         LoadTools(set, g);
         LoadSetEffects(set, g);
         g.WeaponAura = WeaponAuraData.Load(files);

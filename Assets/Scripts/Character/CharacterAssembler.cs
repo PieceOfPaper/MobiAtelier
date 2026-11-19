@@ -715,6 +715,16 @@ public static class CharacterAssembler
         AttachSetEffect(files, bundles, plan, view, shader, L);
         AttachLookAt(plan, view, defs.Find(x => x.Part.Role == PartRole.Body), L);
         AttachToolEffects(files, bundles, plan, view, shader, L);
+        // 의상 자체 연출: 실제로 보이는 의상 모델만. 후드로 숨긴 모자·다른 의상이 숨긴 장식은 뺀다. 후드 씀 연출은 쓴 후드 의상만.
+        var shownCostumes = new List<(Def d, bool hoodOn)>();
+        foreach (var d in defs)
+        {
+            if (d.Part.Role != PartRole.Costume) continue;
+            if (d == hatDef && !hatShown) continue;
+            if (plan.HiddenAccessories.Contains(d.Part.Key)) continue;
+            shownCostumes.Add((d, d == hoodDef && plan.HoodOn));
+        }
+        AttachCostumeEffects(files, bundles, plan, view, shader, shownCostumes, L);
         L($"조립: 파츠 {defs.Count}, 본 {nb}(포즈 {posed}), 렌더러 {view.Renderers.Count}, 염색 연결 {view.Dyes.Count}, 헤어 단계 H{hairLevel}, 번들 {bundles.Count}, {sw.ElapsedMilliseconds}ms");
         if (plan.HiddenAccessories.Count > 0) L("장식 숨김: " + string.Join(", ", plan.HiddenAccessories));
         if (hideLeftEye || hideRightEye || hideLeftBrow || hideRightBrow)
@@ -751,6 +761,41 @@ public static class CharacterAssembler
         if (la == null) { plan.LookAtUnavailable = why; L("시선: " + why); return; }
         motion.LookAt = la;
         L($"시선: 그룹 {group}, {la.Describe()}, {(plan.LookAtCamera ? "켬" : "끔")}");
+    }
+
+    /// <summary>
+    /// 의상 자체 연출(Equipment.md "의상 자체 연출"): StageObjectModelTimeline 의 반복 타임라인(후드를 쓴 의상은 후드 씀 타임라인도)을 계속 재생한다.
+    /// 설치본 의상 타임라인 45개는 이펙트·덧그림 트랙만 있다 [확인]. 이펙트는 캐릭터 본(_Head 등)에, 덧그림은 의상 메시 이름에 붙는다.
+    /// 끝 타임라인(End)은 쓰지 않는다. 스텔라그램 타임라인(껌 의상 3개)은 쓰는 상황을 몰라 쓰지 않는다 [미확인]. 읽지 못하면 연출만 뺀다.
+    /// </summary>
+    static void AttachCostumeEffects(InstallFiles files, BundleCache bundles, AssemblyPlan plan, CharacterView view, Shader shader,
+        List<(Def d, bool hoodOn)> shown, Action<string> L)
+    {
+        if (plan.ModelTimelines == null || plan.ModelTimelines.Count == 0) return;
+        var names = new List<string>();
+        foreach (var (d, hoodOn) in shown)
+        {
+            if (!plan.ModelTimelines.TryGetValue(d.Part.Model, out var row)) continue;
+            void Add(string n)
+            {
+                if (string.IsNullOrEmpty(n)) return;
+                plan.CostumeEffects.Add((d.Part.Key, n));
+                if (!names.Contains(n)) names.Add(n);
+            }
+            Add(row.Loop);
+            if (hoodOn) Add(row.HoodOn);
+        }
+        if (names.Count == 0) return;
+        try
+        {
+            var m = SocialMotionLoader.LoadTimelines(files, bundles, view, shader, names, L);
+            if (m.Effects.Count + m.Additives.Count == 0) { m.Dispose(); L($"의상 연출: 이펙트 없음 [{string.Join(", ", names)}]"); return; }
+            var p = view.gameObject.AddComponent<TimelineEffectPlayer>();
+            p.Play(m);
+            view.CostumeEffects = p;
+            L($"의상 연출: [{string.Join(", ", names)}] 이펙트 {m.Effects.Count}, 덧그림 {m.Additives.Count}");
+        }
+        catch (Exception e) when (!(e is OutOfMemoryException)) { L("의상 연출 읽기 실패: " + e.Message); }
     }
 
     /// <summary>
@@ -882,6 +927,7 @@ public static class CharacterAssembler
             to.HasHelmetCover = from.HasHelmetCover; to.HelmetCoverOn = from.HelmetCoverOn; to.HairLevel = from.HairLevel;
             to.LookAtUnavailable = from.LookAtUnavailable;
             to.HiddenAccessories.Clear(); to.HiddenAccessories.AddRange(from.HiddenAccessories);
+            to.CostumeEffects.Clear(); to.CostumeEffects.AddRange(from.CostumeEffects);
         }
         CheckDyes(to, view);
     }
