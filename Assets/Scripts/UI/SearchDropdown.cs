@@ -3,6 +3,7 @@
 //   검색: 표시 이름·ID 부분 일치(대소문자 무시). 방향키·Enter 선택, ESC·바깥 클릭으로 닫기.
 //   목록을 닫거나 검색을 취소한 것만으로는 선택이 바뀌지 않는다.
 //   목록이 열려 있는 동안 화면 전체를 덮는 투명 막을 두어 카메라 입력(드래그·휠)이 넘어가지 않게 한다.
+//   즐겨찾기(FavoriteKey 가 있을 때): 목록 각 줄 오른쪽과 선택 필드 오른쪽의 핀으로 켜고 끈다. 즐겨찾기한 항목은 목록 맨 위에 둔다.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,8 +22,57 @@ public sealed class DropdownItem
     public Color[] Swatches;
 }
 
+/// <summary>
+/// 즐겨찾기(핀) 저장소. 분류(선택 줄 이름)마다 항목 Id 집합. 앱 설정(AppSettings.favorites)에 기록한다.
+/// 꾸미기 이력·자동 저장·내보내기 JSON 에는 넣지 않는다.
+/// </summary>
+public static class Favorites
+{
+    const char Sep = '\u001F';
+    static List<string> store = new List<string>();
+    static readonly HashSet<string> set = new HashSet<string>(StringComparer.Ordinal);
+    static Action save;
+
+    /// <summary>즐겨찾기가 바뀌면 부른다(분류).</summary>
+    public static event Action<string> Changed;
+
+    public static void Init(List<string> list, Action onSave)
+    {
+        store = list ?? new List<string>();
+        save = onSave;
+        set.Clear();
+        foreach (var s in store) if (!string.IsNullOrEmpty(s)) set.Add(s);
+    }
+
+    public static bool Has(string category, string id) => category != null && id != null && set.Contains(category + Sep + id);
+
+    public static void Toggle(string category, string id)
+    {
+        if (category == null || id == null) return;
+        string k = category + Sep + id;
+        if (!set.Remove(k)) { set.Add(k); store.Add(k); }
+        else store.RemoveAll(x => x == k);
+        try { save?.Invoke(); } catch (Exception e) { Debug.LogWarning("[MobiAtelier] 즐겨찾기 저장 실패: " + e.Message); }
+        Changed?.Invoke(category);
+    }
+
+    /// <summary>즐겨찾기한 항목을 맨 앞으로(각 묶음 안의 원래 순서는 유지).</summary>
+    public static List<DropdownItem> Sort(string category, List<DropdownItem> items)
+    {
+        if (category == null || items == null) return items;
+        var pinned = new List<DropdownItem>(); var rest = new List<DropdownItem>();
+        foreach (var it in items) (Has(category, it.Id) ? pinned : rest).Add(it);
+        if (pinned.Count == 0) return items;
+        pinned.AddRange(rest);
+        return pinned;
+    }
+}
+
 public sealed class SearchDropdown : VisualElement
 {
+    static readonly Color PinOn = new Color(0.98f, 0.8f, 0.3f);
+    static readonly Color PinOff = new Color(0.7f, 0.72f, 0.76f, 0.35f);
+
     const float RowHeight = 24, MaxPopupHeight = 340, SearchMinCount = 9;
     static SearchDropdown openOne;
 
@@ -42,6 +92,21 @@ public sealed class SearchDropdown : VisualElement
     string currentId;
     bool layoutSeen;
     public bool RememberScroll { get; set; }
+    readonly VisualElement fieldPin;
+    string favoriteKey, pinTarget;
+    bool pinTargetSet;
+
+    /// <summary>필드 오른쪽 핀이 즐겨찾기할 항목. 정하지 않으면 지금 선택 값이다. null 을 주면 핀을 숨긴다(자리는 남긴다).</summary>
+    public void SetPinTarget(string id) { pinTarget = id; pinTargetSet = true; UpdateFieldPin(); }
+
+    string PinId => pinTargetSet ? pinTarget : currentId;
+
+    /// <summary>즐겨찾기 분류(선택 줄 이름 등). 정하면 핀 버튼이 생기고 즐겨찾기 항목을 목록 맨 위에 둔다. null 이면 즐겨찾기 없음.</summary>
+    public string FavoriteKey
+    {
+        get => favoriteKey;
+        set { favoriteKey = value; UpdateFieldPin(); }
+    }
     float savedScroll;
     IVisualElementScheduledItem scrollRestore;
 
@@ -56,8 +121,16 @@ public sealed class SearchDropdown : VisualElement
         style.flexGrow = 1;
         style.flexShrink = 1;
         style.minWidth = 0;
+        style.flexDirection = FlexDirection.Row;
+        style.alignItems = Align.Center;
 
         field = new VisualElement { name = "dropdown-field", focusable = true };
+        // 기준 크기 0 에서 남은 너비를 모두 채운다. 이름 길이가 필드 너비(▾ 위치)를 바꾸지 않게 한다.
+        field.style.flexGrow = 1;
+        field.style.flexShrink = 1;
+        field.style.flexBasis = 0;
+        field.style.minWidth = 0;
+        field.style.overflow = Overflow.Hidden;
         field.style.flexDirection = FlexDirection.Row;
         field.style.alignItems = Align.Center;
         field.style.height = 26;
@@ -71,6 +144,9 @@ public sealed class SearchDropdown : VisualElement
         fieldSwatches.style.display = DisplayStyle.None;
         nameLabel = Ellipsis(new Label());
         nameLabel.style.flexGrow = 1;
+        nameLabel.style.flexShrink = 1;
+        nameLabel.style.flexBasis = 0;
+        nameLabel.style.minWidth = 0;
         nameLabel.style.color = AppUI.Text;
         nameLabel.style.fontSize = 13;
         subLabel = Ellipsis(new Label());
@@ -80,6 +156,7 @@ public sealed class SearchDropdown : VisualElement
         subLabel.style.fontSize = 11;
         subLabel.style.marginLeft = 6;
         var arrow = new Label("▾");
+        arrow.style.flexShrink = 0;
         arrow.style.color = AppUI.Sub;
         arrow.style.marginLeft = 4;
         field.Add(fieldSwatches); field.Add(nameLabel); field.Add(subLabel); field.Add(arrow);
@@ -92,6 +169,49 @@ public sealed class SearchDropdown : VisualElement
         });
         field.RegisterCallback<PointerEnterEvent>(e => field.style.backgroundColor = AppUI.FieldHover);
         field.RegisterCallback<PointerLeaveEvent>(e => field.style.backgroundColor = AppUI.FieldBg);
+
+        // 선택 필드 오른쪽 핀: 지금 고른 항목을 즐겨찾기한다.
+        fieldPin = new VisualElement { name = "dropdown-pin" };
+        fieldPin.style.width = 26; fieldPin.style.height = 26;
+        fieldPin.style.flexShrink = 0;
+        fieldPin.style.marginLeft = 3;
+        fieldPin.style.alignItems = Align.Center;
+        fieldPin.style.justifyContent = Justify.Center;
+        fieldPin.style.backgroundColor = AppUI.FieldBg;
+        SetBorder(fieldPin, AppUI.Border, 1, 3);
+        UIAnim.SmoothColor(fieldPin);
+        fieldPin.Add(new IconElement(IconKind.Pin, 16));
+        fieldPin.style.display = DisplayStyle.None;
+        fieldPin.RegisterCallback<ClickEvent>(e => { Favorites.Toggle(favoriteKey, PinId); e.StopPropagation(); });
+        fieldPin.RegisterCallback<PointerEnterEvent>(e => fieldPin.style.backgroundColor = AppUI.FieldHover);
+        fieldPin.RegisterCallback<PointerLeaveEvent>(e => fieldPin.style.backgroundColor = AppUI.FieldBg);
+        Tips.Attach(fieldPin, () => Favorites.Has(favoriteKey, PinId) ? "즐겨찾기 해제" : "즐겨찾기");
+        Add(fieldPin);
+        Action<string> onChanged = c => { if (c == favoriteKey) { UpdateFieldPin(); RefreshOpenList(); } };
+        RegisterCallback<AttachToPanelEvent>(e => { Favorites.Changed -= onChanged; Favorites.Changed += onChanged; UpdateFieldPin(); });
+        RegisterCallback<DetachFromPanelEvent>(e => Favorites.Changed -= onChanged);
+    }
+
+    void UpdateFieldPin()
+    {
+        if (fieldPin == null) return;
+        // 비움(착용 안 함 등)일 때도 자리는 남겨 필드 너비가 바뀌지 않게 한다.
+        fieldPin.style.display = favoriteKey != null ? DisplayStyle.Flex : DisplayStyle.None;
+        string id = PinId;
+        bool can = favoriteKey != null && id != null;
+        fieldPin.style.visibility = can ? Visibility.Visible : Visibility.Hidden;
+        if (can) fieldPin.Q<IconElement>().Color = Favorites.Has(favoriteKey, id) ? PinOn : PinOff;
+    }
+
+    /// <summary>즐겨찾기가 바뀌면 열린 목록을 다시 정렬한다(검색어·스크롤 위치는 유지).</summary>
+    void RefreshOpenList()
+    {
+        if (list == null) return;
+        var sv = list.Q<ScrollView>();
+        float offset = sv.scrollOffset.y;
+        all = Favorites.Sort(favoriteKey, all);
+        Filter(search?.value ?? "");
+        sv.schedule.Execute(() => { if (list != null) sv.scrollOffset = new Vector2(0, offset); });
     }
 
     /// <summary>선택 필드 표시. color 가 null 이면 기본 글자색.</summary>
@@ -99,6 +219,7 @@ public sealed class SearchDropdown : VisualElement
     {
         FillSwatches(fieldSwatches, swatches);
         currentId = id;
+        UpdateFieldPin();
         nameLabel.text = name ?? "";
         nameLabel.style.color = color ?? AppUI.Text;
         subLabel.text = sub ?? "";
@@ -113,13 +234,23 @@ public sealed class SearchDropdown : VisualElement
 
     // ------------------------------------------------------------ 목록
 
+    /// <summary>시험 촬영용: 열린 목록의 5·9번째 항목과 지금 항목을 즐겨찾기한다.</summary>
+    internal void DemoPinSome()
+    {
+        foreach (int i in new[] { 4, 8 })
+            if (i < all.Count && all[i].Id != null && !Favorites.Has(favoriteKey, all[i].Id)) Favorites.Toggle(favoriteKey, all[i].Id);
+        if (currentId != null && !Favorites.Has(favoriteKey, currentId)) Favorites.Toggle(favoriteKey, currentId);
+        var sv = list?.Q<ScrollView>();
+        sv?.schedule.Execute(() => sv.scrollOffset = Vector2.zero).ExecuteLater(50);
+    }
+
     public void Open()
     {
         if (IsOpen) return;
         CloseAny();
         var host = popupHost();
         if (host == null) return;
-        all = source() ?? new List<DropdownItem>();
+        all = Favorites.Sort(favoriteKey, source() ?? new List<DropdownItem>());
         openOne = this;
         layoutSeen = false;
 
@@ -324,6 +455,21 @@ public sealed class SearchDropdown : VisualElement
         s.style.color = AppUI.Sub;
         s.style.marginLeft = 6;
         row.Add(n); row.Add(s);
+        // 줄 오른쪽 핀: 누르면 즐겨찾기를 켜고 끈다(항목을 고르지 않는다).
+        var pin = new VisualElement { name = "pin" };
+        pin.style.width = 22; pin.style.height = RowHeight;
+        pin.style.flexShrink = 0;
+        pin.style.marginLeft = 4;
+        pin.style.alignItems = Align.Center;
+        pin.style.justifyContent = Justify.Center;
+        pin.Add(new IconElement(IconKind.Pin, 15));
+        pin.RegisterCallback<PointerDownEvent>(e => e.StopPropagation());
+        pin.RegisterCallback<ClickEvent>(e =>
+        {
+            e.StopPropagation();
+            if (row.userData is int i && i >= 0 && i < shown.Count) Favorites.Toggle(favoriteKey, shown[i].Id);
+        });
+        row.Add(pin);
         float? pointerOffset = null;
         row.RegisterCallback<PointerDownEvent>(e =>
         {
@@ -344,6 +490,11 @@ public sealed class SearchDropdown : VisualElement
         n.style.unityFontStyleAndWeight = it.Id == currentId ? FontStyle.Bold : FontStyle.Normal;
         row.Q<Label>("sub").text = it.Sub ?? "";
         FillSwatches(row.Q("swatches"), it.Swatches);
+        var pin = row.Q("pin");
+        bool canPin = favoriteKey != null && it.Id != null;
+        pin.style.display = favoriteKey != null ? DisplayStyle.Flex : DisplayStyle.None;
+        pin.style.visibility = canPin ? Visibility.Visible : Visibility.Hidden;
+        if (canPin) pin.Q<IconElement>().Color = Favorites.Has(favoriteKey, it.Id) ? PinOn : PinOff;
     }
 
     // ------------------------------------------------------------ 스타일

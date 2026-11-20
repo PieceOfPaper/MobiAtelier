@@ -10,6 +10,7 @@ public enum IconKind
     Eye, EyeOff, Menu, Undo, Redo, Close, Info,
     ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
     MouseLeft, MouseRight, MouseBoth, MouseWheel,
+    Pin,
 }
 
 public sealed class IconElement : VisualElement
@@ -88,6 +89,23 @@ public sealed class IconElement : VisualElement
             case IconKind.Close:
                 Line(6, 6, 18, 18); Line(18, 6, 6, 18);
                 break;
+            case IconKind.Pin:
+            {
+                // 즐겨찾기 핀(게임 모비노기의 압정 모양). 세운 압정을 시계 방향으로 45° 기울여 머리가 오른쪽 위로 간다.
+                const float c45 = 0.70710678f;
+                Vector2 R(float x, float y) { float dx = x - 12, dy = y - 12; return P(12 + dx * c45 - dy * c45, 12 + dx * c45 + dy * c45); }
+                void Fill(params float[] xy)
+                {
+                    p.BeginPath(); p.MoveTo(R(xy[0], xy[1]));
+                    for (int i = 2; i < xy.Length; i += 2) p.LineTo(R(xy[i], xy[i + 1]));
+                    p.ClosePath(); p.Fill();
+                }
+                Fill(8.2f, 2.5f, 15.8f, 2.5f, 15.8f, 5.5f, 8.2f, 5.5f);          // 머리
+                Fill(9.6f, 5.5f, 14.4f, 5.5f, 14.4f, 10.5f, 9.6f, 10.5f);        // 몸통
+                Fill(6.2f, 10.5f, 17.8f, 10.5f, 16.6f, 13.6f, 7.4f, 13.6f);      // 받침
+                p.BeginPath(); p.MoveTo(R(12, 13.6f)); p.LineTo(R(12, 21.5f)); p.Stroke();   // 바늘
+                break;
+            }
             case IconKind.Info:
                 p.BeginPath(); p.Arc(P(12, 12), 9 * s, Angle.Degrees(0), Angle.Degrees(360)); p.ClosePath(); p.Stroke();
                 Dot(12, 7.6f, 1.4f);

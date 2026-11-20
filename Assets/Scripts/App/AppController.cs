@@ -91,6 +91,7 @@ public sealed class AppController : MonoBehaviour
         }
 
         settings = AppSettings.Load();
+        Favorites.Init(settings.favorites, () => settings.Save());
         string path = string.IsNullOrEmpty(settings.installPath) ? AppSettings.DefaultInstallPath : settings.installPath;
         ui.ShowLoading("게임 설치 폴더를 확인하는 중...");
         var r = await Task.Run(() => InstallValidator.Check(path));
@@ -574,7 +575,7 @@ public sealed class AppController : MonoBehaviour
         motion.ActionFinished -= OnMotionFinished;
         motion.ActionFinished += OnMotionFinished;
         motion.PlayAction(a, startTime, fadeIn);
-        motionUI?.SetPlaying(MotionLabel(s));
+        motionUI?.SetPlaying(MotionLabel(s), s.Id);
         return true;
     }
 
@@ -1224,6 +1225,8 @@ public sealed class AppController : MonoBehaviour
             }
             // male: 성별을 남성으로 바꾼다(필수 외형 호환 대체·실행 취소 확인용)
             if (opts.Contains("male")) Edit(s => s.appearance.gender = "Male");
+            // lookat: 카메라 쳐다보기를 켠다(스위치 표시 확인용)
+            if (opts.Contains("lookat")) Edit(s => s.lookAtCamera = true);
             if (opts.Contains("lens3")) cameraCtl.SetLensMultiplier(3f);
             if (opts.Contains("lens05")) cameraCtl.SetLensMultiplier(0.5f);
             // near: 가장 가까운 거리로 다가간다(게임 최근접 스크린샷 비교용)
@@ -1238,6 +1241,13 @@ public sealed class AppController : MonoBehaviour
             if (opts.Contains("hidden")) ui.ToggleEditingUI();
             if (opts.Contains("menu")) OpenMenu();
             if (opts.Contains("options")) OpenOptions();
+            // favdemo: 헤어스타일 목록에서 앞쪽 항목이 아닌 두 개를 즐겨찾기하고 목록을 연다(즐겨찾기 핀 확인용, -maDataDir 필요)
+            if (opts.Contains("favdemo") && panel.FindDropdown("헤어스타일") is SearchDropdown fd)
+            {
+                panel.SetOpen(true);
+                fd.Open();
+                fd.DemoPinSome();
+            }
         }
         yield return new WaitForSecondsRealtime(Mathf.Min(uiWait, delay));
         yield return new WaitForEndOfFrame();

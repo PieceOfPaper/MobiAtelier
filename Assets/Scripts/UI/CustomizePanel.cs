@@ -80,6 +80,9 @@ public sealed class CustomizePanel
     public float BottomToolInset => tall ? TabShort + 6 : 0;
     public bool IsOpen => open;
 
+    /// <summary>시험 촬영용: 이 줄 이름(즐겨찾기 분류)의 선택 목록.</summary>
+    internal SearchDropdown FindDropdown(string favoriteKey) => window.Query<SearchDropdown>().Where(d => d.FavoriteKey == favoriteKey).First();
+
     /// <param name="host">화면 전체 크기의 층(AppUI.WindowLayer)</param>
     /// <param name="edit">장면 상태를 바꾸는 요청. 복사본을 바꿔 조립에 성공하면 반영한다(AppController.Edit).</param>
     /// <param name="editColors">색만 바꾸는 요청. 다시 조립하지 않고 머티리얼 색만 바꾼다(AppController.EditColors).</param>
@@ -476,6 +479,8 @@ public sealed class CustomizePanel
         l.style.fontSize = 12;
         row.Add(l);
         row.Add(control);
+        // 즐겨찾기 분류는 줄 이름이다(줄 안 선택 목록).
+        foreach (var dd in control.Query<SearchDropdown>().ToList()) if (dd.FavoriteKey == null) dd.FavoriteKey = label;
         box.Add(row);
         if (status != null) box.Add(status);
         return box;
@@ -760,22 +765,20 @@ public sealed class CustomizePanel
     /// </summary>
     void LookAtRow(VisualElement parent)
     {
-        const string Off = "off", On = "on";
         var status = StatusLabel();
-        var dd = Dropdown(() => new List<DropdownItem>
-        {
-            new DropdownItem { Id = Off, Name = "끔" },
-            new DropdownItem { Id = On, Name = "켬", Sub = "머리·눈이 카메라를 따라봄" },
-        }, it => editColors(s => s.lookAtCamera = it.Id == On));
+        // 켜고 끄는 두 값이라 목록 대신 좌우로 미는 스위치를 쓴다(사용자 결정 2026-11-20). 즐겨찾기 핀은 두지 않는다.
+        var toggle = new SlideSwitch { name = "lookat-switch" };
+        toggle.Changed += on => editColors(s => s.lookAtCamera = on);
+        Tips.Attach(toggle, () => "머리·눈이 카메라를 따라봅니다");
         refreshers.Add(() =>
         {
             bool on = state.lookAtCamera;
-            dd.SetValue(on ? On : Off, on ? "켬" : "끔", null);
+            toggle.SetValueWithoutNotify(on);
             string why = plan?.LookAtUnavailable;
             SetStatus(status, why != null ? why + ". 시선을 보정하지 않습니다." : on ? "좌우로 너무 돌아가면 정면을 봅니다. 소셜 모션 중에는 쉽니다." : null,
                 why != null ? AppUI.WarnColor : AppUI.Sub);
         });
-        parent.Add(Row("카메라 쳐다보기", dd, status));
+        parent.Add(Row("카메라 쳐다보기", toggle, status));
     }
 
     // ------------------------------------------------------------ 무기 자세 (WeaponPose.md)

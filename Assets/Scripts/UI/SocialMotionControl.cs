@@ -29,7 +29,8 @@ public sealed class SocialMotionControl
 
         dropdown = new SearchDropdown(popupHost, () => canUse() ? items() : null, item => { if (item?.Id != null) play(item.Id); });
         dropdown.RememberScroll = true;
-        dropdown.style.width = 210;
+        dropdown.FavoriteKey = "모션";
+        dropdown.style.width = 239;     // 이름 칸 210 + 핀 29
         dropdown.style.flexGrow = 0;
         Root.Add(dropdown);
         Tips.Attach(dropdown, () => "게임 모션 메뉴의 행동을 재생합니다. 저장되지 않습니다.");
@@ -49,16 +50,18 @@ public sealed class SocialMotionControl
         SetIdle();
     }
 
-    /// <summary>재생 중 표시. 같은 항목을 다시 골라도 재생되도록 선택 값은 비워 둔다.</summary>
-    public void SetPlaying(string label)
+    /// <summary>재생 중 표시. 같은 항목을 다시 골라도 재생되도록 선택 값은 비워 두고, 오른쪽 핀은 재생 중인 모션을 가리킨다.</summary>
+    public void SetPlaying(string label, string id)
     {
         dropdown.SetValue(null, "▶ " + label, null);
+        dropdown.SetPinTarget(id);
         stop.style.display = DisplayStyle.Flex;
     }
 
     public void SetIdle()
     {
         dropdown.SetValue(null, "모션", null, AppUI.Sub);
+        dropdown.SetPinTarget(null);
         stop.style.display = DisplayStyle.None;
     }
 }

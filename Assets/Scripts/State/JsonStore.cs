@@ -121,6 +121,8 @@ public class AppSettings
     public List<string> openSections = new List<string>();
     /// <summary>true 면 머리카락·옷 간이 물리를 쓰지 않는다(옵션, Docs/ClothPhysics.md). 기본은 사용.</summary>
     public bool clothPhysicsOff;
+    /// <summary>즐겨찾기(핀). "분류" + U+001F + "항목 Id" 목록. 분류는 선택 줄 이름(상의·헤어스타일·모션 등).</summary>
+    public List<string> favorites = new List<string>();
 
     public static AppSettings Load()
     {

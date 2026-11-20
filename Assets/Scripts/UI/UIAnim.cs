@@ -128,3 +128,89 @@ public static class UIAnim
         return 1 - u * u * u;
     }
 }
+
+/// <summary>
+/// 좌우로 미는 켜기/끄기 스위치(체크 상자 대신). 누르거나 Space·Enter 로 바꾼다. 손잡이가 좌우로 미끄러지고 바탕색이 바뀐다.
+/// 줄 오른쪽 끝에 붙고, 스위치 왼쪽 글자로 켬/끔을 함께 보인다(색만으로 상태를 전하지 않는다).
+/// </summary>
+public sealed class SlideSwitch : VisualElement
+{
+    const float W = 40, H = 22, Knob = 16, Pad = 3;
+    readonly VisualElement track, knob;
+    readonly Label text;
+    readonly string onText, offText;
+    bool value;
+
+    /// <summary>사용자가 바꾸면 부른다(새 값).</summary>
+    public event Action<bool> Changed;
+
+    public bool Value => value;
+
+    public SlideSwitch(string onText = "켬", string offText = "끔")
+    {
+        this.onText = onText; this.offText = offText;
+        focusable = true;
+        style.flexDirection = FlexDirection.Row;
+        style.alignItems = Align.Center;
+        style.justifyContent = Justify.FlexEnd;
+        style.flexGrow = 1;
+        style.height = 26;
+        style.paddingRight = 3;
+
+        text = new Label { pickingMode = PickingMode.Ignore };
+        text.style.marginRight = 8;
+        text.style.fontSize = 13;
+        text.style.unityTextAlign = TextAnchor.MiddleRight;
+        Add(text);
+
+        track = new VisualElement { name = "switch-track", pickingMode = PickingMode.Ignore };
+        track.style.width = W; track.style.height = H;
+        track.style.flexShrink = 0;
+        SearchDropdown.SetBorder(track, AppUI.Border, 1, H / 2);
+        UIAnim.Transition(track, UIAnim.Fast, "background-color", "border-top-color", "border-bottom-color", "border-left-color", "border-right-color");
+        knob = new VisualElement { name = "switch-knob", pickingMode = PickingMode.Ignore };
+        knob.style.position = Position.Absolute;
+        knob.style.width = Knob; knob.style.height = Knob;
+        knob.style.top = (H - 2 - Knob) / 2;
+        knob.style.backgroundColor = AppUI.Text;
+        SearchDropdown.SetBorder(knob, new Color(0, 0, 0, 0), 0, Knob / 2);
+        UIAnim.Transition(knob, UIAnim.Fast, "left");
+        track.Add(knob);
+        Add(track);
+
+        RegisterCallback<ClickEvent>(e => Toggle());
+        RegisterCallback<KeyDownEvent>(e =>
+        {
+            if (e.keyCode == KeyCode.Space || e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { Toggle(); e.StopPropagation(); }
+        });
+        RegisterCallback<PointerEnterEvent>(e => { if (!value) track.style.backgroundColor = AppUI.FieldHover; });
+        RegisterCallback<PointerLeaveEvent>(e => Apply());
+        Apply();
+    }
+
+    void Toggle()
+    {
+        if (!enabledInHierarchy) return;
+        value = !value;
+        Apply();
+        Changed?.Invoke(value);
+    }
+
+    /// <summary>값을 바꾸되 Changed 를 부르지 않는다(상태 → 화면 동기화).</summary>
+    public void SetValueWithoutNotify(bool v)
+    {
+        if (value == v) return;
+        value = v;
+        Apply();
+    }
+
+    void Apply()
+    {
+        track.style.backgroundColor = value ? AppUI.Accent : AppUI.FieldBg;
+        var border = value ? AppUI.Accent : AppUI.Border;
+        track.style.borderTopColor = track.style.borderBottomColor = track.style.borderLeftColor = track.style.borderRightColor = border;
+        knob.style.left = value ? W - 2 - Pad - Knob : Pad;
+        text.text = value ? onText : offText;
+        text.style.color = value ? AppUI.Text : AppUI.Sub;
+    }
+}
