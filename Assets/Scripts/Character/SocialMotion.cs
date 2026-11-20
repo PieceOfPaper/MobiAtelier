@@ -87,9 +87,20 @@ public abstract class ActionTrack
 /// 손 IK(IKControl). Control 손바닥(_L Palm·_R Palm)을 목표로 옮긴다.
 ///   IKReferenceableEffectBone·TargetBone: 목표 본 위치로. DisplacementPosition: Target 본이 Displacement 본에 닿도록 손바닥을 같은 만큼 옮긴다.
 /// </summary>
-public sealed class ActionIK : ActionTrack
+public sealed class ActionIK : FadedTrack
 {
     public string Control, Mode, Target, Displacement;
+}
+
+/// <summary>
+/// 치마 본 보정 켬(SkirtBoneCorrectionControl). 구간 안에서 페이드 가중치로 의상의 치마 본 보정을 건다
+/// (게임 SkirtBoneCorrectionControlOutputComponent: 가중치 = FadeInOutInfo 곡선).
+/// </summary>
+public sealed class ActionSkirt : FadedTrack { }
+
+/// <summary>페이드 인·아웃 곡선(FadeInOutInfo)이 있는 구간.</summary>
+public abstract class FadedTrack : ActionTrack
+{
     public float FadeIn, FadeOut;
     public AnimationCurve FadeInCurve, FadeOutCurve;
 
@@ -232,6 +243,7 @@ public sealed class ActionMotion : IDisposable
     public readonly List<ActionProp> Props = new List<ActionProp>();
     public readonly List<ActionEffect> Effects = new List<ActionEffect>();
     public readonly List<ActionIK> IKs = new List<ActionIK>();
+    public readonly List<ActionSkirt> Skirts = new List<ActionSkirt>();
     public readonly List<ActionAdditive> Additives = new List<ActionAdditive>();
     public readonly List<ActionShader> Shaders = new List<ActionShader>();
     public readonly List<ActionVisibility> Visibilities = new List<ActionVisibility>();
@@ -324,7 +336,7 @@ public sealed class ActionMotion : IDisposable
         foreach (var e in Effects) Kill(e.Go);
         Kill(Holder);
         foreach (var o in Owned) Kill(o);
-        Props.Clear(); Effects.Clear(); Owned.Clear(); IKs.Clear(); Additives.Clear(); Shaders.Clear(); Visibilities.Clear();
+        Props.Clear(); Effects.Clear(); Owned.Clear(); IKs.Clear(); Skirts.Clear(); Additives.Clear(); Shaders.Clear(); Visibilities.Clear();
     }
 
     static void Kill(UnityEngine.Object o)
@@ -406,7 +418,7 @@ public static class SocialMotionLoader
             log?.Invoke($"  덧그림 {ad.Material?.name}: 셰이더 {(sh ? sh.name : "-")} 큐 {ad.Material?.renderQueue} 패스 [{string.Join(",", passes)}] 대상 {string.Join(",", ad.Targets.ConvertAll(r => r ? r.name + "(" + r.sharedMaterials.Length + ")" : "-"))}");
         }
         if (a.Props.Count + a.Effects.Count + a.IKs.Count + a.Additives.Count + a.Shaders.Count + a.Visibilities.Count > 0)
-            log?.Invoke($"  소품 {a.Props.Count}, 이펙트 {a.Effects.Count}, 손 IK {a.IKs.Count}, 덧그림 {a.Additives.Count}, 셰이더 값 {a.Shaders.Count}, 숨김 {a.Visibilities.Count}");
+            log?.Invoke($"  소품 {a.Props.Count}, 이펙트 {a.Effects.Count}, 손 IK {a.IKs.Count}, 치마 보정 {a.Skirts.Count}, 덧그림 {a.Additives.Count}, 셰이더 값 {a.Shaders.Count}, 숨김 {a.Visibilities.Count}");
         return a;
     }
 
@@ -479,15 +491,20 @@ public static class SocialMotionLoader
                 else if (type == "Effect") fxs.Add((p, begin, end, inf));
                 else if (type == "IKControl")
                 {
-                    var fade = p.Get("FadeInOutInfo");
-                    a.IKs.Add(new ActionIK
+                    var ik = new ActionIK
                     {
                         Segment = seg, Begin = begin, End = end, Infinite = inf,
                         Control = p.Get("ControlBoneName").Str(), Mode = p.Get("IKControlTarget").Str(),
                         Target = p.Get("TargetBoneName").Str(), Displacement = p.Get("DisplacementTargetBoneName").Str(),
-                        FadeIn = fade.Get("FadeInDuration").F(), FadeOut = fade.Get("FadeOutDuration").F(),
-                        FadeInCurve = Curve(fade.Get("FadeInCurve").Get("Keyframes")), FadeOutCurve = Curve(fade.Get("FadeOutCurve").Get("Keyframes")),
-                    });
+                    };
+                    ReadFade(ik, p.Get("FadeInOutInfo"));
+                    a.IKs.Add(ik);
+                }
+                else if (type == "SkirtBoneCorrectionControl")
+                {
+                    var sk = new ActionSkirt { Segment = seg, Begin = begin, End = end, Infinite = inf };
+                    ReadFade(sk, p.Get("FadeInOutInfo"));
+                    a.Skirts.Add(sk);
                 }
                 else if (type == "AdditiveRenderer")
                 {
@@ -536,6 +553,12 @@ public static class SocialMotionLoader
             prop.Clips.Add((seg, begin, end, inf, clip));
         }
         foreach (var (p, begin, end, inf) in fxs) AddEffect(bundles, view, a, seg, p, begin, end, inf, log);
+    }
+
+    static void ReadFade(FadedTrack t, object fade)
+    {
+        t.FadeIn = fade.Get("FadeInDuration").F(); t.FadeOut = fade.Get("FadeOutDuration").F();
+        t.FadeInCurve = Curve(fade.Get("FadeInCurve").Get("Keyframes")); t.FadeOutCurve = Curve(fade.Get("FadeOutCurve").Get("Keyframes"));
     }
 
     /// <summary>구간이 붙는 자리(위치 기준 본·소품, 위치·회전 오프셋, 대상 렌더러). 중복 판정에 쓴다.</summary>

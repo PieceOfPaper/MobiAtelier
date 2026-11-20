@@ -518,6 +518,7 @@ public sealed class AppController : MonoBehaviour
         double motionTime = oldMotion && oldMotion.CurrentAction != null ? oldMotion.ActionTime : -1;
         CharacterAssembler.Release(view);
         view = built;
+        ApplyClothSetting(view);
         state = p.State;
         plan = p.Plan;
         p.View = null;
@@ -1070,7 +1071,20 @@ public sealed class AppController : MonoBehaviour
                 if (!string.IsNullOrEmpty(chosen)) p.Input.value = chosen;    // 취소하면 입력값 유지
                 AppUI.SyncOptionsApply(p, SameInstallPath);
             },
-            OpenMenu);
+            OpenMenu, !settings.clothPhysicsOff, SetClothPhysics);
+    }
+
+    /// <summary>옵션의 캐릭터 물리 켜기/끄기. 앱 설정에 기록하고 지금 캐릭터에 바로 건다(재시작·꾸미기 이력 없음).</summary>
+    void SetClothPhysics(bool on)
+    {
+        settings.clothPhysicsOff = !on;
+        try { settings.Save(); } catch (Exception e) { Debug.LogWarning("[MobiAtelier] 앱 설정 저장 실패: " + e.Message); }
+        ApplyClothSetting(view);
+    }
+
+    void ApplyClothSetting(CharacterView v)
+    {
+        if (v && v.Cloth != null) v.Cloth.Enabled = !settings.clothPhysicsOff;
     }
 
     /// <summary>

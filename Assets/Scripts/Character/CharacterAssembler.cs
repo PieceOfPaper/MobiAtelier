@@ -238,6 +238,8 @@ public static class CharacterAssembler
         var pieces = new List<FitPiece>();
         // 무기 등 장착점(AttachPointInfo)이 있는 파츠: 프리팹 본을 복제한 루트. 몸 본 계층이 정해진 뒤 장착점 본 아래에 붙인다.
         var tools = new List<(Def d, Transform root)>();
+        // 천 물리(MagicaBoneCloth)를 읽을 파츠: 모델 정의, 프리팹 경로, 불러온 프리팹, 파츠 오브젝트.
+        var clothSources = new List<(Def d, string path, GameObject prefab, GameObject partGo)>();
         // 스킨 메시 목록이 빈 장착 파츠(곡괭이 4종 [확인])는 프리팹의 일반 메시(MeshRenderer)를 복제 본 아래에 그린다.
         var staticToolRenderers = new Dictionary<Def, List<GameObject>>();
 
@@ -314,6 +316,7 @@ public static class CharacterAssembler
             string prefabPath = BundleCache.AssetRoot + d.Root.Get("AssetPathToLoad").Str();
             var prefab = bundles.LoadAsset<GameObject>(prefabPath);
             if (!prefab) { L($"  프리팹 없음: {prefabPath}"); Fail(part, "프리팹(재질·텍스처)을 읽지 못했습니다: " + prefabPath); }
+            if (prefab && (part.Role == PartRole.Hair || part.Role == PartRole.Costume)) clothSources.Add((d, prefabPath, prefab, partGo));
             var prefabSmr = new Dictionary<string, SkinnedMeshRenderer>(StringComparer.Ordinal);
             if (prefab) foreach (var r in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true)) if (!prefabSmr.ContainsKey(r.name)) prefabSmr[r.name] = r;
             // 무기는 BoneTemplate 이 없고 메시 본(_Sword_Root 등)이 프리팹 안에만 있다. 프리팹 본을 복제해 이 파츠 전용 본으로 쓴다.
@@ -652,6 +655,8 @@ public static class CharacterAssembler
         }
 
         ApplyBodytoolDisplacements(defs, view, root, L);
+        PrepareSkirtCorrection(files, defs, plan, view, root, L);
+        AttachCloth(files, view, clothSources, BoneFor, L);
         foreach (var d in defs) if (d.Part.Role == PartRole.Mouth && !plan.Issues.Exists(i => i.Key == "head" && i.FromBuild && i.IsFailure))
             try { if (!ApplyMouth(bundles, d.Root, view, L)) Fail(d.Part, "입 텍스처를 얼굴에 적용하지 못했습니다"); }
             catch (Exception e) when (!(e is OutOfMemoryException)) { Fail(d.Part, "입 텍스처 읽기 실패: " + e.Message); }
@@ -788,6 +793,11 @@ public static class CharacterAssembler
             try
             {
                 var m = SocialMotionLoader.LoadTimelines(files, bundles, view, shader, names, L);
+                if (m.Skirts.Count > 0 && !view.ToolSkirtCorrection)
+                {
+                    view.ToolSkirtCorrection = true;
+                    L($"도구 연출: 치마 본 보정 켬 [{string.Join(", ", names)}]");
+                }
                 if (m.Effects.Count + m.Additives.Count == 0) { m.Dispose(); L($"도구 연출({(loop ? "반복" : "시작")}): 이펙트 없음 [{string.Join(", ", names)}]"); return; }
                 var p = view.gameObject.AddComponent<TimelineEffectPlayer>();
                 p.Suspend = () => motion.CurrentAction != null;
@@ -1421,6 +1431,132 @@ public static class CharacterAssembler
             }
         }
         if (applied.Count > 0) L("도구 장착 본 변위: " + string.Join(", ", applied));
+    }
+
+    /// <summary>
+    /// 머리카락·치마 간이 물리(Docs/ClothPhysics.md): 보이는 헤어·의상 프리팹의 MagicaBoneCloth 설정을 읽어 묶음을 만든다.
+    /// 본은 파츠 전용 본 → 캐릭터 본 순으로 이름으로 찾는다. 충돌체 위치는 불러온 프리팹의 같은 경로 오브젝트 국소 값이다.
+    /// 읽지 못하면 물리만 빼고 조립은 그대로 둔다(로그만 남긴다).
+    /// </summary>
+    static void AttachCloth(InstallFiles files, CharacterView view, List<(Def d, string path, GameObject prefab, GameObject partGo)> sources,
+        Func<Def, string, Transform> boneFor, Action<string> L)
+    {
+        var cloth = new ClothPhysics();
+        var used = new List<string>();
+        foreach (var (d, path, prefab, partGo) in sources)
+        {
+            if (!partGo || !partGo.activeSelf) continue;
+            List<MagicaBoneClothInfo> infos;
+            try { infos = MagicaClothReader.FromPrefab(files, path); }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { L($"천 물리 읽기 실패: {d.Part.Model}: {e.Message}"); continue; }
+            foreach (var info in infos)
+            {
+                if (!info.Enabled || info.Particles.Count < 2) continue;
+                var team = ClothPhysics.Build(info, name => boneFor(d, name), p =>
+                {
+                    var tr = prefab.transform.Find(p);
+                    return tr ? ((Vector3, Quaternion, Vector3)?)(tr.localPosition, tr.localRotation, tr.localScale) : null;
+                }, out string err);
+                if (team == null) { L($"천 물리 건너뜀: {d.Part.Model}/{info.Name}: {err}"); continue; }
+                cloth.Teams.Add(team);
+                used.Add($"{d.Part.Model}/{info.Name}(입자 {team.Bones.Length}, 연결 {team.LinkA.Length}, 굽힘 {team.BendA.Length}, 관통 방지 {team.Penetrations.Count}, 충돌체 {team.Colliders.Count}/{info.Colliders.Count})");
+            }
+        }
+        if (cloth.Teams.Count == 0) return;
+        view.Cloth = cloth;
+        L("천 물리: " + string.Join(", ", used));
+    }
+
+    /// <summary>
+    /// 치마 본 보정 준비(게임 SkirtBoneCorrectionInfoComponent.UpdateAfterDirector [확인: 디스어셈블]).
+    ///   대상: 보이는 의상 중 AppearanceSlot 이 Bottom·OnePiece·Robe·OnePieceWithShoes 인 것(SkirtBoneCorrectionPolicy).
+    ///   본: 기준 길이가 있는 치마 본 5개(_L/_R_SkirtThigh·_L/_R_SkirtCalf·_SP Skirt_MiddleFront_Short_B00)만. 기준 길이 = 체형·키 반영 기본 자세 국소 위치의 길이.
+    ///   값: 의상 SkirtBoneCorrectionInfos(행동 이름별 SkirtBoneCorrectionOverrideInfos) + StageConstants 체형별 추가값(오일러 각도 성분끼리 더한다).
+    ///   회전은 오일러 각(도)을 Quaternion.Euler 로 바꾼다 [추정: 변환 위치는 찾지 못함].
+    /// 실제로 거는 것은 타임라인 치마 보정 트랙이 켜졌을 때다(CharacterMotion.ApplySkirt).
+    /// </summary>
+    static void PrepareSkirtCorrection(InstallFiles files, List<Def> defs, AssemblyPlan plan, CharacterView view, GameObject root, Action<string> L)
+    {
+        view.SkirtParts.Clear();
+        var lengths = new Dictionary<string, float>(StringComparer.Ordinal);
+        foreach (var n in SkirtBoneNames)
+        {
+            int i = Array.FindIndex(view.Bones, b => b && b.name == n);
+            if (i >= 0) lengths[n] = view.BindPos[i].magnitude;
+        }
+        if (lengths.Count == 0) return;
+        var extra = SkirtAdditional(files, plan.BodyType, L);
+        CharacterView.SkirtCorrection[] Read(object list)
+        {
+            var r = new List<CharacterView.SkirtCorrection>();
+            foreach (var e in list.Arr())
+            {
+                string bone = e.Get("BoneName").Str();
+                if (bone == null || !lengths.TryGetValue(bone, out float len)) continue;
+                var pos = V3Zero(e.Get("LocalPositionOffset"));
+                var rot = V3Zero(e.Get("LocalRotationOffset"));
+                var scl = V3Zero(e.Get("LocalScaleOffset"));
+                if (extra != null && extra.TryGetValue(bone, out var x)) { pos += x.pos; rot += x.rot; scl += x.scl; }
+                for (int i = 0; i < view.Bones.Length; i++)
+                    if (view.Bones[i] && view.Bones[i].name == bone)
+                        r.Add(new CharacterView.SkirtCorrection { Bone = i, Pos = pos, Rot = Quaternion.Euler(rot), Scale = scl, Length = len });
+            }
+            return r.ToArray();
+        }
+        var used = new List<string>();
+        foreach (var d in defs)
+        {
+            if (d.Part.Role != PartRole.Costume) continue;
+            var go = root.transform.Find(d.Part.Key + ":" + d.Part.Model);
+            if (go && !go.gameObject.activeSelf) continue;
+            var info = d.Root.Get("ModelPartInfo");
+            string slot = info.Get("AppearanceSlot").Str();
+            if (slot != "Bottom" && slot != "OnePiece" && slot != "Robe" && slot != "OnePieceWithShoes") continue;
+            var normal = Read(info.Get("SkirtBoneCorrectionInfos"));
+            Dictionary<string, CharacterView.SkirtCorrection[]> byAction = null;
+            if (info.Get("SkirtBoneCorrectionOverrideInfos") is Dictionary<string, object> ov)
+                foreach (var kv in ov)
+                {
+                    if (string.IsNullOrEmpty(kv.Key)) continue;
+                    byAction = byAction ?? new Dictionary<string, CharacterView.SkirtCorrection[]>(StringComparer.Ordinal);
+                    byAction[kv.Key] = Read(kv.Value.Get("SkirtBoneCorrectionInfos"));
+                }
+            if (normal.Length == 0 && byAction == null) continue;
+            view.SkirtParts.Add((normal, byAction));
+            used.Add($"{d.Part.Model}({slot} 본 {normal.Length}{(byAction != null ? ", 행동별 " + string.Join("/", byAction.Keys) : "")})");
+        }
+        if (used.Count > 0) L("치마 본 보정 준비: " + string.Join(", ", used));
+    }
+
+    static readonly string[] SkirtBoneNames = { "_L_SkirtCalf", "_L_SkirtThigh", "_R_SkirtCalf", "_R_SkirtThigh", "_SP Skirt_MiddleFront_Short_B00" };
+
+    // StageConstants 의 체형별 치마 보정 추가값(SkirtBoneCorrectionAdditionalInfoSettings). 설치 폴더마다 한 번 읽는다.
+    static InstallFiles skirtExtraOf;
+    static Dictionary<string, Dictionary<string, (Vector3 pos, Vector3 rot, Vector3 scl)>> skirtExtra;
+
+    static Dictionary<string, (Vector3 pos, Vector3 rot, Vector3 scl)> SkirtAdditional(InstallFiles files, string bodyType, Action<string> L)
+    {
+        if (skirtExtraOf != files)
+        {
+            skirtExtraOf = files;
+            skirtExtra = new Dictionary<string, Dictionary<string, (Vector3, Vector3, Vector3)>>(StringComparer.Ordinal);
+            try
+            {
+                var st = files.ReadSjon(StudioCameraData.ConstantsPath).Get("SkirtBoneCorrectionAdditionalInfoSettings");
+                foreach (var bt in new[] { "Default", "Thin", "Fat", "Muscular" })
+                {
+                    var map = new Dictionary<string, (Vector3, Vector3, Vector3)>(StringComparer.Ordinal);
+                    var src = st.Get(bt + "SkirtBoneCorrectionAdditionalInfo") ?? st.Get(bt + "SkirtBoneCorrectionAdditionalInfos");
+                    if (src is Dictionary<string, object> dict)
+                        foreach (var kv in dict)
+                            map[kv.Value.Get("BoneName").Str() ?? kv.Key] = (V3Zero(kv.Value.Get("LocalPositionOffset")), V3Zero(kv.Value.Get("LocalRotationOffset")), V3Zero(kv.Value.Get("LocalScaleOffset")));
+                    skirtExtra[bt] = map;
+                }
+            }
+            catch (Exception e) when (!(e is OutOfMemoryException)) { L?.Invoke("치마 보정 추가값(StageConstants) 읽기 실패, 의상 값만 씁니다: " + e.Message); }
+        }
+        // GetSkirtBoneCorrectionAdditionalInfos: Default·Thin·Fat·Muscular 가 아니면 기본 사전(빈 값)이다.
+        return skirtExtra.TryGetValue(bodyType ?? "Default", out var m) ? m : null;
     }
 
     static Vector3 V3Zero(object o) { var l = o.Arr(); return l.Count >= 3 ? new Vector3(l[0].F(), l[1].F(), l[2].F()) : Vector3.zero; }

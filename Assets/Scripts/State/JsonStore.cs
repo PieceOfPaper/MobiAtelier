@@ -119,6 +119,8 @@ public class AppSettings
     /// <summary>true 면 openSections 가 사용자가 정한 폴드아웃 펼침 상태다. false 면 기본값을 쓴다.</summary>
     public bool sectionsSaved;
     public List<string> openSections = new List<string>();
+    /// <summary>true 면 머리카락·옷 간이 물리를 쓰지 않는다(옵션, Docs/ClothPhysics.md). 기본은 사용.</summary>
+    public bool clothPhysicsOff;
 
     public static AppSettings Load()
     {

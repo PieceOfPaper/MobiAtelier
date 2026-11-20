@@ -34,6 +34,26 @@ public sealed class CharacterView : MonoBehaviour
     internal Vector3[] OffsetPos;
     internal Quaternion[] OffsetRot;
     Quaternion?[] offsetApplied;
+
+    /// <summary>치마 본 보정 하나(본 순번, 위치·회전·크기 변화, 기준 본 길이). 게임 ModifyTransformJob.SkirtBoneCorrectionInfo.</summary>
+    internal struct SkirtCorrection
+    {
+        public int Bone;
+        public Vector3 Pos, Scale;
+        public Quaternion Rot;
+        public float Length;
+    }
+    /// <summary>치마 본 보정을 가진 의상(하의·원피스·로브·신발 원피스)마다 기본 목록과 행동 이름별 덮어쓰기 목록. 없으면 비어 있다.</summary>
+    internal readonly List<(SkirtCorrection[] normal, Dictionary<string, SkirtCorrection[]> byAction)> SkirtParts =
+        new List<(SkirtCorrection[], Dictionary<string, SkirtCorrection[]>)>();
+    /// <summary>머리카락·치마 간이 물리. 물리 설정이 있는 파츠가 없으면 null.</summary>
+    public ClothPhysics Cloth;
+    /// <summary>도구 사용 타임라인(하프·피아노 연주 등)에 치마 보정 트랙이 있다. 조립기가 채운다(시험 촬영은 끄고 비교한다).</summary>
+    public bool ToolSkirtCorrection;
+    string skirtAction;
+    SkirtCorrection[] skirtActive;
+    // 보정한 본의 마지막 회전과 보정 전 회전. 클립이 회전을 쓰지 않는 본에 보정이 쌓이지 않게 한다.
+    readonly Dictionary<int, (Quaternion applied, Quaternion source)> skirtRot = new Dictionary<int, (Quaternion, Quaternion)>();
     public readonly List<(string partKey, SkinnedMeshRenderer renderer)> Renderers = new List<(string, SkinnedMeshRenderer)>();
     public readonly List<DyeBinding> Dyes = new List<DyeBinding>();
     internal readonly List<UnityEngine.Object> Owned = new List<UnityEngine.Object>();
@@ -107,6 +127,50 @@ public sealed class CharacterView : MonoBehaviour
             if (offsetApplied[i] is Quaternion last && Quaternion.Dot(last, r) > 0.999999f) r = last * Quaternion.Inverse(OffsetRot[i]);
             Bones[i].localRotation = r * OffsetRot[i];
             offsetApplied[i] = Bones[i].localRotation;
+        }
+    }
+
+    /// <summary>
+    /// 치마 본 보정(게임 ModifyTransformJob.ProcessSkirtBoneCorrection [확인: 디스어셈블]). 애니메이션 뒤 국소 값에 건다.
+    ///   위치 = lerp(p, p + 변화 × |p| / 기준 길이, w), 회전 = slerp(r, r × 변화, w), 크기 = lerp(s, s + 변화, w). w 는 0~1 로 자른다.
+    ///   의상마다 지금 행동 이름의 덮어쓰기 목록이 있으면 그것을, 없으면 기본 목록을 쓴다(SkirtBoneCorrectionInfoComponent.UpdateAfterDirector).
+    /// </summary>
+    internal void ApplySkirtCorrection(string action, float weight)
+    {
+        if (SkirtParts.Count == 0) return;
+        if (skirtActive == null || action != skirtAction)
+        {
+            skirtAction = action;
+            var list = new List<SkirtCorrection>();
+            var seen = new HashSet<int>();
+            foreach (var (normal, byAction) in SkirtParts)
+            {
+                var src = action != null && byAction != null && byAction.TryGetValue(action, out var o) ? o : normal;
+                // 같은 본을 여러 의상이 가지면 먼저 나온 것 하나만 쓴다 [추정: 게임 사전 Add 의 중복 처리는 확인하지 않음].
+                foreach (var c in src) if (seen.Add(c.Bone)) list.Add(c);
+            }
+            skirtActive = list.ToArray();
+        }
+        float w = Mathf.Clamp01(weight);
+        foreach (var c in skirtActive)
+        {
+            var b = Bones[c.Bone];
+            if (!b) continue;
+            var r = b.localRotation;
+            // 클립이 이 본의 회전을 쓰지 않으면 지난번 보정이 남아 있다. 그때는 보정 전 회전에서 다시 계산한다.
+            if (skirtRot.TryGetValue(c.Bone, out var last) && Quaternion.Dot(last.applied, r) > 0.999999f) r = last.source;
+            if (w <= 0f)
+            {
+                b.localRotation = r;
+                skirtRot.Remove(c.Bone);
+                continue;
+            }
+            var p = b.localPosition;
+            float ratio = c.Length > 0f ? p.magnitude / c.Length : 0f;
+            b.localPosition = Vector3.Lerp(p, p + c.Pos * ratio, w);
+            b.localRotation = Quaternion.Slerp(r, r * c.Rot, w);
+            b.localScale = Vector3.Lerp(b.localScale, b.localScale + c.Scale, w);
+            skirtRot[c.Bone] = (b.localRotation, r);
         }
     }
 

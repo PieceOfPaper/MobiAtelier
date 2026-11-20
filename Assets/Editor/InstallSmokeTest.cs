@@ -290,6 +290,9 @@ public static class InstallSmokeTest
                 //   hair=CharacterHair.GroupId, hairAcc=CharacterHairAccessoryColor.Id, hood=1, cover=1 : 헤어·장식 색·후드 씀·모자 덮개 내림(Equipment.md "후드·모자 덮개").
                 //     이 키가 있으면 머리 근접(앞·옆) 사진도 찍는다.
                 //   eyeDeco=CharacterCustomizeEyeDeco.Id : 환생 눈장식 색 프리셋(안경 + 염색).
+                //   skirt=0 : 도구 사용 자세의 치마 본 보정을 끈다(켠 촬영과 비교용).
+                //   clothOff=비트 : 천 물리 단계를 끈다(ClothPhysics.DebugOff, 원인 찾기용).
+                //   cloth=0 : 머리카락·치마 간이 물리를 끈다(켠 촬영과 비교용). cloth=swing : 30fps(fps=값으로 바꿈)로 3초 이어서 진행하며 물리 벗어남·이동 거리를 기록하고 찍는다.
                 //   look=1 : 카메라 쳐다보기. 카메라를 여러 각도(정면·좌우·위·아래·제한 밖)에 두고 그 위치를 쳐다보게 한 머리 근접 사진을 찍는다.
                 //   -maOutfitVariants 를 주면 몸 자르기 끔·몸 끔·의상 피부 조각 끔 변형도 촬영한다.
                 string outfit = Arg("-maOutfit");
@@ -304,7 +307,9 @@ public static class InstallSmokeTest
                         string tag = colon > 0 ? entry.Substring(0, colon).Trim() : "outfit";
                         var s = StateFactory.FromPreset(data, Arg("-maPreset") ?? StateFactory.DefaultPresets[1]);
                         string prevStance = null, introClip = null, loopClip = null, social = null, socialAct = null;
-                        bool headShots = false;
+                        ClothPhysics.DebugOff = 0;
+                        bool headShots = false, noSkirt = false, noCloth = false, clothSwing = false;
+                        int swingFps = 30;
                         foreach (var kv in entry.Substring(colon + 1).Split(','))
                         {
                             var p = kv.Split('=');
@@ -340,6 +345,10 @@ public static class InstallSmokeTest
                                 s.costumes.Add(es);
                                 headShots = true;
                             }
+                            else if (k == "skirt") noSkirt = v == "0";
+                            else if (k == "cloth") { noCloth = v == "0"; clothSwing = v == "swing"; }
+                            else if (k == "fps") swingFps = Math.Max(1, int.Parse(v));
+                            else if (k == "clothOff") ClothPhysics.DebugOff = int.Parse(v);
                             else if (k == "tool") s.costumes.Add(new CostumeSlotState { part = "Weapon", kind = CostumeSlotState.KindTool, costumeId = v });
                             else s.costumes.Add(new CostumeSlotState { part = k, costumeId = v });
                         }
@@ -394,6 +403,9 @@ public static class InstallSmokeTest
                             else if (spine) Capture(cam, view, Path.Combine(outDir, tag + "_weapon.png"), 20, 5, 1.4f, spine.position, 768, 768);
                         }
                         var om = view.GetComponent<CharacterMotion>();
+                        if (noSkirt) view.ToolSkirtCorrection = false;
+                        if (noCloth && view.Cloth != null) view.Cloth.Enabled = false;
+                        if (view.Cloth != null && om) { om.SampleAll(0); log.AppendLine("  천 물리 충돌체(애니메이션 자세):" + view.Cloth.DescribeColliders()); }
                         var look = view.GetComponent<CharacterLookAt>();
                         if (s.lookAtCamera && om && look && view.FindBone("_Head") is Transform lh)
                         {
@@ -452,6 +464,21 @@ public static class InstallSmokeTest
                                 var hd = social != null ? view.FindBone("_Head") : null;
                                 if (hd) Capture(cam, view, Path.Combine(outDir, $"{tag}_t{ts}_upper.png"), 180, 5, 1.6f, hd.position + new Vector3(0, -0.25f, 0), 768, 768);
                             }
+                        // 천 물리 연속 진행: 시작부터 fps(기본 30)로 3초 진행하며 이동 입자 최대 벗어남을 기록하고 끝에서 찍는다.
+                        if (om && clothSwing && view.Cloth != null)
+                        {
+                            om.SampleAll(0);
+                            var sb = new StringBuilder("  천 물리 진행(초:최대 벗어남 m)");
+                            for (int f = 1; f <= swingFps * 3; f++)
+                            {
+                                om.Advance(1f / swingFps);
+                                if (f % (swingFps / 3 > 0 ? swingFps / 3 : 1) == 0) sb.Append($" {(float)f / swingFps:F1}:{view.Cloth.MaxOffset():F3}");
+                            }
+                            sb.Append($" / 이동 거리 합: 물리 {view.Cloth.TravelSim:F2}m, 애니메이션 {view.Cloth.TravelBase:F2}m");
+                            log.AppendLine(sb.ToString());
+                            Capture(cam, view, Path.Combine(outDir, $"{tag}_swing_front.png"), 180, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                            Capture(cam, view, Path.Combine(outDir, $"{tag}_swing_side.png"), 90, 5, 3.6f, new Vector3(0, 0.88f, 0));
+                        }
                         if (variants)
                         {
                             view.SetBodyCut(false);

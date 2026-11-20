@@ -496,12 +496,23 @@ public sealed class AppUI
     }
 
     /// <summary>
-    /// 옵션 화면(Options.md). 지금은 게임 설치 경로만 있다. 입력만 한 경로는 적용하지 않는다.
+    /// 옵션 화면(Options.md). 캐릭터 물리 켜기/끄기(바로 적용)와 게임 설치 경로(다시 시작 후 적용). 입력만 한 경로는 적용하지 않는다.
     /// 돌아가기·ESC 는 시스템 메뉴로 돌아간다. 정규화한 경로가 현재와 같으면 적용 버튼을 끈다.
     /// </summary>
-    public PathPopup ShowOptions(string current, Func<string, bool> sameAsCurrent, Action<PathPopup, string> onApply, Action<PathPopup> onBrowse, Action onBack)
+    public PathPopup ShowOptions(string current, Func<string, bool> sameAsCurrent, Action<PathPopup, string> onApply, Action<PathPopup> onBrowse, Action onBack,
+        bool physicsOn, Action<bool> onPhysics)
     {
         var panel = OpenModal("옵션", 600, onBack, null, false, onBack);
+        var physicsTitle = new Label("캐릭터 물리");
+        physicsTitle.style.color = Text; physicsTitle.style.fontSize = 14; physicsTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+        panel.Add(physicsTitle);
+        var physics = new Toggle("머리카락·옷 흔들림 사용") { value = physicsOn };
+        physics.style.marginBottom = 4;
+        var physicsLabel = physics.Q<Label>();
+        if (physicsLabel != null) { physicsLabel.style.color = Text; physicsLabel.style.fontSize = 13; physicsLabel.style.minWidth = 0; physicsLabel.style.marginRight = 8; }
+        physics.RegisterValueChangedCallback(e => onPhysics(e.newValue));
+        panel.Add(physics);
+        panel.Add(Para("게임의 천 물리를 흉내 낸 것이라 게임과 다르게 움직일 수 있습니다. 끄면 애니메이션 그대로 보여 줍니다. 바로 적용됩니다.", Sub, 12));
         var section = new Label("게임 설치 경로");
         section.style.color = Text; section.style.fontSize = 14; section.style.unityFontStyleAndWeight = FontStyle.Bold;
         panel.Add(section);

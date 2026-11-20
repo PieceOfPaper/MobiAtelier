@@ -499,6 +499,7 @@ public sealed class CharacterMotion : MonoBehaviour
             // 얼굴 본은 표정(턱·입술·눈썹 이동)이 위치에 있으므로 클립 위치를 쓴다. 머리 크기는 부모 _Head 스케일이 반영한다.
         }
         view.ApplyLocalOffsets();
+        ApplySkirt(actOn, asi, alt, aw);
         LookAt?.Apply(lookDt, aw);
         foreach (var (dup, main, rel) in parts)
             if (dup && main) dup.localRotation = main.localRotation * rel;
@@ -512,6 +513,8 @@ public sealed class CharacterMotion : MonoBehaviour
                 foreach (var prop in action.Props) prop.Place(transform);
             }
         }
+        // 천 물리는 모든 본 보정(시선·손 IK·파츠 본 동기화) 뒤에 건다.
+        view.Cloth?.Apply(lookDt);
         // 표정 트랙(눈 깜빡임 등)은 섞을 수 없으므로 더 큰 쪽 하나만 평가한다.
         if (actOn && aw >= 0.5f && aseg?.Xaf != null) aseg.Xaf.Sample((float)alt);
         else if (own) seg.Xaf?.Sample((float)lt);
@@ -525,6 +528,22 @@ public sealed class CharacterMotion : MonoBehaviour
     }
 
     /// <summary>손 IK 구간을 적용한다. 하나라도 적용했으면 true.</summary>
+    /// <summary>
+    /// 치마 본 보정: 타임라인의 치마 보정 트랙(앉기·연주 등)이 켜져 있을 때만 건다(게임은 트랙이 없으면 끈다 [확인]).
+    /// 소셜 모션은 트랙 가중치 × 모션 섞임 비율, 도구 사용(연주) 자세는 1 − 모션 섞임 비율로 건다.
+    /// </summary>
+    void ApplySkirt(bool actOn, int asi, double alt, float aw)
+    {
+        if (view.SkirtParts.Count == 0) return;
+        float w = 0f;
+        string name = null;
+        if (actOn)
+            foreach (var sk in action.Skirts)
+                if (sk.Active(asi, alt)) { w = Mathf.Max(w, sk.Weight(alt) * aw); name = action.ActionName; }
+        if (view.ToolSkirtCorrection && 1f - aw > w) { w = 1f - aw; name = null; }
+        view.ApplySkirtCorrection(name, w);
+    }
+
     bool ApplyIK(int asi, double alt, float aw)
     {
         bool any = false;
@@ -616,10 +635,12 @@ public sealed class CharacterMotion : MonoBehaviour
     /// <summary>이펙트를 구간에 맞춰 켜고 끈다. 반복 구간이 처음으로 돌아가면 다시 재생한다.</summary>
     void UpdateEffects(int asi, double alt) => action.UpdateEffects(transform, asi, alt, simulateEffects);
 
-    void LateUpdate()
+    void LateUpdate() => Advance(Time.deltaTime);
+
+    /// <summary>재생 시간을 dt 만큼 진행하고 그 시점을 평가한다(매 프레임, 시험 촬영의 연속 진행).</summary>
+    public void Advance(float dt)
     {
         if (segments.Length == 0) return;
-        float dt = Time.deltaTime;
         float loopLen = segments[segments.Length - 1].Length;
         time += dt;
         double start = IntroLength;
